@@ -43,6 +43,14 @@ func TestHelperProcess(t *testing.T) {
 	if dir := os.Getenv("GO_CALL_DIR"); dir != "" {
 		fixture = recordCall(dir, string(in))
 	}
+	if wait := os.Getenv("GO_WAIT_FILE"); wait != "" {
+		// Hold the run open until the test creates the file.
+		for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+			if _, err := os.Stat(wait); err == nil {
+				break
+			}
+		}
+	}
 	data, err := os.ReadFile(fixture)
 	if err != nil {
 		os.Stderr.WriteString(err.Error())

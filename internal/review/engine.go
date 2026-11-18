@@ -55,7 +55,8 @@ type Engine struct {
 	Now             func() time.Time
 	CloneURL        func(string) string // nil → https://github.com/<name>.git
 
-	binArgs []string // tests run the test binary as a fake claude
+	binArgs    []string // tests run the test binary as a fake claude
+	beforeSave func()   // tests widen the gap between a review and its save
 
 	mu    sync.Mutex
 	data  string               // DataDir with symlinks resolved, once created
@@ -82,9 +83,20 @@ func (e *Engine) Run(ctx context.Context, req Request, onEvent func(Event)) (sto
 		ID: NewID(), PRID: pr.ID, Repo: pr.Repo, Number: pr.Number, Author: pr.Author,
 		HeadOID: pr.HeadOID, Mode: string(req.Mode), StartedAt: e.now(),
 	}
-	err := e.review(ctx, req, &rv, onEvent)
+	// The PR's lock covers everything from reading the last review to
+	// saving this one: a second Run then plans against this review, and a
+	// ReleasePR waiting on the lock sees this review's ID and removes its
+	// files. Lock order is PR, then repo, as in ReleasePR.
+	unlock, err := e.prLocks.lock(ctx, prKey(pr.Repo, pr.Number))
+	if err == nil {
+		defer unlock()
+		err = e.review(ctx, req, &rv, onEvent)
+	}
 	if err != nil {
 		rv.Outcome, rv.Error, rv.Findings = outcomeFailed, err.Error(), nil
+	}
+	if e.beforeSave != nil {
+		e.beforeSave()
 	}
 	rv.EndedAt = e.now()
 	if serr := e.Store.SaveReview(context.WithoutCancel(ctx), rv); serr != nil {
@@ -94,7 +106,7 @@ func (e *Engine) Run(ctx context.Context, req Request, onEvent func(Event)) (sto
 }
 
 // review runs the pipeline and fills rv. It returns the error that fails
-// the review.
+// the review. The caller holds the PR's lock.
 func (e *Engine) review(ctx context.Context, req Request, rv *store.Review, onEvent func(Event)) error {
 	cfg := e.Config()
 	pr := req.PR.PR
@@ -134,20 +146,15 @@ func (e *Engine) review(ctx context.Context, req Request, rv *store.Review, onEv
 	if err != nil {
 		return err
 	}
-	unlock, err := e.prLocks.lock(ctx, prKey(pr.Repo, pr.Number))
-	if err != nil {
-		return err
-	}
-	defer unlock()
 
 	head, base, err := rp.repo.FetchPR(ctx, pr.Number, pr.BaseRef)
 	if err != nil {
-		return err
+		return fmt.Errorf("fetch PR: %w", err)
 	}
 	rv.HeadOID, rv.BaseOID = head, base
 	mergeBase, err := rp.repo.MergeBase(ctx, head, base)
 	if err != nil {
-		return err
+		return fmt.Errorf("merge-base: %w", err)
 	}
 	rv.MergeBaseOID = mergeBase
 	in := workspace.FilesInput{MergeBase: mergeBase, Head: head}
@@ -157,7 +164,7 @@ func (e *Engine) review(ctx context.Context, req Request, rv *store.Review, onEv
 
 	worktree, release, err := rp.pool.Acquire(ctx, pr.Number, head)
 	if err != nil {
-		return err
+		return fmt.Errorf("acquire worktree: %w", err)
 	}
 	defer release()
 
@@ -167,11 +174,11 @@ func (e *Engine) review(ctx context.Context, req Request, rv *store.Review, onEv
 	}
 	reviewDir := filepath.Join(data, "reviews", rv.ID)
 	if err := os.MkdirAll(reviewDir, 0o755); err != nil {
-		return err
+		return fmt.Errorf("write review files: %w", err)
 	}
 	files, err := workspace.WriteReviewFiles(ctx, rp.repo, reviewDir, in)
 	if err != nil {
-		return err
+		return fmt.Errorf("write review files: %w", err)
 	}
 	if files.Since == "" {
 		// The last reviewed commits are gone, so there is nothing to diff
@@ -181,11 +188,11 @@ func (e *Engine) review(ctx context.Context, req Request, rv *store.Review, onEv
 	}
 	standards, err := workspace.LoadStandards(ctx, rp.repo, base, files.Changed)
 	if err != nil {
-		return err
+		return fmt.Errorf("load standards: %w", err)
 	}
 	guide, hasGuide, err := workspace.LoadSecurityGuide(ctx, rp.repo, base, reviewDir)
 	if err != nil {
-		return err
+		return fmt.Errorf("load security guide: %w", err)
 	}
 
 	rc := cfg.RepoFor(pr.Repo)
@@ -229,13 +236,16 @@ func (e *Engine) review(ctx context.Context, req Request, rv *store.Review, onEv
 		kept       []store.Finding
 		notes      []string
 		runOutcome string
-		contFailed string // why a continuation failed after a parseable run
+		stopped    string // why the loop stopped early, for the note
 	)
 	for continuations := 0; ; continuations++ {
 		start := time.Now()
 		res, runErr := Run(ctx, sess, text, onEvent)
 		took := time.Since(start)
-		rv.CostUSD += res.CostUSD
+		// total_cost_usd is the session's running total, so a resumed
+		// run's own cost is what the total grew by.
+		runCost := max(res.CostUSD-rv.CostUSD, 0)
+		rv.CostUSD = max(rv.CostUSD, res.CostUSD)
 		seen.Reads = append(seen.Reads, res.Reads...)
 		seen.Searched = append(seen.Searched, res.Searched...)
 		var parsed Output
@@ -252,7 +262,7 @@ func (e *Engine) review(ctx context.Context, req Request, rv *store.Review, onEv
 				runOutcome = outcomeIncomplete
 			}
 		}
-		if err := e.addCost(ctx, rv, res, runOutcome, took); err != nil {
+		if err := e.addCost(ctx, rv, res, runCost, runOutcome, took); err != nil {
 			return errors.Join(runErr, err)
 		}
 		if runErr != nil && raw == nil {
@@ -261,11 +271,15 @@ func (e *Engine) review(ctx context.Context, req Request, rv *store.Review, onEv
 		if runErr != nil {
 			// An earlier run of this pass gave a usable review; failing the
 			// whole review would pay for it again on retry.
-			contFailed = fmt.Sprintf("continuation %d failed: %v; showing the earlier pass", continuations, runErr)
+			stopped = fmt.Sprintf("continuation %d failed: %v; showing the earlier pass", continuations, runErr)
+			break
+		}
+		if len(gaps)+len(lint) == 0 || continuations == maxContinuations {
 			break
 		}
 		left := choice.PerReviewUSD - rv.CostUSD
-		if len(gaps)+len(lint) == 0 || continuations == maxContinuations || left <= 0 {
+		if left <= 0 {
+			stopped = "stopped: review budget used"
 			break
 		}
 		asks := slices.Clone(gaps)
@@ -277,9 +291,13 @@ func (e *Engine) review(ctx context.Context, req Request, rv *store.Review, onEv
 	}
 
 	rv.Outcome = runOutcome
-	if contFailed != "" {
+	if runOutcome == outcomeFailed {
+		// Only a continuation gets here failed: the review keeps the last
+		// parseable run's output.
 		rv.Outcome = outcomeIncomplete
-		notes = append(notes, contFailed)
+	}
+	if stopped != "" {
+		notes = append(notes, stopped)
 	}
 	rv.Verdict, rv.VerdictReason, rv.Understanding = out.Verdict, out.VerdictReason, out.Understanding
 	rv.Assumptions = out.Assumptions
@@ -377,7 +395,7 @@ func joinNotes(reviewer string, checks, gaps, lint []string) string {
 	return strings.Join(lines, "\n")
 }
 
-func (e *Engine) addCost(ctx context.Context, rv *store.Review, res RunResult, outcome string, took time.Duration) error {
+func (e *Engine) addCost(ctx context.Context, rv *store.Review, res RunResult, cost float64, outcome string, took time.Duration) error {
 	d := res.Duration
 	if d == 0 {
 		d = took // a run that stopped before its result line
@@ -385,7 +403,7 @@ func (e *Engine) addCost(ctx context.Context, rv *store.Review, res RunResult, o
 	err := e.Store.AddCost(context.WithoutCancel(ctx), store.CostRow{
 		At: e.now(), ReviewID: rv.ID, PRID: rv.PRID, Repo: rv.Repo, Author: rv.Author,
 		Tier: rv.Tier, PassKind: rv.PassKind, Mode: rv.Mode, Model: rv.Model, Effort: rv.Effort,
-		Outcome: outcome, CostUSD: res.CostUSD,
+		Outcome: outcome, CostUSD: cost,
 		TokensIn: res.TokensIn, TokensOut: res.TokensOut, TokensCached: res.TokensCached,
 		Duration: d,
 	})

@@ -67,8 +67,8 @@ func (c fakeCall) flag(name string) string {
 // fakeRun is what one fake claude invocation reports.
 type fakeRun struct {
 	Reads, Searched []string
-	Output          any // structured_output; nil leaves it out
-	Cost            float64
+	Output          any     // structured_output; nil leaves it out
+	Cost            float64 // this run's own cost
 	IsError         bool
 }
 
@@ -85,10 +85,14 @@ func newFakeClaude(t *testing.T) fakeClaude {
 	return fakeClaude{t: t, dir: dir}
 }
 
-// script writes the stream for each run, in order.
+// script writes the stream for each run, in order. The runs are one
+// session, so each reports total_cost_usd as the running total over the
+// runs so far, as real claude does on --resume.
 func (f fakeClaude) script(runs ...fakeRun) {
 	f.t.Helper()
+	var total float64
 	for i, r := range runs {
+		total += r.Cost
 		var b bytes.Buffer
 		line := func(v any) {
 			data, err := json.Marshal(v)
@@ -115,7 +119,7 @@ func (f fakeClaude) script(runs ...fakeRun) {
 		}
 		res := map[string]any{
 			"type": "result", "subtype": subtype, "is_error": r.IsError, "session_id": "s",
-			"total_cost_usd": r.Cost, "num_turns": 2, "duration_ms": 1500,
+			"total_cost_usd": total, "num_turns": 2, "duration_ms": 1500,
 			"usage": map[string]int{"input_tokens": 10, "output_tokens": 5, "cache_read_input_tokens": 7},
 		}
 		if r.Output != nil {
@@ -440,8 +444,9 @@ func TestEngineContinuationFillsGaps(t *testing.T) {
 		t.Errorf("continuation budget = %s, want what is left of 15", calls[1].flag("--max-budget-usd"))
 	}
 	rows := env.costRows(t)
-	if len(rows) != 2 || rows[0].Outcome != "incomplete" || rows[1].Outcome != "complete" {
-		t.Errorf("cost rows = %+v", rows)
+	if len(rows) != 2 || rows[0].Outcome != "incomplete" || rows[1].Outcome != "complete" ||
+		rows[0].CostUSD != 0.5 || rows[1].CostUSD != 0.25 {
+		t.Errorf("cost rows = %+v; want each run's own cost", rows)
 	}
 	if rv.CostUSD != 0.75 || rv.Outcome != "complete" {
 		t.Errorf("cost %v outcome %s", rv.CostUSD, rv.Outcome)
@@ -597,7 +602,7 @@ func TestEngineFetchFailureIsFailed(t *testing.T) {
 	if err == nil {
 		t.Fatal("Run succeeded")
 	}
-	if rv.Outcome != "failed" || !strings.Contains(rv.Error, "couldn't find remote ref") {
+	if rv.Outcome != "failed" || !strings.HasPrefix(rv.Error, "fetch PR: ") || !strings.Contains(rv.Error, "couldn't find remote ref") {
 		t.Errorf("outcome %s error %q", rv.Outcome, rv.Error)
 	}
 	if n := len(env.claude.calls()); n != 0 {
@@ -780,9 +785,100 @@ func TestEngineContinuationFailureKeepsEarlierOutput(t *testing.T) {
 				t.Errorf("stored = %+v", saved)
 			}
 			rows := env.costRows(t)
-			if len(rows) != 2 || rows[0].Outcome != "incomplete" || rows[1].Outcome != "failed" || rv.CostUSD != 0.75 {
+			if len(rows) != 2 || rows[0].Outcome != "incomplete" || rows[1].Outcome != "failed" ||
+				rows[0].CostUSD != 0.5 || rows[1].CostUSD != 0.25 || rv.CostUSD != 0.75 {
 				t.Errorf("cost rows = %+v, review cost %v", rows, rv.CostUSD)
 			}
 		})
+	}
+}
+
+func TestEngineStopsWhenBudgetUsed(t *testing.T) {
+	env := newEngineEnv(t)
+	env.cfg.Review.Budget.PerReviewUSD = 0.5
+	gappy := fakeRun{Reads: []string{"{{WORKTREE}}/README.md"}, Output: output(nil, nil), Cost: 0.5}
+	env.claude.script(gappy, gappy)
+	rv, err := env.run(t, Request{Mode: ModeAuto})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := len(env.claude.calls()); n != 1 {
+		t.Errorf("calls = %d, want 1", n)
+	}
+	if rv.Outcome != "incomplete" || !strings.Contains(rv.Note, "stopped: review budget used") {
+		t.Errorf("outcome %s note %q", rv.Outcome, rv.Note)
+	}
+}
+
+func TestEngineReleasePRWaitsForRun(t *testing.T) {
+	env := newEngineEnv(t)
+	gate := filepath.Join(t.TempDir(), "go")
+	t.Setenv("GO_WAIT_FILE", gate)
+	env.claude.script(fakeRun{Reads: readAll, Output: output(nil, nil), Cost: 0.3})
+	// A ReleasePR that got in between the review and its save would miss
+	// the new review's ID.
+	env.e.beforeSave = func() { time.Sleep(300 * time.Millisecond) }
+
+	type result struct {
+		rv  store.Review
+		err error
+	}
+	runDone := make(chan result, 1)
+	go func() {
+		rv, err := env.e.Run(context.Background(), Request{PR: tracker.Tracked{PR: env.snap}, Mode: ModeAuto}, nil)
+		runDone <- result{rv, err}
+	}()
+	for deadline := time.Now().Add(10 * time.Second); len(env.claude.calls()) == 0; time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("claude never started")
+		}
+	}
+	releaseDone := make(chan error, 1)
+	go func() { releaseDone <- env.e.ReleasePR(context.Background(), "o/n", 7) }()
+	select {
+	case err := <-releaseDone:
+		t.Fatalf("ReleasePR returned while the review ran: %v", err)
+	case <-time.After(200 * time.Millisecond):
+	}
+	writeFile(t, gate, "")
+
+	r := <-runDone
+	if r.err != nil {
+		t.Fatalf("Run: %v", r.err)
+	}
+	if err := <-releaseDone; err != nil {
+		t.Fatalf("ReleasePR: %v", err)
+	}
+	if exists(env.reviewDir(r.rv.ID)) {
+		t.Error("the new review's dir survived ReleasePR")
+	}
+	if saved := env.stored(t); len(saved) != 1 || saved[0].ID != r.rv.ID || saved[0].Outcome != "complete" {
+		t.Errorf("stored = %+v", saved)
+	}
+}
+
+func TestLedgerStates(t *testing.T) {
+	earlier := []store.Finding{
+		{ID: 1, Body: "posted", ThreadID: "T1", Ledger: "outstanding"},
+		{ID: 2, Body: "unposted", Ledger: "new"},
+	}
+	got := applyLedger(earlier, []LedgerEntry{{ID: 1, State: "answered"}, {ID: 2, State: "answered"}})
+	if got[0].Ledger != "answered" {
+		t.Errorf("posted answered = %s, want answered", got[0].Ledger)
+	}
+	if got[1].Ledger != "outstanding" {
+		t.Errorf("unposted answered = %s, want outstanding", got[1].Ledger)
+	}
+
+	open := openFindings([]store.Finding{
+		{Body: "a", Ledger: "addressed"}, {Body: "b", Ledger: "answered"},
+		{Body: "c", Ledger: "new"}, {Body: "d", Ledger: "outstanding"},
+	})
+	var bodies []string
+	for _, f := range open {
+		bodies = append(bodies, f.Body)
+	}
+	if !slices.Equal(bodies, []string{"c", "d"}) {
+		t.Errorf("open findings = %v, want [c d]", bodies)
 	}
 }
