@@ -1,0 +1,33 @@
+{
+ "node": {
+  "commits": {
+   "nodes": [
+    {
+     "commit": {
+      "statusCheckRollup": {
+       "contexts": {
+        "pageInfo": {
+         "hasNextPage": false,
+         "endCursor": "CK2"
+        },
+        "nodes": [
+         {
+          "__typename": "StatusContext",
+          "context": "legacy/deploy",
+          "state": "FAILURE",
+          "isRequired": true
+         }
+        ]
+       }
+      }
+     }
+    }
+   ]
+  }
+ },
+ "rateLimit": {
+  "remaining": 4899,
+  "cost": 1,
+  "resetAt": "2026-11-18T13:00:00Z"
+ }
+}

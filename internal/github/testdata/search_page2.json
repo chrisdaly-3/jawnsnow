@@ -1,0 +1,25 @@
+{
+ "search": {
+  "pageInfo": {
+   "hasNextPage": false,
+   "endCursor": "CUR2"
+  },
+  "nodes": [
+   {
+    "id": "PR_050"
+   },
+   {
+    "id": "PR_051"
+   },
+   {},
+   {
+    "id": "PR_052"
+   }
+  ]
+ },
+ "rateLimit": {
+  "remaining": 4989,
+  "cost": 1,
+  "resetAt": "2026-11-18T13:00:00Z"
+ }
+}
