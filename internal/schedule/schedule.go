@@ -48,7 +48,8 @@ func Decide(c Candidate, cfg config.Config, spentToday float64, viewer string, n
 	if st.Status != status.ReadyForReview && !(st.Status == status.NewChanges && st.CI == status.CIGreen) {
 		return no("status")
 	}
-	if now.Sub(c.T.HeadSeenAt) < cfg.Review.QuietPeriod.Duration {
+	// A head with no known arrival time might have just been pushed.
+	if c.T.HeadSeenAt.IsZero() || now.Sub(c.T.HeadSeenAt) < cfg.Review.QuietPeriod.Duration {
 		return no("quiet")
 	}
 	atHead := c.Latest != nil && c.Latest.HeadOID == pr.HeadOID
@@ -102,7 +103,7 @@ func Teammate(pr github.Snapshot, viewer string) bool {
 		if r.State == "PENDING" || r.CommitOID != pr.HeadOID {
 			continue
 		}
-		if r.Author == viewer || r.Author == pr.Author {
+		if strings.EqualFold(r.Author, viewer) || strings.EqualFold(r.Author, pr.Author) {
 			continue
 		}
 		if strings.HasSuffix(strings.ToLower(r.Author), "[bot]") {
@@ -113,8 +114,10 @@ func Teammate(pr github.Snapshot, viewer string) bool {
 	return false
 }
 
-// DayStart is local midnight in now's location, when the daily budget resets.
+// DayStart is the local midnight that began now's day, when the daily budget
+// resets. It uses the local zone whatever now's own location is.
 func DayStart(now time.Time) time.Time {
-	y, m, d := now.Date()
-	return time.Date(y, m, d, 0, 0, 0, 0, now.Location())
+	local := now.Local()
+	y, m, d := local.Date()
+	return time.Date(y, m, d, 0, 0, 0, 0, time.Local)
 }

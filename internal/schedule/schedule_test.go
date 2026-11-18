@@ -34,12 +34,17 @@ func TestDecideOrder(t *testing.T) {
 		{"running", func(c *Candidate) { c.Running = true; c.T.Status.Status = status.CIWaiting }, 0, Decision{false, "running"}},
 		{"status", func(c *Candidate) { c.T.Status.Status = status.NewChanges; c.T.Status.CI = status.CIFailedState }, 0, Decision{false, "status"}},
 		{"quiet", func(c *Candidate) { c.T.HeadSeenAt = now.Add(-time.Minute) }, 0, Decision{false, "quiet"}},
+		{"unknown head time is quiet", func(c *Candidate) { c.T.HeadSeenAt = time.Time{} }, 0, Decision{false, "quiet"}},
 		{"reviewed", func(c *Candidate) { c.Latest = &store.Review{HeadOID: "h1", Outcome: "complete"} }, 0, Decision{false, "reviewed"}},
 		{"reviewed incomplete", func(c *Candidate) { c.Latest = &store.Review{HeadOID: "h1", Outcome: "incomplete"} }, 0, Decision{false, "reviewed"}},
 		{"teammate", func(c *Candidate) {
 			c.TeamFeed = true
 			c.T.PR.Reviews = []github.Review{{Author: "bob", State: "APPROVED", CommitOID: "h1"}}
 		}, 0, Decision{false, "teammate"}},
+		{"teammate with the viewer in another case", func(c *Candidate) {
+			c.TeamFeed = true
+			c.T.PR.Reviews = []github.Review{{Author: "ME", State: "APPROVED", CommitOID: "h1"}}
+		}, 0, Decision{true, ""}},
 		{"teammate off a team feed", func(c *Candidate) {
 			c.T.PR.Reviews = []github.Review{{Author: "bob", State: "APPROVED", CommitOID: "h1"}}
 		}, 0, Decision{true, ""}},
@@ -85,6 +90,8 @@ func TestTeammate(t *testing.T) {
 		{"older commit ignored", pr(github.Review{Author: "bob", State: "APPROVED", CommitOID: "h0"}), false},
 		{"author ignored", pr(github.Review{Author: "alice", State: "COMMENTED", CommitOID: "h1"}), false},
 		{"viewer ignored", pr(github.Review{Author: "me", State: "APPROVED", CommitOID: "h1"}), false},
+		{"viewer in another case ignored", pr(github.Review{Author: "Me", State: "APPROVED", CommitOID: "h1"}), false},
+		{"author in another case ignored", pr(github.Review{Author: "Alice", State: "COMMENTED", CommitOID: "h1"}), false},
 		{"none", pr(), false},
 	}
 	for _, tt := range tests {
@@ -116,11 +123,21 @@ func TestBackoff(t *testing.T) {
 	}
 }
 
-func TestBudgetResetsAtLocalMidnight(t *testing.T) {
-	ny, err := time.LoadLocation("America/New_York")
+// inZone makes loc the local zone for the rest of the test.
+func inZone(t *testing.T, name string) *time.Location {
+	t.Helper()
+	loc, err := time.LoadLocation(name)
 	if err != nil {
 		t.Skip("no tzdata:", err)
 	}
+	was := time.Local
+	time.Local = loc
+	t.Cleanup(func() { time.Local = was })
+	return loc
+}
+
+func TestBudgetResetsAtLocalMidnight(t *testing.T) {
+	ny := inZone(t, "America/New_York")
 	// 00:30 on the 18th in New York is 05:30 UTC the same day.
 	at := time.Date(2026, 11, 18, 0, 30, 0, 0, ny)
 	want := time.Date(2026, 11, 18, 0, 0, 0, 0, ny)
@@ -131,5 +148,14 @@ func TestBudgetResetsAtLocalMidnight(t *testing.T) {
 	late := time.Date(2026, 11, 17, 23, 30, 0, 0, ny)
 	if got, want := DayStart(late), time.Date(2026, 11, 17, 0, 0, 0, 0, ny); !got.Equal(want) {
 		t.Fatalf("DayStart(%v) = %v, want %v", late, got, want)
+	}
+}
+
+func TestDayStartOfAUTCTimeIsLocalMidnight(t *testing.T) {
+	ny := inZone(t, "America/New_York")
+	// 03:00 UTC on the 18th is 22:00 on the 17th in New York.
+	at := time.Date(2026, 11, 18, 3, 0, 0, 0, time.UTC)
+	if got, want := DayStart(at), time.Date(2026, 11, 17, 0, 0, 0, 0, ny); !got.Equal(want) {
+		t.Fatalf("DayStart(%v) = %v, want %v", at, got, want)
 	}
 }
