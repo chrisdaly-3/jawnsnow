@@ -12,6 +12,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/cli/go-gh/v2/pkg/api"
 
 	"github.com/chrisdaly-3/jawnsnow/internal/config"
 	"github.com/chrisdaly-3/jawnsnow/internal/github"
@@ -399,6 +400,42 @@ func TestPollSlowsWhenRateLimitLow(t *testing.T) {
 	}
 	if !strings.Contains(content(h.m), "polling slower") {
 		t.Errorf("View does not explain the slower polling:\n%s", content(h.m))
+	}
+}
+
+func TestRateLimitErrorBacksOff(t *testing.T) {
+	h := newHarness(t, opts{}, wallPR("1"))
+	h.client.err = &api.GraphQLError{Errors: []api.GraphQLErrorItem{{Type: "RATE_LIMITED", Message: "API rate limit exceeded"}}}
+	ticks := h.finishPoll(t)
+	if got := pollTicks(ticks); !reflect.DeepEqual(got, []time.Duration{6 * time.Minute}) {
+		t.Errorf("after a rate-limit error next poll ticks = %v, want [6m0s]", got)
+	}
+	c := content(h.m)
+	if !strings.Contains(c, "GitHub rate limit low — resuming 15:06") {
+		t.Errorf("View does not show the paced note:\n%s", c)
+	}
+	if !strings.Contains(c, "rate limited") {
+		t.Errorf("top line does not say the poll was rate limited:\n%s", c)
+	}
+	if strings.Contains(c, "poll failed") {
+		t.Errorf("View shows the raw error for a rate limit:\n%s", c)
+	}
+	if len(h.m.prs) != 1 {
+		t.Errorf("PRs = %d after a rate-limit error, want 1", len(h.m.prs))
+	}
+
+	h.m, ticks = settle(t, h.m, pollTickMsg{gen: h.m.pollGen})
+	if got := pollTicks(ticks); !reflect.DeepEqual(got, []time.Duration{12 * time.Minute}) {
+		t.Errorf("after a second rate-limit error next poll ticks = %v, want [12m0s]", got)
+	}
+
+	h.client.err = nil
+	h.m, ticks = settle(t, h.m, pollTickMsg{gen: h.m.pollGen})
+	if got := pollTicks(ticks); !reflect.DeepEqual(got, []time.Duration{3 * time.Minute}) {
+		t.Errorf("after a successful poll next poll ticks = %v, want [3m0s]", got)
+	}
+	if strings.Contains(content(h.m), "rate limit") {
+		t.Errorf("rate-limit note outlived a successful poll:\n%s", content(h.m))
 	}
 }
 

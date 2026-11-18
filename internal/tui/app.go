@@ -306,15 +306,22 @@ func (m Model) startPoll() (Model, tea.Cmd) {
 
 // finishPoll applies a poll's result to the current PRs, not the ones the
 // poll started from, so a hide made during the poll survives it. A failed
-// poll leaves the PRs alone. Either way the next poll is scheduled.
+// poll leaves the PRs alone; one GitHub refused for rate limiting backs off.
+// Either way the next poll is scheduled.
 func (m Model) finishPoll(res poll.Result) (Model, tea.Cmd) {
 	m.polling = false
 	m.quota.Observe(res.Rate)
 	var save tea.Cmd
-	if res.Err != nil {
+	switch {
+	case poll.IsRateLimited(res.Err):
+		// The paced note in the banner explains this; the raw error doesn't.
+		m.quota.ObserveRateLimited(poll.RateLimitReset(res.Err, m.now()))
+		m.lastErr = nil
+	case res.Err != nil:
 		m.lastErr = res.Err
-	} else {
+	default:
 		now := m.now()
+		m.quota.ObserveSuccess()
 		m.lastErr, m.lastPoll = nil, now
 		if m.pollIdle {
 			m.lastIdlePoll = m.pollStarted

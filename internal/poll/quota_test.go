@@ -63,3 +63,43 @@ func TestQuotaLowNeverPollsFasterThanBase(t *testing.T) {
 		t.Errorf("wait = %v with ResetAt in the past, want the base 3m0s", wait)
 	}
 }
+
+func TestQuotaRateLimitedUntilReset(t *testing.T) {
+	now := time.Date(2026, 11, 18, 15, 0, 0, 0, time.UTC)
+	var q Quota
+	q.Observe(github.RateLimit{Remaining: 4000, ResetAt: now.Add(time.Hour)})
+	q.ObserveRateLimited(now.Add(10 * time.Minute))
+	wait, reason := q.Next(3*time.Minute, now)
+	if wait != 10*time.Minute+5*time.Second || reason != "GitHub rate limit low — resuming 15:10" {
+		t.Errorf("Next = %v, %q; want 10m5s, resuming 15:10", wait, reason)
+	}
+}
+
+func TestQuotaRateLimitedBacksOffExponentially(t *testing.T) {
+	now := time.Date(2026, 11, 18, 15, 0, 0, 0, time.UTC)
+	base := 3 * time.Minute
+	var q Quota
+	for i, want := range []time.Duration{6 * time.Minute, 12 * time.Minute, 24 * time.Minute, 30 * time.Minute, 30 * time.Minute} {
+		q.ObserveRateLimited(time.Time{})
+		wait, reason := q.Next(base, now)
+		if wait != want {
+			t.Errorf("after %d rate-limit errors wait = %v, want %v", i+1, wait, want)
+		}
+		if !strings.HasPrefix(reason, "GitHub rate limit low — resuming ") {
+			t.Errorf("after %d rate-limit errors reason = %q", i+1, reason)
+		}
+	}
+	q.ObserveSuccess()
+	if wait, reason := q.Next(base, now); wait != base || reason != "" {
+		t.Errorf("after a success Next = %v, %q; want %v, \"\"", wait, reason, base)
+	}
+}
+
+func TestQuotaRateLimitedPastResetBacksOff(t *testing.T) {
+	now := time.Date(2026, 11, 18, 15, 0, 0, 0, time.UTC)
+	var q Quota
+	q.ObserveRateLimited(now.Add(-time.Minute))
+	if wait, _ := q.Next(3*time.Minute, now); wait != 6*time.Minute {
+		t.Errorf("wait = %v with a reset already past, want the 6m0s backoff", wait)
+	}
+}

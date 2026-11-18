@@ -35,6 +35,8 @@ func (m Model) pollStatus() string {
 	case m.lastErr != nil:
 		msg := strings.Join(strings.Fields(m.lastErr.Error()), " ")
 		return m.theme.Accent().Render(ansi.Truncate("poll failed: "+msg, maxErrWidth, "…"))
+	case m.quota.Limited():
+		return m.theme.Accent().Render("rate limited")
 	case m.client == nil:
 		return m.theme.Muted().Render("not polling")
 	case m.lastPoll.IsZero():
