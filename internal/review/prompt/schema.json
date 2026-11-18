@@ -1,7 +1,7 @@
 {
   "type": "object",
   "additionalProperties": false,
-  "required": ["findings", "ledger", "agreed_threads", "design_refs", "note", "understanding", "assumptions", "examined", "verdict", "verdict_reason"],
+  "required": ["findings", "ledger", "design_refs", "note", "understanding", "assumptions", "examined", "verdict", "verdict_reason"],
   "properties": {
     "findings": {
       "type": "array",
@@ -27,12 +27,10 @@
         "required": ["id", "status"],
         "properties": {
           "id": {"type": "string"},
-          "status": {"enum": ["addressed", "answered", "outstanding"]},
-          "reply": {"type": "string"}
+          "status": {"enum": ["addressed", "outstanding", "answered"]}
         }
       }
     },
-    "agreed_threads": {"type": "array", "items": {"type": "string"}},
     "design_refs": {"type": "string"},
     "note": {"type": "string"},
     "understanding": {"type": "string"},
@@ -50,19 +48,6 @@
     },
     "verdict": {"enum": ["approve", "comment", "request_changes"]},
     "verdict_reason": {"type": "string"},
-    "ci": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["check", "related", "reason"],
-        "properties": {
-          "check": {"type": "string"},
-          "related": {"type": "boolean"},
-          "reason": {"type": "string"}
-        }
-      }
-    },
     "examined": {
       "type": "object",
       "additionalProperties": false,
