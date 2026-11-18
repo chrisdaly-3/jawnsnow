@@ -79,12 +79,13 @@ func newGHClient() (github.Client, error) {
 func buildDeps(getenv func(string) string, newClient func() (github.Client, error)) (tui.Deps, func(), error) {
 	noop := func() {}
 	var banners []string
+	var configBanner string
 
 	path := config.Path()
 	cfg, warnings, err := config.Load(path)
 	switch {
 	case errors.Is(err, os.ErrNotExist):
-		banners = append(banners, fmt.Sprintf("No config at %s — using defaults. Run \"snow config default\" to start one.", tildePath(path, getenv("HOME"))))
+		configBanner = fmt.Sprintf("No config at %s — using defaults. Run \"snow config default\" to start one.", tildePath(path, getenv("HOME")))
 	case err != nil:
 		return tui.Deps{}, noop, err
 	default:
@@ -106,7 +107,7 @@ func buildDeps(getenv func(string) string, newClient func() (github.Client, erro
 		return tui.Deps{}, noop, err
 	}
 
-	deps := tui.Deps{Config: cfg, Theme: th, Store: st, Now: time.Now}
+	deps := tui.Deps{Config: cfg, Theme: th, Store: st, ConfigBanner: configBanner, Now: time.Now}
 	var watcher *config.Watcher
 	cleanup := func() {
 		if watcher != nil {

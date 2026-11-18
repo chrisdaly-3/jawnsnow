@@ -76,8 +76,9 @@ func TestStartupMissingConfigUsesDefaults(t *testing.T) {
 	if deps.Config.Mode.Default != config.Defaults().Mode.Default || len(deps.Config.Feeds) != len(config.Defaults().Feeds) {
 		t.Fatalf("config is not the defaults: %+v", deps.Config)
 	}
-	if len(deps.Banners) == 0 || !strings.Contains(deps.Banners[0], "No config at") {
-		t.Fatalf("Banners[0] should say there is no config, got %q", deps.Banners)
+	// The TUI clears this banner once a config file loads.
+	if !strings.Contains(deps.ConfigBanner, "No config at") || hasBanner(deps.Banners, "No config at") {
+		t.Fatalf("ConfigBanner should say there is no config, got %q (banners %q)", deps.ConfigBanner, deps.Banners)
 	}
 	if !hasBanner(deps.Banners, `gh is not logged in — run "gh auth login"; polling is off`) {
 		t.Fatalf("missing gh banner in %q", deps.Banners)
@@ -98,8 +99,8 @@ func TestStartupWithConfigWatches(t *testing.T) {
 	if deps.Client == nil || deps.Reloads == nil {
 		t.Fatalf("client=%v reloads=%v", deps.Client, deps.Reloads)
 	}
-	if hasBanner(deps.Banners, "No config at") {
-		t.Fatalf("unexpected banners %q", deps.Banners)
+	if deps.ConfigBanner != "" || hasBanner(deps.Banners, "No config at") {
+		t.Fatalf("unexpected banners %q %q", deps.ConfigBanner, deps.Banners)
 	}
 }
 

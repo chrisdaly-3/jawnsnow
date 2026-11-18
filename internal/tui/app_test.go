@@ -756,6 +756,24 @@ func TestReloadReplacesConfig(t *testing.T) {
 	}
 }
 
+func TestNoConfigBannerClearsOnFirstGoodReload(t *testing.T) {
+	st, err := store.Open(t.TempDir() + "/db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	th, _ := theme.New(config.ThemeConfig{})
+	m := New(Deps{Config: config.Defaults(), Theme: th, Store: st, ConfigBanner: "No config at ~/.config/jawnsnow/config.toml", Now: func() time.Time { return t0 }})
+	if !strings.Contains(content(m), "No config at") {
+		t.Fatalf("the no-config banner is missing:\n%s", content(m))
+	}
+	m, _ = settle(t, m, reloadMsg{Err: errors.New("parse config.toml: bad key")})
+	m, _ = settle(t, m, reloadMsg{Config: config.Defaults()})
+	if strings.Contains(content(m), "No config at") {
+		t.Errorf("the no-config banner outlived a good reload:\n%s", content(m))
+	}
+}
+
 func TestReloadsAreListenedFor(t *testing.T) {
 	ch := make(chan config.Reload, 1)
 	ch <- config.Reload{Err: errors.New("boom")}

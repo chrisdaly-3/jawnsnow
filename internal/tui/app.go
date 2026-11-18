@@ -59,8 +59,11 @@ type Deps struct {
 	Store   *store.Store  // required
 	Viewer  string        // the gh user; when empty the model looks it up
 	Banners []string
-	Reloads <-chan config.Reload
-	Now     func() time.Time
+	// ConfigBanner is a note about the config file, cleared by the first
+	// good reload.
+	ConfigBanner string
+	Reloads      <-chan config.Reload
+	Now          func() time.Time
 }
 
 type (
@@ -165,7 +168,7 @@ func New(d Deps) Model {
 	}
 	return Model{
 		cfg: d.Config, theme: d.Theme, client: d.Client, store: d.Store, viewer: d.Viewer,
-		banners: d.Banners, reloads: d.Reloads, now: now, tick: tea.Tick,
+		banners: d.Banners, configBanner: d.ConfigBanner, reloads: d.Reloads, now: now, tick: tea.Tick,
 		open: func(url string) error { return browser.New("", io.Discard, io.Discard).Browse(url) },
 		prs:  map[string]tracker.Tracked{}, wall: newWall(), done: newDone(), dirty: map[string]bool{}, deleted: map[string]bool{},
 		mode: mode, width: 80, height: 24,
