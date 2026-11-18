@@ -52,6 +52,7 @@ type Snapshot struct {
 	IsDraft                          bool
 	HeadOID, BaseRef, ReviewDecision string
 	HeadCommittedAt                  time.Time
+	RollupState                      string // the head's combined check state; "" with no checks
 	Additions, Deletions             int
 	Labels                           []string
 	UpdatedAt, MergedAt, ClosedAt    time.Time
@@ -59,6 +60,25 @@ type Snapshot struct {
 	Reviews                          []Review
 	Comments                         []Comment
 	Commits                          []Commit // oldest to newest
+}
+
+// Fingerprint is the little a cheap query can say about a PR: enough to tell
+// whether it changed since its last Snapshot.
+type Fingerprint struct {
+	ID          string
+	UpdatedAt   time.Time
+	HeadOID     string
+	RollupState string
+}
+
+// Same reports whether f and o describe the same PR at the same point.
+func (f Fingerprint) Same(o Fingerprint) bool {
+	return f.ID == o.ID && f.UpdatedAt.Equal(o.UpdatedAt) && f.HeadOID == o.HeadOID && f.RollupState == o.RollupState
+}
+
+// Fingerprint is the snapshot's own fingerprint, to compare with a fresh one.
+func (s Snapshot) Fingerprint() Fingerprint {
+	return Fingerprint{ID: s.ID, UpdatedAt: s.UpdatedAt, HeadOID: s.HeadOID, RollupState: s.RollupState}
 }
 
 type RateLimit struct {

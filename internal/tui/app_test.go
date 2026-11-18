@@ -17,6 +17,7 @@ import (
 
 	"github.com/chrisdaly-3/jawnsnow/internal/config"
 	"github.com/chrisdaly-3/jawnsnow/internal/github"
+	"github.com/chrisdaly-3/jawnsnow/internal/status"
 	"github.com/chrisdaly-3/jawnsnow/internal/store"
 	"github.com/chrisdaly-3/jawnsnow/internal/theme"
 	"github.com/chrisdaly-3/jawnsnow/internal/tracker"
@@ -24,25 +25,41 @@ import (
 
 var t0 = time.Date(2026, 11, 18, 15, 0, 0, 0, time.UTC)
 
-// fakeClient serves every feed search with found and every detail request
-// from snaps. It records each Details call.
+// fakeClient serves every feed search with found and every fingerprint and
+// detail request from snaps. It records each Fingerprints and Details call.
 type fakeClient struct {
-	found  []string
-	snaps  map[string]github.Snapshot
-	rate   github.RateLimit
-	err    error
-	polls  int
-	detail [][]string
+	found   []string
+	snaps   map[string]github.Snapshot
+	rate    github.RateLimit
+	err     error
+	polls   int
+	checked [][]string
+	detail  [][]string
 }
 
 func (f *fakeClient) Viewer(context.Context) (string, error) { return "me", nil }
 
-func (f *fakeClient) SearchIDs(context.Context, string) ([]string, github.RateLimit, error) {
+func (f *fakeClient) Search(context.Context, string) ([]github.Fingerprint, github.RateLimit, error) {
 	f.polls++
 	if f.err != nil {
 		return nil, github.RateLimit{}, f.err
 	}
-	return f.found, f.rate, nil
+	var out []github.Fingerprint
+	for _, id := range f.found {
+		out = append(out, f.snaps[id].Fingerprint())
+	}
+	return out, f.rate, nil
+}
+
+func (f *fakeClient) Fingerprints(_ context.Context, ids []string) ([]github.Fingerprint, github.RateLimit, error) {
+	f.checked = append(f.checked, slices.Clone(ids))
+	var out []github.Fingerprint
+	for _, id := range ids {
+		if s, ok := f.snaps[id]; ok {
+			out = append(out, s.Fingerprint())
+		}
+	}
+	return out, f.rate, nil
 }
 
 func (f *fakeClient) Details(_ context.Context, ids []string) ([]github.Snapshot, github.RateLimit, error) {
@@ -282,7 +299,7 @@ func TestFailedFeedSearchStillUpdatesTrackedPRs(t *testing.T) {
 	h := newHarness(t, opts{}, wallPR("1"))
 	h.client.err = io.EOF
 	s1 := snap("1")
-	s1.Title = "renamed"
+	s1.Title, s1.UpdatedAt = "renamed", t0
 	h.client.snaps["1"] = s1
 	h.finishPoll(t)
 	if got := h.m.prs["1"].PR.Title; got != "renamed" {
@@ -476,7 +493,41 @@ func TestDetailIDsIncludeWaitingOnlyWhenIdleDue(t *testing.T) {
 	h.press(t, "R")
 
 	want := [][]string{{"1", "2"}, {"1"}, {"1", "2"}}
-	if !reflect.DeepEqual(h.client.detail, want) {
+	if !reflect.DeepEqual(h.client.checked, want) {
+		t.Errorf("Fingerprints calls = %v, want %v", h.client.checked, want)
+	}
+}
+
+func TestPollFetchesDetailOnlyForChangedPRs(t *testing.T) {
+	h := newHarness(t, opts{}, wallPR("1"), wallPR("2"))
+	moved := snap("2")
+	moved.HeadOID, moved.UpdatedAt = "head-2b", t0
+	h.client.snaps["2"] = moved
+	h.client.snaps["3"] = snap("3")
+	h.client.found = []string{"3"}
+	h.finishPoll(t)
+	if want := [][]string{{"2", "3"}}; !reflect.DeepEqual(h.client.detail, want) {
+		t.Errorf("Details calls = %v, want %v: the unchanged PR 1 needs none", h.client.detail, want)
+	}
+	if h.m.prs["2"].PR.HeadOID != "head-2b" {
+		t.Errorf("PR 2 head = %q, want the fresh head", h.m.prs["2"].PR.HeadOID)
+	}
+
+	h.client.detail = nil
+	h.press(t, "R")
+	if len(h.client.detail) != 0 {
+		t.Errorf("Details calls = %v after a poll with no changes, want none", h.client.detail)
+	}
+}
+
+// The rollup state can stay PENDING while the required checks finish, if an
+// optional check is still running, so a PR waiting on CI is always fetched.
+func TestPollAlwaysFetchesPRsWaitingOnCI(t *testing.T) {
+	waiting := wallPR("1")
+	waiting.Status = status.Result{Status: status.CIWaiting, CI: status.CIPending, Spinning: true}
+	h := newHarness(t, opts{}, waiting, wallPR("2"))
+	h.finishPoll(t)
+	if want := [][]string{{"1"}}; !reflect.DeepEqual(h.client.detail, want) {
 		t.Errorf("Details calls = %v, want %v", h.client.detail, want)
 	}
 }

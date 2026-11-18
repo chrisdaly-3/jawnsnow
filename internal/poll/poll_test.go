@@ -16,21 +16,32 @@ import (
 	"github.com/chrisdaly-3/jawnsnow/internal/github"
 )
 
-// fakeClient answers SearchIDs by matching the feed query as a prefix of the
-// search string FeedQuery builds.
+// fakeClient answers Search by matching the feed query as a prefix of the
+// search string FeedQuery builds. Every PR's fingerprint comes from fps, or
+// is just its ID.
 type fakeClient struct {
 	search     map[string][]string
 	searchRate map[string]github.RateLimit
 	feedErr    map[string]error // by feed query
+	fps        map[string]github.Fingerprint
+	fpErr      error
 	detailRate github.RateLimit
 	detailErr  error
 
+	fpCalls     [][]string
 	detailCalls [][]string
 }
 
 func (f *fakeClient) Viewer(context.Context) (string, error) { return "me", nil }
 
-func (f *fakeClient) SearchIDs(_ context.Context, q string) ([]string, github.RateLimit, error) {
+func (f *fakeClient) fingerprint(id string) github.Fingerprint {
+	if fp, ok := f.fps[id]; ok {
+		return fp
+	}
+	return github.Fingerprint{ID: id}
+}
+
+func (f *fakeClient) Search(_ context.Context, q string) ([]github.Fingerprint, github.RateLimit, error) {
 	for prefix, err := range f.feedErr {
 		if strings.HasPrefix(q, prefix+" ") {
 			return nil, github.RateLimit{}, err
@@ -38,10 +49,28 @@ func (f *fakeClient) SearchIDs(_ context.Context, q string) ([]string, github.Ra
 	}
 	for prefix, ids := range f.search {
 		if strings.HasPrefix(q, prefix+" ") {
-			return ids, f.searchRate[prefix], nil
+			var out []github.Fingerprint
+			for _, id := range ids {
+				out = append(out, f.fingerprint(id))
+			}
+			return out, f.searchRate[prefix], nil
 		}
 	}
 	return nil, github.RateLimit{}, nil
+}
+
+func (f *fakeClient) Fingerprints(_ context.Context, ids []string) ([]github.Fingerprint, github.RateLimit, error) {
+	f.fpCalls = append(f.fpCalls, slices.Clone(ids))
+	if f.fpErr != nil {
+		return nil, github.RateLimit{}, f.fpErr
+	}
+	var out []github.Fingerprint
+	for _, id := range ids {
+		if id != "gone" {
+			out = append(out, f.fingerprint(id))
+		}
+	}
+	return out, github.RateLimit{}, nil
 }
 
 func (f *fakeClient) Details(_ context.Context, ids []string) ([]github.Snapshot, github.RateLimit, error) {
@@ -161,5 +190,100 @@ func TestFetchReturnsDetailError(t *testing.T) {
 	res := Fetch(context.Background(), c, Request{DetailIDs: []string{"4"}, Now: now})
 	if !errors.Is(res.Err, io.ErrUnexpectedEOF) {
 		t.Fatalf("Err = %v, want io.ErrUnexpectedEOF", res.Err)
+	}
+}
+
+var (
+	fpAt      = time.Date(2026, 11, 18, 14, 0, 0, 0, time.UTC)
+	unchanged = github.Fingerprint{ID: "1", UpdatedAt: fpAt, HeadOID: "h1", RollupState: "SUCCESS"}
+)
+
+func TestFetchSkipsDetailForUnchangedPRs(t *testing.T) {
+	c := &fakeClient{
+		search: map[string][]string{feedA.Query: {"1"}},
+		fps:    map[string]github.Fingerprint{"1": unchanged, "2": {ID: "2", HeadOID: "h2"}},
+	}
+	res := Fetch(context.Background(), c, Request{
+		Feeds: []config.Feed{feedA}, Now: now,
+		Known: map[string]github.Fingerprint{"1": unchanged, "2": {ID: "2", HeadOID: "h2"}},
+		Watch: []string{"1", "2"},
+	})
+	if res.Err != nil {
+		t.Fatalf("Err = %v", res.Err)
+	}
+	if len(c.detailCalls) != 0 {
+		t.Errorf("Details calls = %v, want none for unchanged PRs", c.detailCalls)
+	}
+	// 1 came back from the search, so only 2 needs a lookup.
+	if !reflect.DeepEqual(c.fpCalls, [][]string{{"2"}}) {
+		t.Errorf("Fingerprints calls = %v, want [[2]]", c.fpCalls)
+	}
+}
+
+func TestFetchDetailsChangedAndNewPRs(t *testing.T) {
+	for name, fresh := range map[string]github.Fingerprint{
+		"rollup":    {ID: "1", UpdatedAt: fpAt, HeadOID: "h1", RollupState: "FAILURE"},
+		"updatedAt": {ID: "1", UpdatedAt: fpAt.Add(time.Minute), HeadOID: "h1", RollupState: "SUCCESS"},
+		"head":      {ID: "1", UpdatedAt: fpAt, HeadOID: "h2", RollupState: "SUCCESS"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := &fakeClient{
+				search: map[string][]string{feedA.Query: {"1", "new"}},
+				fps:    map[string]github.Fingerprint{"1": fresh, "3": {ID: "3"}},
+			}
+			res := Fetch(context.Background(), c, Request{
+				Feeds: []config.Feed{feedA}, Now: now,
+				Known: map[string]github.Fingerprint{"1": unchanged, "3": {ID: "3"}},
+				Watch: []string{"1", "3"},
+			})
+			if res.Err != nil {
+				t.Fatalf("Err = %v", res.Err)
+			}
+			if !reflect.DeepEqual(c.detailCalls, [][]string{{"1", "new"}}) {
+				t.Errorf("Details calls = %v, want [[1 new]]", c.detailCalls)
+			}
+		})
+	}
+}
+
+func TestFetchDetailsWatchedPRThatChanged(t *testing.T) {
+	moved := unchanged
+	moved.HeadOID = "h9"
+	c := &fakeClient{fps: map[string]github.Fingerprint{"1": moved}}
+	res := Fetch(context.Background(), c, Request{
+		Feeds: []config.Feed{feedA}, Now: now,
+		Known: map[string]github.Fingerprint{"1": unchanged, "gone": {ID: "gone"}},
+		Watch: []string{"1", "gone"},
+	})
+	if res.Err != nil {
+		t.Fatalf("Err = %v", res.Err)
+	}
+	if !reflect.DeepEqual(c.fpCalls, [][]string{{"1", "gone"}}) {
+		t.Errorf("Fingerprints calls = %v, want [[1 gone]]", c.fpCalls)
+	}
+	// A PR that no longer resolves gets no detail call and keeps its state.
+	if !reflect.DeepEqual(c.detailCalls, [][]string{{"1"}}) {
+		t.Errorf("Details calls = %v, want [[1]]", c.detailCalls)
+	}
+}
+
+func TestFetchDetailIDsAreAlwaysFetched(t *testing.T) {
+	c := &fakeClient{fps: map[string]github.Fingerprint{"1": unchanged}}
+	Fetch(context.Background(), c, Request{
+		Now: now, Known: map[string]github.Fingerprint{"1": unchanged}, Watch: []string{"1"}, DetailIDs: []string{"1"},
+	})
+	if !reflect.DeepEqual(c.detailCalls, [][]string{{"1"}}) {
+		t.Errorf("Details calls = %v, want [[1]] for a forced refresh", c.detailCalls)
+	}
+}
+
+func TestFetchReturnsFingerprintError(t *testing.T) {
+	c := &fakeClient{fpErr: io.ErrUnexpectedEOF}
+	res := Fetch(context.Background(), c, Request{Now: now, Watch: []string{"1"}})
+	if !errors.Is(res.Err, io.ErrUnexpectedEOF) {
+		t.Fatalf("Err = %v, want io.ErrUnexpectedEOF", res.Err)
+	}
+	if len(c.detailCalls) != 0 {
+		t.Errorf("Details called after a failed lookup")
 	}
 }

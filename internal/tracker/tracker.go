@@ -183,8 +183,9 @@ func Unhide(t Tracked, now time.Time) Tracked {
 	return t
 }
 
-// NeedsDetail reports whether the PR needs a fresh detail fetch this round:
-// wall PRs always, waiting PRs when the idle poll is due, done PRs never.
+// NeedsDetail reports whether the PR is due a check this round: wall PRs
+// always, waiting PRs when the idle poll is due, done PRs never. A check
+// fetches full detail only if the PR changed.
 func NeedsDetail(t Tracked, idleDue bool) bool {
 	switch t.Place {
 	case PlaceWall:

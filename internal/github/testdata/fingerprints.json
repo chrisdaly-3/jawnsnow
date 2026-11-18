@@ -1,0 +1,27 @@
+{
+ "nodes": [
+  {
+   "id": "PR_a",
+   "updatedAt": "2026-11-18T10:00:00Z",
+   "headRefOid": "a1",
+   "commits": {
+    "nodes": [
+     {
+      "commit": {
+       "statusCheckRollup": {
+        "state": "SUCCESS"
+       }
+      }
+     }
+    ]
+   }
+  },
+  null,
+  {}
+ ],
+ "rateLimit": {
+  "remaining": 4800,
+  "cost": 1,
+  "resetAt": "2026-11-18T13:00:00Z"
+ }
+}

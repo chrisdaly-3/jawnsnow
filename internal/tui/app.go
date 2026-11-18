@@ -18,6 +18,7 @@ import (
 	"github.com/chrisdaly-3/jawnsnow/internal/config"
 	"github.com/chrisdaly-3/jawnsnow/internal/github"
 	"github.com/chrisdaly-3/jawnsnow/internal/poll"
+	"github.com/chrisdaly-3/jawnsnow/internal/status"
 	"github.com/chrisdaly-3/jawnsnow/internal/store"
 	"github.com/chrisdaly-3/jawnsnow/internal/theme"
 	"github.com/chrisdaly-3/jawnsnow/internal/tracker"
@@ -399,14 +400,23 @@ func (m Model) startPoll() (Model, tea.Cmd) {
 	}
 	now := m.now()
 	idleDue := m.lastIdlePoll.IsZero() || now.Sub(m.lastIdlePoll) >= m.cfg.GitHub.IdlePollInterval.Duration
-	var ids []string
+	known := make(map[string]github.Fingerprint, len(m.prs))
+	var watch, force []string
 	for id, t := range m.prs {
-		if tracker.NeedsDetail(t, idleDue) {
-			ids = append(ids, id)
+		known[id] = t.PR.Fingerprint()
+		if !tracker.NeedsDetail(t, idleDue) {
+			continue
+		}
+		watch = append(watch, id)
+		// The rollup stays PENDING while an optional check runs, so it can't
+		// tell when the required checks finish. Fetch these every poll.
+		if t.Status.CI == status.CIPending {
+			force = append(force, id)
 		}
 	}
-	slices.Sort(ids)
-	req := poll.Request{Feeds: slices.Clone(m.cfg.Feeds), DetailIDs: ids, Now: now}
+	slices.Sort(watch)
+	slices.Sort(force)
+	req := poll.Request{Feeds: slices.Clone(m.cfg.Feeds), Known: known, Watch: watch, DetailIDs: force, Now: now}
 	client := m.client
 	m.polling, m.pollStarted, m.pollIdle = true, now, idleDue
 	return m, func() tea.Msg {

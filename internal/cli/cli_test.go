@@ -30,7 +30,10 @@ type fakeClient struct {
 }
 
 func (f fakeClient) Viewer(context.Context) (string, error) { return f.viewer, f.err }
-func (fakeClient) SearchIDs(context.Context, string) ([]string, github.RateLimit, error) {
+func (fakeClient) Search(context.Context, string) ([]github.Fingerprint, github.RateLimit, error) {
+	return nil, github.RateLimit{}, nil
+}
+func (fakeClient) Fingerprints(context.Context, []string) ([]github.Fingerprint, github.RateLimit, error) {
 	return nil, github.RateLimit{}, nil
 }
 func (fakeClient) Details(context.Context, []string) ([]github.Snapshot, github.RateLimit, error) {

@@ -10,15 +10,22 @@ import (
 )
 
 const (
-	searchPageSize = 50
-	searchMaxPages = 2
-	detailBatch    = 20
+	searchPageSize   = 50
+	searchMaxPages   = 2
+	fingerprintBatch = 100 // the most IDs nodes(ids:) takes
+	detailBatch      = 20
 )
 
 type Client interface {
 	Viewer(ctx context.Context) (string, error)
-	SearchIDs(ctx context.Context, query string) ([]string, RateLimit, error) // up to 100 IDs, 2 pages of 50
-	Details(ctx context.Context, ids []string) ([]Snapshot, RateLimit, error) // batches of 20 aliases
+	// Search returns the fingerprints of up to 100 PRs, 2 pages of 50.
+	Search(ctx context.Context, query string) ([]Fingerprint, RateLimit, error)
+	// Fingerprints looks PRs up by node ID, 100 to a query. A PR that no
+	// longer resolves is left out.
+	Fingerprints(ctx context.Context, ids []string) ([]Fingerprint, RateLimit, error)
+	// Details fetches full Snapshots in batches of aliases. A PR that no
+	// longer resolves is left out.
+	Details(ctx context.Context, ids []string) ([]Snapshot, RateLimit, error)
 }
 
 // Doer is the slice of go-gh's GraphQLClient the client uses.
@@ -90,8 +97,8 @@ func (c *client) Viewer(ctx context.Context) (string, error) {
 	return v.Login, nil
 }
 
-func (c *client) SearchIDs(ctx context.Context, query string) ([]string, RateLimit, error) {
-	var ids []string
+func (c *client) Search(ctx context.Context, query string) ([]Fingerprint, RateLimit, error) {
+	var fps []Fingerprint
 	var total RateLimit
 	var after any
 	for range searchMaxPages {
@@ -101,17 +108,15 @@ func (c *client) SearchIDs(ctx context.Context, query string) ([]string, RateLim
 		}
 		total.add(rl)
 		var s struct {
-			PageInfo pageInfo `json:"pageInfo"`
-			Nodes    []struct {
-				ID string `json:"id"`
-			} `json:"nodes"`
+			PageInfo pageInfo           `json:"pageInfo"`
+			Nodes    []*fingerprintNode `json:"nodes"`
 		}
 		if err := json.Unmarshal(raw["search"], &s); err != nil {
 			return nil, total, err
 		}
 		for _, n := range s.Nodes {
-			if n.ID != "" { // a non-PR search hit has no id
-				ids = append(ids, n.ID)
+			if f, ok := n.fingerprint(); ok {
+				fps = append(fps, f)
 			}
 		}
 		if !s.PageInfo.HasNextPage {
@@ -119,7 +124,32 @@ func (c *client) SearchIDs(ctx context.Context, query string) ([]string, RateLim
 		}
 		after = s.PageInfo.EndCursor
 	}
-	return ids, total, nil
+	return fps, total, nil
+}
+
+func (c *client) Fingerprints(ctx context.Context, ids []string) ([]Fingerprint, RateLimit, error) {
+	var fps []Fingerprint
+	var total RateLimit
+	// A node that no longer resolves is null, with an error at its index.
+	inNodes := func(path []any) bool { return path[0] == "nodes" }
+	for start := 0; start < len(ids); start += fingerprintBatch {
+		batch := ids[start:min(start+fingerprintBatch, len(ids))]
+		raw, rl, err := c.do(ctx, fingerprintsQuery, map[string]any{"ids": batch}, inNodes)
+		if err != nil {
+			return nil, total, err
+		}
+		total.add(rl)
+		var nodes []*fingerprintNode
+		if err := json.Unmarshal(raw["nodes"], &nodes); err != nil {
+			return nil, total, err
+		}
+		for _, n := range nodes {
+			if f, ok := n.fingerprint(); ok {
+				fps = append(fps, f)
+			}
+		}
+	}
+	return fps, total, nil
 }
 
 func (c *client) Details(ctx context.Context, ids []string) ([]Snapshot, RateLimit, error) {

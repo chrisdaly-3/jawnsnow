@@ -40,3 +40,19 @@ func TestDetailQueryAliasesEachPR(t *testing.T) {
 		t.Error("DetailQuery(2) has a third alias")
 	}
 }
+
+func TestFingerprintQueriesAreLight(t *testing.T) {
+	for name, q := range map[string]string{"search": searchQuery, "nodes": fingerprintsQuery} {
+		for _, want := range []string{"updatedAt", "headRefOid", "statusCheckRollup{state}", "rateLimit"} {
+			if !strings.Contains(q, want) {
+				t.Errorf("%s query missing %q", name, want)
+			}
+		}
+		if strings.Contains(q, "isRequired") || strings.Contains(q, "reviews") {
+			t.Errorf("%s query fetches detail:\n%s", name, q)
+		}
+	}
+	if !strings.Contains(fingerprintsQuery, "nodes(ids: $ids)") {
+		t.Errorf("fingerprints query does not batch by node IDs:\n%s", fingerprintsQuery)
+	}
+}

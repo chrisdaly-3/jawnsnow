@@ -12,11 +12,20 @@ const rateLimitFields = `rateLimit{remaining cost resetAt}`
 
 const viewerQuery = `query Viewer { viewer { login } ` + rateLimitFields + ` }`
 
+// fingerprintFields is the cheap selection that tells whether a PR changed:
+// no check contexts, so no isRequired.
+const fingerprintFields = `... on PullRequest { id updatedAt headRefOid commits(last:1){nodes{commit{statusCheckRollup{state}}}} }`
+
 const searchQuery = `query Search($q: String!, $after: String) {
   search(query: $q, type: ISSUE, first: 50, after: $after) {
     pageInfo { hasNextPage endCursor }
-    nodes { ... on PullRequest { id } }
+    nodes { ` + fingerprintFields + ` }
   }
+  ` + rateLimitFields + `
+}`
+
+const fingerprintsQuery = `query Fingerprints($ids: [ID!]!) {
+  nodes(ids: $ids) { ` + fingerprintFields + ` }
   ` + rateLimitFields + `
 }`
 
@@ -30,7 +39,7 @@ const checkContextNodes = `pageInfo{hasNextPage endCursor} nodes{__typename ` +
 // request ID, which rules out a shared fragment. %[1]d is the alias index.
 const prSelection = `id number title url state isDraft updatedAt mergedAt closedAt additions deletions baseRefName headRefOid reviewDecision
     author{login} repository{nameWithOwner} labels(first:20){nodes{name}}
-    head: commits(last:1){nodes{commit{oid committedDate statusCheckRollup{contexts(first:100){` + checkContextNodes + `}}}}}
+    head: commits(last:1){nodes{commit{oid committedDate statusCheckRollup{state contexts(first:100){` + checkContextNodes + `}}}}}
     commits(last:100){nodes{commit{oid parents(first:2){nodes{oid}}}}}
     reviews(last:50){nodes{author{login} state body submittedAt commit{oid}}}
     comments(last:20){nodes{author{login} createdAt}}`

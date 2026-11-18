@@ -75,6 +75,7 @@ type prNode struct {
 				OID               string    `json:"oid"`
 				CommittedDate     time.Time `json:"committedDate"`
 				StatusCheckRollup *struct {
+					State    string       `json:"state"`
 					Contexts contextsPage `json:"contexts"`
 				} `json:"statusCheckRollup"`
 			} `json:"commit"`
@@ -156,11 +157,40 @@ func parsePRPage(raw json.RawMessage) (Snapshot, pageInfo, error) {
 		head := n.Head.Nodes[0].Commit
 		s.HeadCommittedAt = head.CommittedDate
 		if head.StatusCheckRollup != nil {
+			s.RollupState = head.StatusCheckRollup.State
 			s.Checks = checksFrom(head.StatusCheckRollup.Contexts.Nodes)
 			next = head.StatusCheckRollup.Contexts.PageInfo
 		}
 	}
 	return s, next, nil
+}
+
+type fingerprintNode struct {
+	ID         string    `json:"id"`
+	UpdatedAt  time.Time `json:"updatedAt"`
+	HeadRefOid string    `json:"headRefOid"`
+	Commits    struct {
+		Nodes []struct {
+			Commit struct {
+				StatusCheckRollup *struct {
+					State string `json:"state"`
+				} `json:"statusCheckRollup"`
+			} `json:"commit"`
+		} `json:"nodes"`
+	} `json:"commits"`
+}
+
+// fingerprint is the node's Fingerprint, and false for a node that isn't a
+// pull request (a null, or a search hit of another type).
+func (n *fingerprintNode) fingerprint() (Fingerprint, bool) {
+	if n == nil || n.ID == "" {
+		return Fingerprint{}, false
+	}
+	f := Fingerprint{ID: n.ID, UpdatedAt: n.UpdatedAt, HeadOID: n.HeadRefOid}
+	if len(n.Commits.Nodes) > 0 && n.Commits.Nodes[0].Commit.StatusCheckRollup != nil {
+		f.RollupState = n.Commits.Nodes[0].Commit.StatusCheckRollup.State
+	}
+	return f, true
 }
 
 // parseChecksPage decodes the follow-up query's page of check contexts.

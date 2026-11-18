@@ -6,6 +6,7 @@ import (
 	"errors"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/cli/go-gh/v2/pkg/api"
 )
@@ -40,14 +41,17 @@ func gqlErr(typ string, path ...any) *api.GraphQLError {
 	return &api.GraphQLError{Errors: []api.GraphQLErrorItem{{Type: typ, Message: typ, Path: path}}}
 }
 
-func TestSearchIDsPaginatesTo100(t *testing.T) {
+func TestSearchPaginatesTo100(t *testing.T) {
 	pages := [][]byte{fixture(t, "search_page1.json"), fixture(t, "search_page2.json")}
 	d := &fakeDoer{respond: func(n int, _ string, _ map[string]any) []byte { return pages[n] }}
-	ids, rl, err := NewClient(d).SearchIDs(context.Background(), "is:pr")
+	fps, rl, err := NewClient(d).Search(context.Background(), "is:pr")
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertEq(t, len(ids), 53)
+	assertEq(t, len(fps), 53)
+	assertEq(t, fps[0], Fingerprint{ID: "PR_000", UpdatedAt: time.Date(2026, 11, 18, 10, 0, 0, 0, time.UTC), HeadOID: "c3", RollupState: "PENDING"})
+	assertEq(t, fps[1].RollupState, "") // no checks
+	assertEq(t, fps[52].ID, "PR_052")
 	assertEq(t, len(d.calls), 2)
 	assertEq(t, d.calls[0].vars["q"].(string), "is:pr")
 	if d.calls[0].vars["after"] != nil {
@@ -151,5 +155,72 @@ func TestDetailsFailsWhenChecksPageFails(t *testing.T) {
 	}
 	if _, _, err := NewClient(d).Details(context.Background(), []string{"PR_p0", "PR_p1"}); err == nil {
 		t.Fatal("Details succeeded although a checks page failed")
+	}
+}
+
+func TestFingerprintsBatchesNodesAndSkipsMissing(t *testing.T) {
+	d := &fakeDoer{
+		respond: func(int, string, map[string]any) []byte { return fixture(t, "fingerprints.json") },
+		fail:    func(int, string, map[string]any) error { return gqlErr("NOT_FOUND", "nodes", 1.0) },
+	}
+	ids := make([]string, 150)
+	for i := range ids {
+		ids[i] = "PR_" + string(rune('a'+i%26)) + string(rune('a'+i/26))
+	}
+	fps, rl, err := NewClient(d).Fingerprints(context.Background(), ids)
+	if err != nil {
+		t.Fatalf("Fingerprints error = %v, want the missing node skipped", err)
+	}
+	var sizes []int
+	for _, c := range d.calls {
+		sizes = append(sizes, len(c.vars["ids"].([]string)))
+	}
+	if !slices.Equal(sizes, []int{100, 50}) {
+		t.Errorf("ids per call = %v, want [100 50]", sizes)
+	}
+	// Each call answers with one PR, a null and a non-PR node.
+	if len(fps) != 2 || fps[0].ID != "PR_a" || fps[0].RollupState != "SUCCESS" || fps[0].HeadOID != "a1" {
+		t.Errorf("fingerprints = %+v, want PR_a from each call", fps)
+	}
+	assertEq(t, rl.Cost, 2)
+}
+
+func TestFingerprintsFailsOnOtherErrors(t *testing.T) {
+	d := &fakeDoer{
+		respond: func(int, string, map[string]any) []byte { return fixture(t, "fingerprints.json") },
+		fail:    func(int, string, map[string]any) error { return gqlErr("RATE_LIMITED") },
+	}
+	if _, _, err := NewClient(d).Fingerprints(context.Background(), []string{"PR_a"}); err == nil {
+		t.Fatal("Fingerprints succeeded despite a rate-limit error")
+	}
+}
+
+func TestSnapshotFingerprint(t *testing.T) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(fixture(t, "detail.json"), &raw); err != nil {
+		t.Fatal(err)
+	}
+	snap, err := parsePR(raw["p0"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := Fingerprint{ID: "PR_p0", UpdatedAt: time.Date(2026, 11, 18, 10, 0, 0, 0, time.UTC), HeadOID: "c3", RollupState: "PENDING"}
+	if got := snap.Fingerprint(); !got.Same(want) {
+		t.Errorf("Fingerprint() = %+v, want %+v", got, want)
+	}
+	for name, change := range map[string]func(*Fingerprint){
+		"updatedAt": func(f *Fingerprint) { f.UpdatedAt = f.UpdatedAt.Add(time.Second) },
+		"rollup":    func(f *Fingerprint) { f.RollupState = "SUCCESS" },
+		"head":      func(f *Fingerprint) { f.HeadOID = "c4" },
+	} {
+		moved := want
+		change(&moved)
+		if moved.Same(want) {
+			t.Errorf("Same ignores a changed %s", name)
+		}
+	}
+	// The same instant in another zone, as after a round trip through the store.
+	if !want.Same(Fingerprint{ID: "PR_p0", UpdatedAt: want.UpdatedAt.In(time.FixedZone("x", 3600)), HeadOID: "c3", RollupState: "PENDING"}) {
+		t.Error("Same compares time zones, not instants")
 	}
 }

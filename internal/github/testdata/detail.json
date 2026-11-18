@@ -58,7 +58,8 @@
           "isRequired": false
          }
         ]
-       }
+       },
+       "state": "PENDING"
       }
      }
     }
