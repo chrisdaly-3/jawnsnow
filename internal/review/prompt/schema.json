@@ -1,0 +1,78 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["findings", "ledger", "agreed_threads", "design_refs", "note", "understanding", "assumptions", "examined", "verdict", "verdict_reason"],
+  "properties": {
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "line", "blocking", "body"],
+        "properties": {
+          "path": {"type": "string"},
+          "line": {"type": "integer", "minimum": 1},
+          "start_line": {"type": "integer", "minimum": 1},
+          "blocking": {"type": "boolean"},
+          "body": {"type": "string", "minLength": 1},
+          "category": {"enum": ["bug", "security", "test-gap", "design", "rule"]}
+        }
+      }
+    },
+    "ledger": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "status"],
+        "properties": {
+          "id": {"type": "string"},
+          "status": {"enum": ["addressed", "answered", "outstanding"]},
+          "reply": {"type": "string"}
+        }
+      }
+    },
+    "agreed_threads": {"type": "array", "items": {"type": "string"}},
+    "design_refs": {"type": "string"},
+    "note": {"type": "string"},
+    "understanding": {"type": "string"},
+    "assumptions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["claim", "evidence"],
+        "properties": {
+          "claim": {"type": "string", "minLength": 1},
+          "evidence": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "verdict": {"enum": ["approve", "comment", "request_changes"]},
+    "verdict_reason": {"type": "string"},
+    "ci": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["check", "related", "reason"],
+        "properties": {
+          "check": {"type": "string"},
+          "related": {"type": "boolean"},
+          "reason": {"type": "string"}
+        }
+      }
+    },
+    "examined": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["docs", "code", "usages", "tests"],
+      "properties": {
+        "docs": {"type": "array", "items": {"type": "string"}},
+        "code": {"type": "array", "items": {"type": "string"}},
+        "usages": {"type": "array", "items": {"type": "string"}},
+        "tests": {"type": "array", "items": {"type": "string"}}
+      }
+    }
+  }
+}
