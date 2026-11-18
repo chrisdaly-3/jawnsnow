@@ -208,6 +208,58 @@ func TestDetailsSkipsUnreachablePRs(t *testing.T) {
 	assertEq(t, rl.Remaining, 4900)
 }
 
+// A nested error leaves a null deep inside an alias whose data isn't null,
+// such as one check's isRequired. Parsing that alias would drop the check.
+func TestDetailsSkipsAnAliasWithANestedError(t *testing.T) {
+	d := &fakeDoer{
+		respond: func(n int, _ string, _ map[string]any) []byte {
+			if n == 0 {
+				return fixture(t, "detail.json")
+			}
+			return fixture(t, "detail_checks_page2.json")
+		},
+		fail: func(n int, _ string, _ map[string]any) error {
+			if n > 0 {
+				return nil
+			}
+			return gqlErr("FORBIDDEN", "p1", "head", "nodes", 0.0, "commit", "statusCheckRollup", "contexts", "nodes", 4.0, "isRequired")
+		},
+	}
+	snaps, _, err := NewClient(d).Details(context.Background(), "me", []string{"PR_p0", "PR_p1"})
+	if err != nil {
+		t.Fatalf("Details error = %v, want the other alias", err)
+	}
+	if len(snaps) != 1 || snaps[0].ID != "PR_p0" {
+		t.Fatalf("snapshots = %+v, want only PR_p0", snaps)
+	}
+}
+
+func TestFingerprintsSkipsANodeWithANestedError(t *testing.T) {
+	d := &fakeDoer{
+		respond: func(int, string, map[string]any) []byte { return fixture(t, "fingerprints.json") },
+		fail: func(int, string, map[string]any) error {
+			return gqlErr("FORBIDDEN", "nodes", 0.0, "commits", "nodes", 0.0, "commit", "statusCheckRollup")
+		},
+	}
+	fps, _, err := NewClient(d).Fingerprints(context.Background(), []string{"PR_a", "PR_b", "ISSUE_1"})
+	if err != nil {
+		t.Fatalf("Fingerprints error = %v, want the node skipped", err)
+	}
+	if len(fps) != 0 {
+		t.Fatalf("fingerprints = %+v, want PR_a skipped", fps)
+	}
+}
+
+func TestFingerprintsFailsOnAnErrorWithNoNodeIndex(t *testing.T) {
+	d := &fakeDoer{
+		respond: func(int, string, map[string]any) []byte { return fixture(t, "fingerprints.json") },
+		fail:    func(int, string, map[string]any) error { return gqlErr("INTERNAL", "nodes") },
+	}
+	if _, _, err := NewClient(d).Fingerprints(context.Background(), []string{"PR_a", "PR_b", "ISSUE_1"}); err == nil {
+		t.Fatal("Fingerprints succeeded on an error that names no node")
+	}
+}
+
 func TestDetailsFailsOnOtherGraphQLErrors(t *testing.T) {
 	for name, e := range map[string]*api.GraphQLError{
 		"no path":        gqlErr("INTERNAL"),

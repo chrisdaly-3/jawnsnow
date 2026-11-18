@@ -50,36 +50,57 @@ func NewGHClient() (Client, error) {
 	return NewClient(g), nil
 }
 
-// do runs a query and returns the top-level fields plus the call's rate limit.
-// go-gh returns a GraphQL error whenever the response lists errors, even when
-// it also carries data. If skippable accepts the path of every error, do
-// keeps the data and drops the error; the fields those errors name are null.
-func (c *client) do(ctx context.Context, query string, vars map[string]any, skippable func(path []any) bool) (map[string]json.RawMessage, RateLimit, error) {
+// do runs a query and returns the top-level fields, the call's rate limit,
+// and the GraphQL errors it let through. go-gh returns a GraphQL error
+// whenever the response lists errors, even when it also carries data. If
+// skippable accepts the path of every error, do keeps the data and returns
+// those errors instead; the caller must skip what each one names, since the
+// error may sit deep inside data that isn't null.
+func (c *client) do(ctx context.Context, query string, vars map[string]any, skippable func(path []any) bool) (map[string]json.RawMessage, []api.GraphQLErrorItem, RateLimit, error) {
 	var raw map[string]json.RawMessage
-	if err := c.d.DoWithContext(ctx, query, vars, &raw); err != nil && (raw == nil || !onlySkippable(err, skippable)) {
-		return nil, RateLimit{}, err
+	var skipped []api.GraphQLErrorItem
+	if err := c.d.DoWithContext(ctx, query, vars, &raw); err != nil {
+		var ok bool
+		if skipped, ok = skippableErrors(err, skippable); raw == nil || !ok {
+			return nil, nil, RateLimit{}, err
+		}
 	}
 	rl, err := splitRateLimit(raw)
 	if err != nil {
-		return nil, RateLimit{}, err
+		return nil, nil, RateLimit{}, err
 	}
 	delete(raw, "rateLimit")
-	return raw, rl, nil
+	return raw, skipped, rl, nil
 }
 
-// onlySkippable reports whether err is a GraphQL error whose every item has
-// a path skippable accepts. A rate limit is never skippable.
-func onlySkippable(err error, skippable func(path []any) bool) bool {
+// skippableErrors returns the items of err if it is a GraphQL error whose
+// every item has a path skippable accepts. A rate limit is never skippable.
+func skippableErrors(err error, skippable func(path []any) bool) ([]api.GraphQLErrorItem, bool) {
 	var gqlErr *api.GraphQLError
 	if skippable == nil || !errors.As(err, &gqlErr) || len(gqlErr.Errors) == 0 {
-		return false
+		return nil, false
 	}
 	for _, e := range gqlErr.Errors {
 		if e.Type == "RATE_LIMITED" || len(e.Path) == 0 || !skippable(e.Path) {
-			return false
+			return nil, false
 		}
 	}
-	return true
+	return gqlErr.Errors, true
+}
+
+// nodeIndex is the index i an error path ["nodes", i, …] names in a
+// nodes(ids:) query, if it is one of n.
+func nodeIndex(path []any, n int) (int, bool) {
+	if len(path) < 2 || path[0] != "nodes" {
+		return 0, false
+	}
+	// encoding/json decodes a number in an []any as a float64.
+	f, ok := path[1].(float64)
+	if !ok || f != float64(int(f)) {
+		return 0, false
+	}
+	i := int(f)
+	return i, i >= 0 && i < n
 }
 
 // add folds another call's rate limit into the total: the lowest remaining
@@ -97,7 +118,7 @@ func (r *RateLimit) add(next RateLimit) {
 }
 
 func (c *client) Viewer(ctx context.Context) (string, error) {
-	raw, _, err := c.do(ctx, viewerQuery, nil, nil)
+	raw, _, _, err := c.do(ctx, viewerQuery, nil, nil)
 	if err != nil {
 		return "", err
 	}
@@ -113,7 +134,7 @@ func (c *client) Search(ctx context.Context, query string) ([]Fingerprint, RateL
 	var total RateLimit
 	var after any
 	for range searchMaxPages {
-		raw, rl, err := c.do(ctx, searchQuery, map[string]any{"q": query, "after": after}, nil)
+		raw, _, rl, err := c.do(ctx, searchQuery, map[string]any{"q": query, "after": after}, nil)
 		if err != nil {
 			return nil, total, err
 		}
@@ -141,20 +162,32 @@ func (c *client) Search(ctx context.Context, query string) ([]Fingerprint, RateL
 func (c *client) Fingerprints(ctx context.Context, ids []string) ([]Fingerprint, RateLimit, error) {
 	var fps []Fingerprint
 	var total RateLimit
-	// A node that no longer resolves is null, with an error at its index.
-	inNodes := func(path []any) bool { return path[0] == "nodes" }
 	for start := 0; start < len(ids); start += fingerprintBatch {
 		batch := ids[start:min(start+fingerprintBatch, len(ids))]
-		raw, rl, err := c.do(ctx, fingerprintsQuery, map[string]any{"ids": batch}, inNodes)
+		// A node that no longer resolves is null, with an error at its
+		// index. An error deeper in a node skips it too.
+		inNodes := func(path []any) bool {
+			_, ok := nodeIndex(path, len(batch))
+			return ok
+		}
+		raw, errs, rl, err := c.do(ctx, fingerprintsQuery, map[string]any{"ids": batch}, inNodes)
 		if err != nil {
 			return nil, total, err
 		}
 		total.add(rl)
+		skip := map[int]bool{}
+		for _, e := range errs {
+			i, _ := nodeIndex(e.Path, len(batch))
+			skip[i] = true
+		}
 		var nodes []*fingerprintNode
 		if err := json.Unmarshal(raw["nodes"], &nodes); err != nil {
 			return nil, total, err
 		}
-		for _, n := range nodes {
+		for i, n := range nodes {
+			if skip[i] {
+				continue
+			}
 			if f, ok := n.fingerprint(); ok {
 				fps = append(fps, f)
 			}
@@ -224,20 +257,27 @@ func (c *client) fetchBatch(ctx context.Context, viewer string, batch []string) 
 		aliases[fmt.Sprintf("p%d", i)] = true
 	}
 	// A PR that was deleted, or that the viewer lost access to, comes back
-	// null with an error at its alias. Skipping it keeps the rest of the
-	// batch; the tracker keeps its last snapshot.
+	// null with an error at its alias. An error deeper in a PR leaves a null
+	// that would parse as missing data, such as a dropped check, so any
+	// error under an alias skips that PR. Skipping keeps the rest of the
+	// batch; the tracker keeps the skipped PR's last snapshot.
 	atAlias := func(path []any) bool {
 		s, ok := path[0].(string)
 		return ok && aliases[s]
 	}
-	raw, rl, err := c.do(ctx, DetailQuery(len(batch)), vars, atAlias)
+	raw, errs, rl, err := c.do(ctx, DetailQuery(len(batch)), vars, atAlias)
 	if err != nil {
 		return nil, total, err
 	}
 	total.add(rl)
+	skip := map[string]bool{}
+	for _, e := range errs {
+		skip[e.Path[0].(string)] = true
+	}
 	for i := range batch {
-		node, ok := raw[fmt.Sprintf("p%d", i)]
-		if !ok || string(node) == "null" {
+		alias := fmt.Sprintf("p%d", i)
+		node, ok := raw[alias]
+		if !ok || string(node) == "null" || skip[alias] {
 			continue
 		}
 		snap, next, err := parsePRPage(node)
@@ -262,7 +302,7 @@ func (c *client) fetchBatch(ctx context.Context, viewer string, batch []string) 
 }
 
 func (c *client) checksPage(ctx context.Context, id, after string) ([]Check, pageInfo, RateLimit, error) {
-	raw, rl, err := c.do(ctx, checksPageQuery, map[string]any{"id": id, "after": after}, nil)
+	raw, _, rl, err := c.do(ctx, checksPageQuery, map[string]any{"id": id, "after": after}, nil)
 	if err != nil {
 		return nil, pageInfo{}, rl, err
 	}
