@@ -14,43 +14,56 @@ import (
 
 // bannedPhrases is the list in prompt/reviewer.md, as regexp. The
 // apostrophe in "it's" may be straight or curly.
-var bannedPhrases = regexp.MustCompile(`(?i)\b(?:concrete|specifically|notably|essentially|crucially|it['’]s worth noting|security-relevant|in summary|LGTM|looks good|verified|I checked|confirmed at)\b,?[ \t]*`)
+var bannedPhrases = regexp.MustCompile(`(?i)\b(?:concrete|specifically|notably|essentially|crucially|it['’]s worth noting|security-relevant|in summary|LGTM|looks good|verified|I checked|confirmed at)\b`)
 
 var (
-	// codeSpan matches a fenced block (to its closing fence or the end) or
-	// an inline code span. Banned phrases inside code are left alone.
-	codeSpan = regexp.MustCompile("(?s)```.*?(?:```|$)|`[^`\n]*`")
-	hexWord  = regexp.MustCompile(`(?i)\b[0-9a-f]{7,40}\b`)
-
-	spaceBeforePunct = regexp.MustCompile(`[ \t]+([,.;:!?])`)
-	commaBeforeEnd   = regexp.MustCompile(`,[ \t]*([,.;:!?])`)
-	manySpaces       = regexp.MustCompile(`[ \t]{2,}`)
+	inlineCode = regexp.MustCompile("``[^\n]*?``|`[^`\n]*`")
+	fenceOpen  = regexp.MustCompile("^ {0,3}(```+|~~~+)")
+	hexWord    = regexp.MustCompile(`(?i)\b[0-9a-f]{7,40}\b`)
 )
 
 // CheckFindings applies Dispatch's checks to the reviewer's findings: it
-// anchors each one to a changed hunk or marks it unanchored, strips banned
-// phrases and commit SHAs, turns misplaced suggestion blocks into plain
-// code blocks, and drops style-only comments on Markdown. Every kept finding
-// is a new one. The notes are private lines for the drawer.
-func CheckFindings(out Output, files workspace.ReviewFiles) (kept []store.Finding, notes []string) {
-	var phrases, shas, demoted, docs int
-	for _, f := range out.Findings {
+// anchors each one to a changed hunk or marks it unanchored, replaces commit
+// SHAs in prose, turns misplaced suggestion blocks into plain code blocks,
+// and drops style-only comments on Markdown. Every kept finding is a new
+// one. The notes are private lines for the drawer.
+//
+// A check never rewrites the meaning of a body. Banned phrases are only
+// reported: each hit becomes a lint line, `finding <n>: uses "<phrase>"`,
+// with n the 1-based index in out.Findings, for the caller to send back to
+// the reviewer to reword. Code is never inspected for them.
+func CheckFindings(out Output, files workspace.ReviewFiles) (kept []store.Finding, notes []string, lint []string) {
+	var shas, demoted, docs int
+	for i, f := range out.Findings {
 		p := normalizePath(f.Path)
 		if docPreference(p, f) {
 			docs++
 			continue
 		}
 		anchored, oneHunk := locate(files.Hunks[p], f.StartLine, f.Line)
-		body, nPhrases, nSHAs := lintBody(f.Body)
-		phrases += nPhrases
-		shas += nSHAs
+		body := f.Body
+		mapProse(body, func(prose string) string {
+			for _, m := range bannedPhrases.FindAllString(prose, -1) {
+				lint = append(lint, fmt.Sprintf("finding %d: uses %q", i+1, strings.ToLower(m)))
+			}
+			return prose
+		})
+		body = mapProse(body, func(prose string) string {
+			n, out := replaceSHAs(prose)
+			shas += n
+			return out
+		})
 		if !(anchored && oneHunk) {
 			var n int
 			body, n = demoteSuggestions(body)
 			demoted += n
 		}
+		start := f.StartLine
+		if start > f.Line {
+			start = 0
+		}
 		kept = append(kept, store.Finding{
-			Path: p, Line: f.Line, StartLine: f.StartLine,
+			Path: p, Line: f.Line, StartLine: start,
 			Category: f.Category, Blocking: f.Blocking, Body: body,
 			Unanchored: !anchored, Ledger: "new",
 		})
@@ -58,16 +71,13 @@ func CheckFindings(out Output, files workspace.ReviewFiles) (kept []store.Findin
 	if docs > 0 {
 		notes = append(notes, fmt.Sprintf("dropped %d style comment%s on docs", docs, plural(docs)))
 	}
-	if phrases > 0 {
-		notes = append(notes, fmt.Sprintf("removed %d banned phrase%s", phrases, plural(phrases)))
-	}
 	if shas > 0 {
 		notes = append(notes, fmt.Sprintf("replaced %d commit SHA%s", shas, plural(shas)))
 	}
 	if demoted > 0 {
 		notes = append(notes, fmt.Sprintf("turned %d misplaced suggestion%s into plain code", demoted, plural(demoted)))
 	}
-	return kept, notes
+	return kept, notes, lint
 }
 
 func plural(n int) string {
@@ -126,33 +136,64 @@ var brokenRef = regexp.MustCompile(`(?i)\b(?:broken|dead|dangling|stale|missing)
 
 func namesBrokenReference(body string) bool { return brokenRef.MatchString(body) }
 
-// lintBody removes banned phrases (outside code) and replaces commit SHAs.
-func lintBody(body string) (string, int, int) {
-	var phrases, shas int
+// mapProse applies fn to the prose of a Markdown body and leaves code
+// alone: fenced blocks (``` and ~~~, which includes ```suggestion), indented
+// code blocks and inline code spans.
+func mapProse(body string, fn func(string) string) string {
+	lines := strings.Split(body, "\n")
+	var fence string // the opening fence's run while inside a fenced block
+	prevBlank, prevIndented := true, false
+	for i, l := range lines {
+		indented := false
+		switch {
+		case fence != "":
+			t := strings.TrimLeft(l, " ")
+			if len(l)-len(t) <= 3 && strings.HasPrefix(t, fence) && strings.Trim(t, fence[:1]) == "" {
+				fence = ""
+			}
+		case fenceOpen.MatchString(l):
+			fence = fenceOpen.FindStringSubmatch(l)[1]
+		case (strings.HasPrefix(l, "    ") || strings.HasPrefix(l, "\t")) && (prevBlank || prevIndented):
+			indented = true
+		default:
+			lines[i] = mapInline(l, fn)
+		}
+		prevBlank = strings.TrimSpace(l) == ""
+		prevIndented = indented
+	}
+	return strings.Join(lines, "\n")
+}
+
+// mapInline applies fn to the parts of a line outside inline code spans.
+func mapInline(line string, fn func(string) string) string {
 	var b strings.Builder
 	last := 0
-	for _, loc := range codeSpan.FindAllStringIndex(body, -1) {
-		text, n := removePhrases(body[last:loc[0]], last == 0)
-		phrases += n
-		b.WriteString(text)
-		b.WriteString(body[loc[0]:loc[1]])
+	for _, loc := range inlineCode.FindAllStringIndex(line, -1) {
+		b.WriteString(fn(line[last:loc[0]]))
+		b.WriteString(line[loc[0]:loc[1]])
 		last = loc[1]
 	}
-	text, n := removePhrases(body[last:], last == 0)
-	phrases += n
-	b.WriteString(text)
-	out := b.String()
-	if phrases > 0 {
-		out = strings.TrimSpace(out)
-	}
-	out = hexWord.ReplaceAllStringFunc(out, func(w string) string {
-		if !isSHA(w) {
-			return w
+	b.WriteString(fn(line[last:]))
+	return b.String()
+}
+
+// replaceSHAs replaces each commit ID in prose with `<commit>`, in
+// backticks because GitHub would swallow a bare <commit> as an HTML tag. A
+// word right after "#" is a colour or an issue, not a commit.
+func replaceSHAs(s string) (int, string) {
+	var b strings.Builder
+	n, last := 0, 0
+	for _, loc := range hexWord.FindAllStringIndex(s, -1) {
+		if !isSHA(s[loc[0]:loc[1]]) || (loc[0] > 0 && s[loc[0]-1] == '#') {
+			continue
 		}
-		shas++
-		return "<commit>"
-	})
-	return out, phrases, shas
+		b.WriteString(s[last:loc[0]])
+		b.WriteString("`<commit>`")
+		last = loc[1]
+		n++
+	}
+	b.WriteString(s[last:])
+	return n, b.String()
 }
 
 // isSHA reports whether w, a whole word of 7 to 40 hex characters, looks
@@ -168,53 +209,6 @@ func isSHA(w string) bool {
 		}
 	}
 	return digit && letter
-}
-
-// capMark stands where a removed phrase began a sentence, so the next
-// letter can be capitalised once the tidying is done.
-const capMark = "\x00"
-
-// removePhrases drops banned phrases from a stretch of prose and tidies
-// what they leave behind: doubled spaces, a comma before punctuation, and
-// a sentence that now starts in lower case.
-func removePhrases(s string, atStart bool) (string, int) {
-	locs := bannedPhrases.FindAllStringIndex(s, -1)
-	if len(locs) == 0 {
-		return s, 0
-	}
-	var b strings.Builder
-	last := 0
-	for _, loc := range locs {
-		b.WriteString(s[last:loc[0]])
-		if startsSentence(s[:loc[0]], atStart) {
-			b.WriteString(capMark)
-		}
-		last = loc[1]
-	}
-	b.WriteString(s[last:])
-	out := b.String()
-	out = commaBeforeEnd.ReplaceAllString(out, "$1")
-	out = spaceBeforePunct.ReplaceAllString(out, "$1")
-	out = manySpaces.ReplaceAllString(out, " ")
-	out = capitalizeMarked.ReplaceAllStringFunc(out, func(m string) string {
-		return strings.ToUpper(strings.TrimPrefix(m, capMark))
-	})
-	return strings.ReplaceAll(out, capMark, ""), len(locs)
-}
-
-var capitalizeMarked = regexp.MustCompile(capMark + `\p{Ll}`)
-
-// startsSentence reports whether prose before a match ends a sentence, or
-// is empty at the start of the body.
-func startsSentence(before string, atStart bool) bool {
-	if strings.HasSuffix(before, "\n") {
-		return true
-	}
-	t := strings.TrimRight(before, " \t")
-	if t == "" {
-		return atStart
-	}
-	return strings.HasSuffix(t, ".") || strings.HasSuffix(t, "!") || strings.HasSuffix(t, "?")
 }
 
 // demoteSuggestions turns each ```suggestion fence into a plain fence.
