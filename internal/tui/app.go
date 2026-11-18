@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/cli/go-gh/v2/pkg/browser"
@@ -49,9 +48,6 @@ const (
 	pollTimeout   = 2 * time.Minute
 	clockInterval = time.Second
 )
-
-// shared is the one spinner every spinning card and lane header shows.
-var shared = spinner.Dot
 
 // Deps is everything the root model needs from startup.
 type Deps struct {
@@ -134,7 +130,7 @@ type Model struct {
 
 	wall wallModel
 	// spinning is true while the spinner's tick loop runs; spinFrame is
-	// which frame of the shared spinner it shows.
+	// the frame counter every spinning card indexes its own spinner with.
 	spinning  bool
 	spinFrame int
 
@@ -187,7 +183,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // ensureSpinner starts the spinner's tick loop when something on the wall
 // is spinning and it isn't running.
 func (m Model) ensureSpinner() (Model, tea.Cmd) {
-	if m.spinning || !m.anySpinning() {
+	if m.spinning || m.spinInterval() == 0 {
 		return m, nil
 	}
 	m.spinning = true
@@ -195,16 +191,22 @@ func (m Model) ensureSpinner() (Model, tea.Cmd) {
 }
 
 func (m Model) spinTick() tea.Cmd {
-	return m.tick(shared.FPS, func(time.Time) tea.Msg { return spinTickMsg{} })
+	return m.tick(m.spinInterval(), func(time.Time) tea.Msg { return spinTickMsg{} })
 }
 
-func (m Model) anySpinning() bool {
+// spinInterval is the tick period: the fastest spinner among the wall PRs
+// that are spinning. It is 0 when none has a spinner to animate.
+func (m Model) spinInterval() time.Duration {
+	var fastest time.Duration
 	for _, t := range m.prs {
-		if t.Place == tracker.PlaceWall && t.Status.Spinning {
-			return true
+		if t.Place != tracker.PlaceWall || !t.Status.Spinning {
+			continue
+		}
+		if sp, ok := m.theme.Spinner(string(t.Status.Status)); ok && sp.FPS > 0 && (fastest == 0 || sp.FPS < fastest) {
+			fastest = sp.FPS
 		}
 	}
-	return false
+	return fastest
 }
 
 func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
@@ -239,7 +241,7 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 	case clockMsg:
 		return m, m.clockTick()
 	case spinTickMsg:
-		if !m.anySpinning() {
+		if m.spinInterval() == 0 {
 			m.spinning = false
 			return m, nil
 		}
@@ -553,7 +555,7 @@ func (m Model) body(width, height int) string {
 		w := m.wall
 		w.now, w.feeds = m.now(), m.feedNames()
 		w.setSize(width, height)
-		return w.view(width, height, m.wallPRs(), m.theme, strings.TrimSpace(shared.Frames[m.spinFrame%len(shared.Frames)]))
+		return w.view(width, height, m.wallPRs(), m.theme, m.spinFrame)
 	case ViewDone:
 		return donePlaceholder(m, width, height)
 	case ViewAgent:

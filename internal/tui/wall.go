@@ -498,7 +498,7 @@ func scrollTarget(items []item, total, lane, row int, cur float64, vh int) float
 
 // ---- rendering ----
 
-func (m wallModel) view(width, height int, prs []tracker.Tracked, th theme.Theme, spin string) string {
+func (m wallModel) view(width, height int, prs []tracker.Tracked, th theme.Theme, frame int) string {
 	m.w, m.h = width, height
 	if m.picking {
 		return strings.Join(fit(m.pickerView(width, height, th), width, height), "\n")
@@ -514,9 +514,9 @@ func (m wallModel) view(width, height int, prs []tracker.Tracked, th theme.Theme
 	case len(flat(lanes)) == 0:
 		body = fit(centered(th, width, bh, "No PRs match the filter."), width, bh)
 	case m.narrow():
-		body = m.narrowView(lanes, width, bh, th, spin)
+		body = m.narrowView(lanes, width, bh, th, frame)
 	default:
-		body = m.wideView(lanes, width, bh, th, spin)
+		body = m.wideView(lanes, width, bh, th, frame)
 	}
 	if footer != "" {
 		body = append(body, ansi.Truncate(footer, max(width, 0), "…"))
@@ -573,7 +573,7 @@ func (m wallModel) pickerView(width, height int, th theme.Theme) string {
 	return lipgloss.Place(max(width, 0), max(height, 0), lipgloss.Center, lipgloss.Center, box)
 }
 
-func (m wallModel) wideView(lanes [laneCount][]tracker.Tracked, width, height int, th theme.Theme, spin string) []string {
+func (m wallModel) wideView(lanes [laneCount][]tracker.Tracked, width, height int, th theme.Theme, frame int) []string {
 	lane, row := m.resolve(lanes)
 	inner := width - laneGap*(laneCount-1)
 	cols := make([][]string, laneCount)
@@ -587,7 +587,7 @@ func (m wallModel) wideView(lanes [laneCount][]tracker.Tracked, width, height in
 			first = wideScroll(first, row, len(lanes[l]), m.laneCapacity())
 		}
 		first = max(min(first, len(lanes[l])-m.laneCapacity()), 0)
-		cols[l] = m.laneBox(lanes[l], l, w, max(height, 2), l == lane, row, first, th, spin)
+		cols[l] = m.laneBox(lanes[l], l, w, max(height, 2), l == lane, row, first, th, frame)
 	}
 	out := make([]string, max(height, 2))
 	for i := range out {
@@ -601,17 +601,17 @@ func (m wallModel) wideView(lanes [laneCount][]tracker.Tracked, width, height in
 }
 
 // laneBox draws one lane as a bordered box exactly w wide and h tall.
-func (m wallModel) laneBox(cards []tracker.Tracked, lane, w, h int, focused bool, row, first int, th theme.Theme, spin string) []string {
+func (m wallModel) laneBox(cards []tracker.Tracked, lane, w, h int, focused bool, row, first int, th theme.Theme, frame int) []string {
 	border := lipgloss.NewStyle().Foreground(th.Border(focused).GetBorderTopForeground())
 	innerW := max(w-2, 0)
-	label := laneLabel(lane, cards, th, spin, focused)
+	label := laneLabel(lane, cards, th, frame, focused)
 	fill := max(w-1-(2+lipgloss.Width(label)+1), 0)
 	top := ansi.Truncate(border.Render("╭ ")+label+border.Render(" "+strings.Repeat("─", fill)), max(w-1, 0), "…")
 	top += strings.Repeat(" ", max(w-1-ansi.StringWidth(top), 0)) + border.Render("╮")
 
 	var content []string
 	for r := first; r < len(cards); r++ {
-		content = append(content, renderCard(cards[r], innerW, focused && r == row, th, m.now, spin)...)
+		content = append(content, renderCard(cards[r], innerW, focused && r == row, th, m.now, frame)...)
 		content = append(content, "")
 	}
 	out := []string{top}
@@ -627,28 +627,30 @@ func (m wallModel) laneBox(cards []tracker.Tracked, lane, w, h int, focused bool
 
 // laneLabel is a lane's title, a spinner when any card in it is spinning,
 // and its count.
-func laneLabel(lane int, cards []tracker.Tracked, th theme.Theme, spin string, focused bool) string {
+func laneLabel(lane int, cards []tracker.Tracked, th theme.Theme, frame int, focused bool) string {
 	title := th.Muted()
 	if focused {
 		title = th.Accent()
 	}
 	s := title.Render(laneTitles[lane])
-	if spin != "" && slices.ContainsFunc(cards, func(t tracker.Tracked) bool { return t.Status.Spinning }) {
-		s += " " + th.Accent().Render(spin)
+	if i := slices.IndexFunc(cards, func(t tracker.Tracked) bool { return t.Status.Spinning }); i >= 0 {
+		if g := spinGlyph(th, cards[i], frame); g != "" {
+			s += " " + th.Accent().Render(g)
+		}
 	}
 	return s + " " + th.Muted().Render(strconv.Itoa(len(cards)))
 }
 
-func (m wallModel) narrowView(lanes [laneCount][]tracker.Tracked, width, height int, th theme.Theme, spin string) []string {
+func (m wallModel) narrowView(lanes [laneCount][]tracker.Tracked, width, height int, th theme.Theme, frame int) []string {
 	lane, row := m.resolve(lanes)
 	items, total := narrowLayout(lanes)
 	var lines []string
 	for _, it := range items {
 		if it.row < 0 {
-			lines = append(lines, narrowHeading(it.lane, lanes[it.lane], width, th, spin))
+			lines = append(lines, narrowHeading(it.lane, lanes[it.lane], width, th, frame))
 			continue
 		}
-		lines = append(lines, renderCard(lanes[it.lane][it.row], width, it.lane == lane && it.row == row, th, m.now, spin)...)
+		lines = append(lines, renderCard(lanes[it.lane][it.row], width, it.lane == lane && it.row == row, th, m.now, frame)...)
 		lines = append(lines, "")
 	}
 	off := m.pos
@@ -659,8 +661,8 @@ func (m wallModel) narrowView(lanes [laneCount][]tracker.Tracked, width, height 
 	return lines[start:min(start+max(height, 0), len(lines))]
 }
 
-func narrowHeading(lane int, cards []tracker.Tracked, width int, th theme.Theme, spin string) string {
-	label := laneLabel(lane, cards, th, spin, true)
+func narrowHeading(lane int, cards []tracker.Tracked, width int, th theme.Theme, frame int) string {
+	label := laneLabel(lane, cards, th, frame, true)
 	line := th.Muted().Render("── ") + label + " "
 	fill := max(width-lipgloss.Width(line), 0)
 	return ansi.Truncate(line+th.Muted().Render(strings.Repeat("─", fill)), max(width, 0), "")
@@ -668,7 +670,7 @@ func narrowHeading(lane int, cards []tracker.Tracked, width int, th theme.Theme,
 
 // renderCard draws one PR as cardLines lines, each exactly width cells
 // wide: the repo and number, the title, who and when, and the status chip.
-func renderCard(t tracker.Tracked, width int, selected bool, th theme.Theme, now time.Time, spin string) []string {
+func renderCard(t tracker.Tracked, width int, selected bool, th theme.Theme, now time.Time, frame int) []string {
 	st := string(t.Status.Status)
 	marker := " "
 	if selected {
@@ -676,8 +678,8 @@ func renderCard(t tracker.Tracked, width int, selected bool, th theme.Theme, now
 	}
 	glyph := " "
 	switch {
-	case t.Status.Spinning && spin != "":
-		glyph = th.StatusFg(st).Render(spin)
+	case t.Status.Spinning && spinGlyph(th, t, frame) != "":
+		glyph = th.StatusFg(st).Render(spinGlyph(th, t, frame))
 	case t.Status.Status == status.CIFailed:
 		glyph = th.StatusFg(st).Render("✗")
 	}
@@ -699,6 +701,19 @@ func renderCard(t tracker.Tracked, width int, selected bool, th theme.Theme, now
 		lines[i] = padTo(lines[i], width)
 	}
 	return lines
+}
+
+// spinGlyph is the frame of the card's own status spinner, or "" when the
+// card isn't spinning or its status has the "none" spinner.
+func spinGlyph(th theme.Theme, t tracker.Tracked, frame int) string {
+	if !t.Status.Spinning {
+		return ""
+	}
+	sp, ok := th.Spinner(string(t.Status.Status))
+	if !ok || len(sp.Frames) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(sp.Frames[frame%len(sp.Frames)])
 }
 
 // chipLine is the status chip on one line. An outlined chip is three lines

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -75,7 +76,7 @@ func testWall(width, height int) wallModel {
 func renderWall(t *testing.T, w wallModel, width, height int, prs []tracker.Tracked) string {
 	t.Helper()
 	w.setSize(width, height)
-	return w.view(width, height, prs, testTheme(t), "⣾")
+	return w.view(width, height, prs, testTheme(t), 0)
 }
 
 func press(t *testing.T, w wallModel, prs []tracker.Tracked, keys ...string) (wallModel, action) {
@@ -196,7 +197,7 @@ func TestWallTinyTerminal(t *testing.T) {
 
 func TestCardTruncatesByDisplayWidth(t *testing.T) {
 	c := wallCard("x", "acme/widgets", 7, "修复 🐛 handle 長いタイトル…", "alice", status.ReadyForReview, false, 1, 1, time.Hour)
-	lines := renderCard(c, 24, false, testTheme(t), t0, "⣾")
+	lines := renderCard(c, 24, false, testTheme(t), t0, 0)
 	for i, l := range lines {
 		if w := lipgloss.Width(l); w > 24 {
 			t.Errorf("card line %d is %d wide: %q", i, w, l)
@@ -210,7 +211,7 @@ func TestCardTruncatesByDisplayWidth(t *testing.T) {
 
 func TestCardStripsControlSequencesFromTitle(t *testing.T) {
 	c := wallCard("x", "acme/widgets", 7, "evil \x1b]0;pwned\x07\x1b[2J title", "al\x1bice", status.ReadyForReview, false, 1, 1, time.Hour)
-	for _, l := range renderCard(c, 40, false, testTheme(t), t0, "⣾") {
+	for _, l := range renderCard(c, 40, false, testTheme(t), t0, 0) {
 		if p := ansi.Strip(l); strings.ContainsAny(p, "\x1b\x07") || strings.Contains(p, "pwned") {
 			t.Errorf("control sequence survived: %q", l)
 		}
@@ -219,7 +220,7 @@ func TestCardStripsControlSequencesFromTitle(t *testing.T) {
 
 func TestCardGlyphs(t *testing.T) {
 	th := testTheme(t)
-	first := func(c tracker.Tracked) string { return ansi.Strip(renderCard(c, 30, false, th, t0, "⣾")[0]) }
+	first := func(c tracker.Tracked) string { return ansi.Strip(renderCard(c, 30, false, th, t0, 0)[0]) }
 	spin := wallCard("x", "a/b", 1, "t", "u", status.CIWaiting, true, 0, 0, time.Hour)
 	if !strings.HasPrefix(first(spin), " ⣾ b#1") {
 		t.Errorf("spinning card line 1 = %q", first(spin))
@@ -233,7 +234,7 @@ func TestCardGlyphs(t *testing.T) {
 		t.Errorf("plain card line 1 = %q", first(plain))
 	}
 	for _, c := range []tracker.Tracked{spin, fail, plain, wallCard("x", "a/b", 1, "t", "u", status.ApprovedByYou, false, 0, 0, time.Hour)} {
-		if n := len(renderCard(c, 30, false, th, t0, "⣾")); n != cardLines {
+		if n := len(renderCard(c, 30, false, th, t0, 0)); n != cardLines {
 			t.Errorf("%s card has %d lines, want %d", c.Status.Status, n, cardLines)
 		}
 	}
@@ -335,7 +336,7 @@ func TestWallAuthorPicker(t *testing.T) {
 func TestWallEmptyState(t *testing.T) {
 	w := testWall(100, 10)
 	w.feeds = []string{"review-requested", "mine"}
-	out := ansi.Strip(w.view(100, 10, nil, testTheme(t), ""))
+	out := ansi.Strip(w.view(100, 10, nil, testTheme(t), 0))
 	if !strings.Contains(out, "Nothing on the wall. Feeds: review-requested, mine · press R to poll") {
 		t.Errorf("empty state wrong:\n%s", out)
 	}
@@ -437,5 +438,69 @@ func TestSpinnerTicksOnlyWhileSomethingSpins(t *testing.T) {
 	m2, cmd := update(t, h2.m, spinTickMsg{})
 	if cmd != nil || m2.spinning {
 		t.Errorf("calm wall: spin tick continued (cmd nil=%v spinning=%v)", cmd == nil, m2.spinning)
+	}
+}
+
+func spinnerTheme(t *testing.T, over map[string]config.StatusStyle) theme.Theme {
+	t.Helper()
+	th, err := theme.New(config.ThemeConfig{Status: over})
+	if err != nil {
+		t.Fatalf("theme.New: %v", err)
+	}
+	return th
+}
+
+func TestCardUsesItsStatusSpinner(t *testing.T) {
+	th := spinnerTheme(t, map[string]config.StatusStyle{"CI_WAITING": {Spinner: "line"}})
+	c := wallCard("x", "a/b", 1, "t", "u", status.CIWaiting, true, 0, 0, time.Hour)
+	for frame, want := range spinner.Line.Frames {
+		got := ansi.Strip(renderCard(c, 30, false, th, t0, frame)[0])
+		if !strings.HasPrefix(got, " "+strings.TrimSpace(want)+" b#1") {
+			t.Errorf("frame %d: line 1 = %q, want spinner.Line frame %q", frame, got, want)
+		}
+	}
+	lane := ansi.Strip(laneLabel(int(status.LaneCI), []tracker.Tracked{c}, th, 1, true))
+	if !strings.Contains(lane, strings.TrimSpace(spinner.Line.Frames[1])) {
+		t.Errorf("lane header %q does not use the card's spinner", lane)
+	}
+}
+
+func TestNoneSpinnerShowsNoGlyphAndNoTick(t *testing.T) {
+	over := map[string]config.StatusStyle{"NEW_CHANGES": {Spinner: "none"}}
+	th := spinnerTheme(t, over)
+	c := wallCard("x", "a/b", 1, "t", "u", status.NewChanges, true, 0, 0, time.Hour)
+	if got := ansi.Strip(renderCard(c, 30, false, th, t0, 0)[0]); !strings.HasPrefix(got, "   b#1") {
+		t.Errorf("none spinner: line 1 = %q, want a blank glyph", got)
+	}
+	if lane := ansi.Strip(laneLabel(int(status.LaneNew), []tracker.Tracked{c}, th, 0, true)); strings.ContainsAny(lane, "⣾⣽⣻⢿⡿⣟⣯⣷") {
+		t.Errorf("lane header %q shows a spinner", lane)
+	}
+
+	h := newHarness(t, opts{noClient: true}, func() tracker.Tracked {
+		p := readyPR("1")
+		p.Status = status.Result{Status: status.NewChanges, Spinning: true}
+		return p
+	}())
+	h.m.theme, h.m.spinning = th, false // the harness's load ran under the default theme
+	m, cmd := update(t, h.m, clockMsg{})
+	_, ticks := runCmd(t, cmd)
+	for _, tk := range ticks {
+		if _, ok := tk.msg.(spinTickMsg); ok {
+			t.Error("a spin tick was scheduled for a spinner-less status")
+		}
+	}
+	if m.spinning {
+		t.Error("spinning set with only a none-spinner card")
+	}
+}
+
+func TestSpinTickUsesFastestSpinner(t *testing.T) {
+	h := newHarness(t, opts{noClient: true}, readyPR("1"))
+	p := h.m.prs["1"]
+	p.Status = status.Result{Status: status.CIWaiting, Spinning: true}
+	h.m.prs["1"] = p
+	h.m.theme = spinnerTheme(t, map[string]config.StatusStyle{"CI_WAITING": {Spinner: "line"}})
+	if got := h.m.spinInterval(); got != spinner.Line.FPS {
+		t.Errorf("interval = %v, want spinner.Line.FPS %v", got, spinner.Line.FPS)
 	}
 }
