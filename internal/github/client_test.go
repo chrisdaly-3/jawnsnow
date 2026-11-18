@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"slices"
 	"sync"
@@ -75,7 +76,7 @@ func TestDetailPaginatesChecks(t *testing.T) {
 		}
 		return fixture(t, "detail_checks_page2.json")
 	}}
-	snaps, _, err := NewClient(d).Details(context.Background(), "me", []string{"PR_p0", "PR_p1"})
+	snaps, _, _, err := NewClient(d).Details(context.Background(), "me", []string{"PR_p0", "PR_p1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +118,7 @@ func TestDetailsBatchesOf10InOrder(t *testing.T) {
 	// The middle batch reports the lowest remaining budget.
 	rem := func(id0 string) int { return map[string]int{"PR_000": 4000, "PR_010": 3900, "PR_020": 3950}[id0] }
 	d := &fakeDoer{respond: func(_ int, _ string, vars map[string]any) []byte { return echoBatch(vars, rem) }}
-	snaps, rl, err := NewClient(d).Details(context.Background(), "me", ids)
+	snaps, _, rl, err := NewClient(d).Details(context.Background(), "me", ids)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,7 +174,7 @@ func TestDetailsRunsAtMostThreeBatchesAtOnce(t *testing.T) {
 	g := &gatedDoer{limit: 3, full: make(chan struct{}), release: make(chan struct{})}
 	done := make(chan error, 1)
 	go func() {
-		_, _, err := NewClient(g).Details(context.Background(), "me", manyIDs(70))
+		_, _, _, err := NewClient(g).Details(context.Background(), "me", manyIDs(70))
 		done <- err
 	}()
 	select {
@@ -197,13 +198,16 @@ func TestDetailsSkipsUnreachablePRs(t *testing.T) {
 		respond: func(int, string, map[string]any) []byte { return fixture(t, "detail_unreachable.json") },
 		fail:    func(int, string, map[string]any) error { return gqlErr("NOT_FOUND", "p1") },
 	}
-	snaps, rl, err := NewClient(d).Details(context.Background(), "me", []string{"PR_p1", "PR_gone", "ISSUE_1"})
+	snaps, skipped, rl, err := NewClient(d).Details(context.Background(), "me", []string{"PR_p1", "PR_gone", "ISSUE_1"})
 	if err != nil {
 		t.Fatalf("Details error = %v, want the reachable PR", err)
 	}
 	// p1 is null with a NOT_FOUND error; p2 is a node that isn't a PR.
 	if len(snaps) != 1 || snaps[0].ID != "PR_p1" {
 		t.Fatalf("snapshots = %+v, want only PR_p1", snaps)
+	}
+	if want := []SkippedPR{{ID: "PR_gone", Type: "NOT_FOUND", Message: "NOT_FOUND"}}; !slices.Equal(skipped, want) {
+		t.Errorf("skipped = %+v, want %+v", skipped, want)
 	}
 	assertEq(t, rl.Remaining, 4900)
 }
@@ -225,12 +229,75 @@ func TestDetailsSkipsAnAliasWithANestedError(t *testing.T) {
 			return gqlErr("FORBIDDEN", "p1", "head", "nodes", 0.0, "commit", "statusCheckRollup", "contexts", "nodes", 4.0, "isRequired")
 		},
 	}
-	snaps, _, err := NewClient(d).Details(context.Background(), "me", []string{"PR_p0", "PR_p1"})
+	snaps, skipped, _, err := NewClient(d).Details(context.Background(), "me", []string{"PR_p0", "PR_p1"})
 	if err != nil {
 		t.Fatalf("Details error = %v, want the other alias", err)
 	}
 	if len(snaps) != 1 || snaps[0].ID != "PR_p0" {
 		t.Fatalf("snapshots = %+v, want only PR_p0", snaps)
+	}
+	if want := []SkippedPR{{ID: "PR_p1", Type: "FORBIDDEN", Message: "FORBIDDEN"}}; !slices.Equal(skipped, want) {
+		t.Errorf("skipped = %+v, want %+v", skipped, want)
+	}
+}
+
+// nullBatch answers a Details batch with every alias null and a FORBIDDEN
+// error at each, as GitHub does once an SSO session expires.
+func nullBatch(vars map[string]any) ([]byte, error) {
+	out := map[string]any{"rateLimit": map[string]any{"remaining": 4000, "cost": 1, "resetAt": "2026-11-18T13:00:00Z"}}
+	var errs []api.GraphQLErrorItem
+	for i := 0; ; i++ {
+		if _, ok := vars[fmt.Sprintf("id%d", i)]; !ok {
+			break
+		}
+		alias := fmt.Sprintf("p%d", i)
+		out[alias] = nil
+		errs = append(errs, api.GraphQLErrorItem{Type: "FORBIDDEN", Message: "SAML enforcement", Path: []any{alias}})
+	}
+	b, _ := json.Marshal(out)
+	return b, &api.GraphQLError{Errors: errs}
+}
+
+func TestDetailsFailsWhenEveryPRIsUnreachable(t *testing.T) {
+	d := &fakeDoer{
+		respond: func(_ int, _ string, vars map[string]any) []byte { b, _ := nullBatch(vars); return b },
+		fail:    func(_ int, _ string, vars map[string]any) error { _, err := nullBatch(vars); return err },
+	}
+	snaps, _, rl, err := NewClient(d).Details(context.Background(), "me", manyIDs(12))
+	if err == nil || err.Error() != "all 12 PRs unreachable: FORBIDDEN" {
+		t.Fatalf("Details = %d snapshots, error %v; want the error naming FORBIDDEN", len(snaps), err)
+	}
+	if IsRateLimited(err) {
+		t.Error("an unreachable PR reads as a rate limit")
+	}
+	assertEq(t, rl.Cost, 2) // both batches ran
+}
+
+// failingDoer answers each call with only the error it returns.
+type failingDoer func(ctx context.Context, vars map[string]any) error
+
+func (f failingDoer) DoWithContext(ctx context.Context, _ string, vars map[string]any, _ any) error {
+	return f(ctx, vars)
+}
+
+// When batches fail together, the rate limit is the one to report: the poll
+// backs off for it and only for it.
+func TestDetailsPrefersARateLimitErrorOverAnEarlierOne(t *testing.T) {
+	limited := gqlErr("RATE_LIMITED")
+	secondStarted := make(chan struct{})
+	d := failingDoer(func(ctx context.Context, vars map[string]any) error {
+		if vars["id0"] == "PR_000" {
+			<-secondStarted
+			return io.ErrUnexpectedEOF
+		}
+		close(secondStarted)
+		// The answer arrives after the first batch failed and cancelled.
+		<-ctx.Done()
+		return limited
+	})
+	_, _, _, err := NewClient(d).Details(context.Background(), "me", manyIDs(20))
+	if !errors.Is(err, limited) {
+		t.Fatalf("Details error = %v, want the rate limit", err)
 	}
 }
 
@@ -241,12 +308,33 @@ func TestFingerprintsSkipsANodeWithANestedError(t *testing.T) {
 			return gqlErr("FORBIDDEN", "nodes", 0.0, "commits", "nodes", 0.0, "commit", "statusCheckRollup")
 		},
 	}
-	fps, _, err := NewClient(d).Fingerprints(context.Background(), []string{"PR_a", "PR_b", "ISSUE_1"})
+	fps, skipped, _, err := NewClient(d).Fingerprints(context.Background(), []string{"PR_a", "PR_b", "ISSUE_1"})
 	if err != nil {
 		t.Fatalf("Fingerprints error = %v, want the node skipped", err)
 	}
 	if len(fps) != 0 {
 		t.Fatalf("fingerprints = %+v, want PR_a skipped", fps)
+	}
+	if want := []SkippedPR{{ID: "PR_a", Type: "FORBIDDEN", Message: "FORBIDDEN"}}; !slices.Equal(skipped, want) {
+		t.Errorf("skipped = %+v, want %+v", skipped, want)
+	}
+}
+
+func TestFingerprintsFailsWhenEveryPRIsUnreachable(t *testing.T) {
+	d := &fakeDoer{
+		respond: func(int, string, map[string]any) []byte {
+			return []byte(`{"nodes":[null,null],"rateLimit":{"remaining":1,"cost":1}}`)
+		},
+		fail: func(int, string, map[string]any) error {
+			return &api.GraphQLError{Errors: []api.GraphQLErrorItem{
+				{Type: "FORBIDDEN", Path: []any{"nodes", 0.0}},
+				{Type: "NOT_FOUND", Path: []any{"nodes", 1.0}},
+			}}
+		},
+	}
+	_, _, _, err := NewClient(d).Fingerprints(context.Background(), []string{"PR_a", "PR_b"})
+	if err == nil || err.Error() != "all 2 PRs unreachable: FORBIDDEN, NOT_FOUND" {
+		t.Fatalf("Fingerprints error = %v, want one naming both error types", err)
 	}
 }
 
@@ -255,7 +343,7 @@ func TestFingerprintsFailsOnAnErrorWithNoNodeIndex(t *testing.T) {
 		respond: func(int, string, map[string]any) []byte { return fixture(t, "fingerprints.json") },
 		fail:    func(int, string, map[string]any) error { return gqlErr("INTERNAL", "nodes") },
 	}
-	if _, _, err := NewClient(d).Fingerprints(context.Background(), []string{"PR_a", "PR_b", "ISSUE_1"}); err == nil {
+	if _, _, _, err := NewClient(d).Fingerprints(context.Background(), []string{"PR_a", "PR_b", "ISSUE_1"}); err == nil {
 		t.Fatal("Fingerprints succeeded on an error that names no node")
 	}
 }
@@ -272,7 +360,7 @@ func TestDetailsFailsOnOtherGraphQLErrors(t *testing.T) {
 				respond: func(int, string, map[string]any) []byte { return fixture(t, "detail_unreachable.json") },
 				fail:    func(int, string, map[string]any) error { return e },
 			}
-			_, _, err := NewClient(d).Details(context.Background(), "me", []string{"PR_p1", "PR_gone", "ISSUE_1"})
+			_, _, _, err := NewClient(d).Details(context.Background(), "me", []string{"PR_p1", "PR_gone", "ISSUE_1"})
 			var got *api.GraphQLError
 			if !errors.As(err, &got) || got != e {
 				t.Fatalf("Details error = %v, want the GraphQL error", err)
@@ -296,7 +384,7 @@ func TestDetailsFailsWhenChecksPageFails(t *testing.T) {
 			return nil
 		},
 	}
-	if _, _, err := NewClient(d).Details(context.Background(), "me", []string{"PR_p0", "PR_p1"}); err == nil {
+	if _, _, _, err := NewClient(d).Details(context.Background(), "me", []string{"PR_p0", "PR_p1"}); err == nil {
 		t.Fatal("Details succeeded although a checks page failed")
 	}
 }
@@ -310,7 +398,7 @@ func TestFingerprintsBatchesNodesAndSkipsMissing(t *testing.T) {
 	for i := range ids {
 		ids[i] = "PR_" + string(rune('a'+i%26)) + string(rune('a'+i/26))
 	}
-	fps, rl, err := NewClient(d).Fingerprints(context.Background(), ids)
+	fps, _, rl, err := NewClient(d).Fingerprints(context.Background(), ids)
 	if err != nil {
 		t.Fatalf("Fingerprints error = %v, want the missing node skipped", err)
 	}
@@ -333,7 +421,7 @@ func TestFingerprintsFailsOnOtherErrors(t *testing.T) {
 		respond: func(int, string, map[string]any) []byte { return fixture(t, "fingerprints.json") },
 		fail:    func(int, string, map[string]any) error { return gqlErr("RATE_LIMITED") },
 	}
-	if _, _, err := NewClient(d).Fingerprints(context.Background(), []string{"PR_a"}); err == nil {
+	if _, _, _, err := NewClient(d).Fingerprints(context.Background(), []string{"PR_a"}); err == nil {
 		t.Fatal("Fingerprints succeeded despite a rate-limit error")
 	}
 }

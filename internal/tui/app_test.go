@@ -2,7 +2,9 @@ package tui
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"reflect"
 	"slices"
@@ -63,7 +65,7 @@ func (f *fakeClient) Search(context.Context, string) ([]github.Fingerprint, gith
 	return out, f.rate, nil
 }
 
-func (f *fakeClient) Fingerprints(_ context.Context, ids []string) ([]github.Fingerprint, github.RateLimit, error) {
+func (f *fakeClient) Fingerprints(_ context.Context, ids []string) ([]github.Fingerprint, []github.SkippedPR, github.RateLimit, error) {
 	f.checked = append(f.checked, slices.Clone(ids))
 	var out []github.Fingerprint
 	for _, id := range ids {
@@ -71,10 +73,10 @@ func (f *fakeClient) Fingerprints(_ context.Context, ids []string) ([]github.Fin
 			out = append(out, s.Fingerprint())
 		}
 	}
-	return out, f.rate, nil
+	return out, nil, f.rate, nil
 }
 
-func (f *fakeClient) Details(_ context.Context, _ string, ids []string) ([]github.Snapshot, github.RateLimit, error) {
+func (f *fakeClient) Details(_ context.Context, _ string, ids []string) ([]github.Snapshot, []github.SkippedPR, github.RateLimit, error) {
 	f.detail = append(f.detail, slices.Clone(ids))
 	var out []github.Snapshot
 	for _, id := range ids {
@@ -82,7 +84,58 @@ func (f *fakeClient) Details(_ context.Context, _ string, ids []string) ([]githu
 			out = append(out, s)
 		}
 	}
-	return out, f.rate, nil
+	return out, nil, f.rate, nil
+}
+
+// graphQL stands in for GitHub under the real client: every search finds
+// nothing, and a nodes(ids:) lookup answers each PR in snaps with its
+// fingerprint, or, for the IDs in forbidden, with a null and a FORBIDDEN
+// error at its index, as GitHub does once an SSO session expires.
+type graphQL struct {
+	snaps     map[string]github.Snapshot
+	forbidden map[string]bool
+}
+
+func (g *graphQL) DoWithContext(_ context.Context, query string, vars map[string]any, resp any) error {
+	out := map[string]any{"rateLimit": map[string]any{"remaining": 4000, "cost": 1, "resetAt": t0.Add(time.Hour)}}
+	var errs []api.GraphQLErrorItem
+	switch {
+	case vars["q"] != nil:
+		out["search"] = map[string]any{"pageInfo": map[string]any{"hasNextPage": false}, "nodes": []any{}}
+	case vars["ids"] != nil:
+		var nodes []any
+		for i, id := range vars["ids"].([]string) {
+			if g.forbidden[id] {
+				nodes = append(nodes, nil)
+				errs = append(errs, api.GraphQLErrorItem{Type: "FORBIDDEN", Message: "SAML enforcement", Path: []any{"nodes", float64(i)}})
+				continue
+			}
+			s := g.snaps[id]
+			nodes = append(nodes, map[string]any{"id": s.ID, "updatedAt": s.UpdatedAt, "headRefOid": s.HeadOID})
+		}
+		out["nodes"] = nodes
+	default:
+		return fmt.Errorf("graphQL: unexpected query %q", query)
+	}
+	b, err := json.Marshal(out)
+	if err != nil {
+		return err
+	}
+	if err := json.Unmarshal(b, resp); err != nil {
+		return err
+	}
+	if len(errs) > 0 {
+		return &api.GraphQLError{Errors: errs}
+	}
+	return nil
+}
+
+func newGraphQL(prs ...tracker.Tracked) *graphQL {
+	g := &graphQL{snaps: map[string]github.Snapshot{}, forbidden: map[string]bool{}}
+	for _, p := range prs {
+		g.snaps[p.PR.ID] = p.PR
+	}
+	return g
 }
 
 type testClock struct{ now time.Time }
@@ -190,7 +243,9 @@ type harness struct {
 
 type opts struct {
 	noClient bool
-	reloads  <-chan config.Reload
+	// client replaces the fake client.
+	client  github.Client
+	reloads <-chan config.Reload
 	// loadErr replaces the store's answer to the load with this error.
 	loadErr error
 	// noLoad holds the load back, as if the store were still reading.
@@ -229,6 +284,9 @@ func newHarness(t *testing.T, o opts, prs ...tracker.Tracked) *harness {
 	}
 	if !o.noClient {
 		d.Client = h.client
+	}
+	if o.client != nil {
+		d.Client = o.client
 	}
 	if o.noViewer {
 		d.Viewer = ""
@@ -346,6 +404,50 @@ func TestFailedFeedSearchStillUpdatesTrackedPRs(t *testing.T) {
 	h.press(t, "R")
 	if strings.Contains(content(h.m), "search feed") {
 		t.Errorf("the feed error outlived a clean poll:\n%s", content(h.m))
+	}
+}
+
+func TestPollFailsWhenEveryPRIsUnreachable(t *testing.T) {
+	prs := []tracker.Tracked{wallPR("1"), wallPR("2")}
+	gql := newGraphQL(prs...)
+	h := newHarness(t, opts{client: github.NewClient(gql)}, prs...)
+	h.finishPoll(t)
+	if c := ansi.Strip(content(h.m)); !strings.Contains(c, "polled 0s ago") {
+		t.Fatalf("the first poll did not succeed:\n%s", c)
+	}
+
+	gql.forbidden = map[string]bool{"1": true, "2": true}
+	h.press(t, "R")
+	c := ansi.Strip(content(h.m))
+	if !strings.Contains(c, "poll failed: check tracked PRs: all 2 PRs unreachable") {
+		t.Errorf("View does not show the poll failing:\n%s", c)
+	}
+	if strings.Contains(c, "polled") {
+		t.Errorf("View calls a poll that reached no PR a success:\n%s", c)
+	}
+	if len(h.m.prs) != 2 || !reflect.DeepEqual(h.m.prs["1"].PR, prs[0].PR) {
+		t.Errorf("PRs = %v, want both kept as they were", h.m.prs)
+	}
+}
+
+func TestUnreachablePRsShowANoteUntilAPollReachesThem(t *testing.T) {
+	prs := []tracker.Tracked{wallPR("1"), wallPR("2"), wallPR("3")}
+	gql := newGraphQL(prs...)
+	gql.forbidden = map[string]bool{"2": true, "3": true}
+	h := newHarness(t, opts{client: github.NewClient(gql)}, prs...)
+	h.finishPoll(t)
+	c := ansi.Strip(content(h.m))
+	if !strings.Contains(c, "2 PRs unreachable (FORBIDDEN)") {
+		t.Errorf("View does not note the unreachable PRs:\n%s", c)
+	}
+	if !strings.Contains(c, "polled 0s ago") || strings.Contains(c, "poll failed") {
+		t.Errorf("a poll that reached some PRs did not count as a success:\n%s", c)
+	}
+
+	gql.forbidden = nil
+	h.press(t, "R")
+	if c := ansi.Strip(content(h.m)); strings.Contains(c, "unreachable") {
+		t.Errorf("the note outlived a poll that reached every PR:\n%s", c)
 	}
 }
 

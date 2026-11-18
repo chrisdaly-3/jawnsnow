@@ -27,6 +27,7 @@ type fakeClient struct {
 	fpErr      error
 	detailRate github.RateLimit
 	detailErr  error
+	detailSkip map[string]string // ID → GraphQL error type
 
 	fpCalls     [][]string
 	detailCalls [][]string
@@ -60,31 +61,42 @@ func (f *fakeClient) Search(_ context.Context, q string) ([]github.Fingerprint, 
 	return nil, github.RateLimit{}, nil
 }
 
-func (f *fakeClient) Fingerprints(_ context.Context, ids []string) ([]github.Fingerprint, github.RateLimit, error) {
+// Fingerprints leaves out "gone", as the client does a PR that no longer
+// resolves, and reports it as skipped with NOT_FOUND.
+func (f *fakeClient) Fingerprints(_ context.Context, ids []string) ([]github.Fingerprint, []github.SkippedPR, github.RateLimit, error) {
 	f.fpCalls = append(f.fpCalls, slices.Clone(ids))
 	if f.fpErr != nil {
-		return nil, github.RateLimit{}, f.fpErr
+		return nil, nil, github.RateLimit{}, f.fpErr
 	}
 	var out []github.Fingerprint
+	var skipped []github.SkippedPR
 	for _, id := range ids {
-		if id != "gone" {
-			out = append(out, f.fingerprint(id))
+		if id == "gone" {
+			skipped = append(skipped, github.SkippedPR{ID: id, Type: "NOT_FOUND"})
+			continue
 		}
+		out = append(out, f.fingerprint(id))
 	}
-	return out, github.RateLimit{}, nil
+	return out, skipped, github.RateLimit{}, nil
 }
 
-func (f *fakeClient) Details(_ context.Context, viewer string, ids []string) ([]github.Snapshot, github.RateLimit, error) {
+// Details leaves out the PRs in detailSkip and reports them as skipped.
+func (f *fakeClient) Details(_ context.Context, viewer string, ids []string) ([]github.Snapshot, []github.SkippedPR, github.RateLimit, error) {
 	f.detailCalls = append(f.detailCalls, slices.Clone(ids))
 	f.viewers = append(f.viewers, viewer)
 	if f.detailErr != nil {
-		return nil, github.RateLimit{}, f.detailErr
+		return nil, nil, github.RateLimit{}, f.detailErr
 	}
-	out := make([]github.Snapshot, len(ids))
-	for i, id := range ids {
-		out[i] = github.Snapshot{ID: id}
+	var out []github.Snapshot
+	var skipped []github.SkippedPR
+	for _, id := range ids {
+		if typ, ok := f.detailSkip[id]; ok {
+			skipped = append(skipped, github.SkippedPR{ID: id, Type: typ})
+			continue
+		}
+		out = append(out, github.Snapshot{ID: id})
 	}
-	return out, f.detailRate, nil
+	return out, skipped, f.detailRate, nil
 }
 
 var (
@@ -290,5 +302,57 @@ func TestFetchReturnsFingerprintError(t *testing.T) {
 	}
 	if len(c.detailCalls) != 0 {
 		t.Errorf("Details called after a failed lookup")
+	}
+}
+
+func TestFetchReportsUnreachablePRs(t *testing.T) {
+	moved := unchanged
+	moved.HeadOID = "h9"
+	c := &fakeClient{
+		fps:        map[string]github.Fingerprint{"1": moved},
+		detailSkip: map[string]string{"1": "FORBIDDEN", "gone": "NOT_FOUND"},
+	}
+	res := Fetch(context.Background(), c, Request{
+		Now: now, Known: map[string]github.Fingerprint{"1": unchanged, "gone": {ID: "gone"}},
+		Watch: []string{"1", "gone"}, DetailIDs: []string{"gone"},
+	})
+	if res.Err != nil {
+		t.Fatalf("Err = %v, want a poll that went on without the unreachable PRs", res.Err)
+	}
+	// gone is skipped by both the lookup and the detail fetch.
+	want := []github.SkippedPR{{ID: "1", Type: "FORBIDDEN"}, {ID: "gone", Type: "NOT_FOUND"}}
+	if !reflect.DeepEqual(res.Unreachable, want) {
+		t.Errorf("Unreachable = %+v, want %+v", res.Unreachable, want)
+	}
+}
+
+func TestFetchFailsWhenEveryFeedFails(t *testing.T) {
+	c := &fakeClient{feedErr: map[string]error{feedA.Query: io.EOF, feedB.Query: io.ErrUnexpectedEOF}}
+	res := Fetch(context.Background(), c, Request{Feeds: []config.Feed{feedA, feedB}, Now: now})
+	if !errors.Is(res.Err, io.EOF) || !errors.Is(res.Err, io.ErrUnexpectedEOF) {
+		t.Fatalf("Err = %v, want both feed errors", res.Err)
+	}
+	if len(res.FeedErrs) != 2 {
+		t.Errorf("FeedErrs = %v, want both", res.FeedErrs)
+	}
+}
+
+func TestFetchWithEveryFeedFailingStillChecksTrackedPRs(t *testing.T) {
+	c := &fakeClient{feedErr: map[string]error{feedA.Query: io.EOF}}
+	res := Fetch(context.Background(), c, Request{Feeds: []config.Feed{feedA}, Watch: []string{"1"}, Now: now})
+	if res.Err != nil {
+		t.Fatalf("Err = %v, want the tracked PR checked without the feed", res.Err)
+	}
+	if !reflect.DeepEqual(c.fpCalls, [][]string{{"1"}}) {
+		t.Errorf("Fingerprints calls = %v, want [[1]]", c.fpCalls)
+	}
+}
+
+func TestFetchPrefersARateLimitWhenEveryFeedFails(t *testing.T) {
+	limited := &api.GraphQLError{Errors: []api.GraphQLErrorItem{{Type: "RATE_LIMITED"}}}
+	c := &fakeClient{feedErr: map[string]error{feedA.Query: io.EOF, feedB.Query: limited}}
+	res := Fetch(context.Background(), c, Request{Feeds: []config.Feed{feedA, feedB}, Now: now})
+	if !github.IsRateLimited(res.Err) {
+		t.Fatalf("Err = %v, want the rate limit", res.Err)
 	}
 }

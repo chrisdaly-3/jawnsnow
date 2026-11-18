@@ -1,10 +1,13 @@
 package github
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 	"sync"
 
 	"github.com/cli/go-gh/v2/pkg/api"
@@ -24,12 +27,14 @@ type Client interface {
 	Viewer(ctx context.Context) (string, error)
 	// Search returns the fingerprints of up to 100 PRs, 2 pages of 50.
 	Search(ctx context.Context, query string) ([]Fingerprint, RateLimit, error)
-	// Fingerprints looks PRs up by node ID, 100 to a query. A PR that no
-	// longer resolves is left out.
-	Fingerprints(ctx context.Context, ids []string) ([]Fingerprint, RateLimit, error)
+	// Fingerprints looks PRs up by node ID, 100 to a query. A PR GitHub
+	// answers with an error, such as one that no longer resolves, is left
+	// out and returned as skipped.
+	Fingerprints(ctx context.Context, ids []string) ([]Fingerprint, []SkippedPR, RateLimit, error)
 	// Details fetches full Snapshots in batches of aliases, a few batches at
-	// a time, in the order of ids. A PR that no longer resolves is left out.
-	Details(ctx context.Context, viewer string, ids []string) ([]Snapshot, RateLimit, error)
+	// a time, in the order of ids. A PR GitHub answers with an error is left
+	// out and returned as skipped.
+	Details(ctx context.Context, viewer string, ids []string) ([]Snapshot, []SkippedPR, RateLimit, error)
 }
 
 // Doer is the slice of go-gh's GraphQLClient the client uses.
@@ -159,8 +164,9 @@ func (c *client) Search(ctx context.Context, query string) ([]Fingerprint, RateL
 	return fps, total, nil
 }
 
-func (c *client) Fingerprints(ctx context.Context, ids []string) ([]Fingerprint, RateLimit, error) {
+func (c *client) Fingerprints(ctx context.Context, ids []string) ([]Fingerprint, []SkippedPR, RateLimit, error) {
 	var fps []Fingerprint
+	var skipped []SkippedPR
 	var total RateLimit
 	for start := 0; start < len(ids); start += fingerprintBatch {
 		batch := ids[start:min(start+fingerprintBatch, len(ids))]
@@ -172,20 +178,27 @@ func (c *client) Fingerprints(ctx context.Context, ids []string) ([]Fingerprint,
 		}
 		raw, errs, rl, err := c.do(ctx, fingerprintsQuery, map[string]any{"ids": batch}, inNodes)
 		if err != nil {
-			return nil, total, err
+			return nil, nil, total, err
 		}
 		total.add(rl)
-		skip := map[int]bool{}
+		skip := map[int]api.GraphQLErrorItem{}
 		for _, e := range errs {
 			i, _ := nodeIndex(e.Path, len(batch))
-			skip[i] = true
+			if _, seen := skip[i]; !seen {
+				skip[i] = e
+			}
+		}
+		for i, id := range batch {
+			if e, ok := skip[i]; ok {
+				skipped = append(skipped, SkippedPR{ID: id, Type: e.Type, Message: e.Message})
+			}
 		}
 		var nodes []*fingerprintNode
 		if err := json.Unmarshal(raw["nodes"], &nodes); err != nil {
-			return nil, total, err
+			return nil, nil, total, err
 		}
 		for i, n := range nodes {
-			if skip[i] {
+			if _, ok := skip[i]; ok {
 				continue
 			}
 			if f, ok := n.fingerprint(); ok {
@@ -193,26 +206,33 @@ func (c *client) Fingerprints(ctx context.Context, ids []string) ([]Fingerprint,
 			}
 		}
 	}
-	return fps, total, nil
+	if err := allUnreachable(ids, skipped); err != nil {
+		return nil, nil, total, err
+	}
+	return fps, skipped, total, nil
 }
 
-func (c *client) Details(ctx context.Context, viewer string, ids []string) ([]Snapshot, RateLimit, error) {
+func (c *client) Details(ctx context.Context, viewer string, ids []string) ([]Snapshot, []SkippedPR, RateLimit, error) {
 	var batches [][]string
 	for start := 0; start < len(ids); start += detailBatch {
 		batches = append(batches, ids[start:min(start+detailBatch, len(ids))])
 	}
 	type result struct {
-		snaps []Snapshot
-		rl    RateLimit
+		snaps   []Snapshot
+		skipped []SkippedPR
+		rl      RateLimit
 	}
 	results := make([]result, len(batches))
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	var (
-		wg       sync.WaitGroup
-		sem      = make(chan struct{}, detailParallel)
-		errOnce  sync.Once
-		firstErr error
+		wg  sync.WaitGroup
+		sem = make(chan struct{}, detailParallel)
+		mu  sync.Mutex
+		// The first error is the cause and the rest mostly its
+		// cancellation, but a batch already in flight may have been rate
+		// limited. That one must win, or the poll won't back off.
+		firstErr, rateErr error
 	)
 	for i, batch := range batches {
 		wg.Go(func() {
@@ -221,11 +241,15 @@ func (c *client) Details(ctx context.Context, viewer string, ids []string) ([]Sn
 			if ctx.Err() != nil {
 				return // another batch failed
 			}
-			snaps, rl, err := c.fetchBatch(ctx, viewer, batch)
-			results[i] = result{snaps, rl}
+			snaps, skipped, rl, err := c.fetchBatch(ctx, viewer, batch)
+			results[i] = result{snaps, skipped, rl}
 			if err != nil {
-				// The first error is the cause; the rest are its cancellation.
-				errOnce.Do(func() { firstErr = err })
+				mu.Lock()
+				firstErr = cmp.Or(firstErr, err)
+				if IsRateLimited(err) {
+					rateErr = cmp.Or(rateErr, err)
+				}
+				mu.Unlock()
 				cancel()
 			}
 		})
@@ -233,21 +257,55 @@ func (c *client) Details(ctx context.Context, viewer string, ids []string) ([]Sn
 	wg.Wait()
 
 	var snaps []Snapshot
+	var skipped []SkippedPR
 	var total RateLimit
 	for _, r := range results {
 		snaps = append(snaps, r.snaps...)
+		skipped = append(skipped, r.skipped...)
 		total.add(r.rl)
 	}
-	if firstErr != nil {
-		return nil, total, firstErr
+	if err := cmp.Or(rateErr, firstErr, allUnreachable(ids, skipped)); err != nil {
+		return nil, nil, total, err
 	}
-	return snaps, total, nil
+	return snaps, skipped, total, nil
+}
+
+// allUnreachable is an error when every requested PR was skipped: with
+// nothing fetched, the call would otherwise pass for one where nothing
+// changed.
+func allUnreachable(ids []string, skipped []SkippedPR) error {
+	requested := map[string]bool{}
+	for _, id := range ids {
+		requested[id] = true
+	}
+	for _, s := range skipped {
+		delete(requested, s.ID)
+	}
+	if len(ids) == 0 || len(requested) > 0 {
+		return nil
+	}
+	if len(ids) == 1 {
+		return fmt.Errorf("PR unreachable: %s", SkippedTypes(skipped))
+	}
+	return fmt.Errorf("all %d PRs unreachable: %s", len(ids), SkippedTypes(skipped))
+}
+
+// SkippedTypes lists the GraphQL error types in skipped, sorted and without
+// repeats, such as "FORBIDDEN, NOT_FOUND".
+func SkippedTypes(skipped []SkippedPR) string {
+	var types []string
+	for _, s := range skipped {
+		types = append(types, cmp.Or(s.Type, "unknown error"))
+	}
+	slices.Sort(types)
+	return strings.Join(slices.Compact(types), ", ")
 }
 
 // fetchBatch fetches one batch of aliases, then any further pages of each
 // PR's check contexts.
-func (c *client) fetchBatch(ctx context.Context, viewer string, batch []string) ([]Snapshot, RateLimit, error) {
+func (c *client) fetchBatch(ctx context.Context, viewer string, batch []string) ([]Snapshot, []SkippedPR, RateLimit, error) {
 	var snaps []Snapshot
+	var skipped []SkippedPR
 	var total RateLimit
 	vars := make(map[string]any, len(batch)+1)
 	vars["login"] = viewer
@@ -267,22 +325,29 @@ func (c *client) fetchBatch(ctx context.Context, viewer string, batch []string) 
 	}
 	raw, errs, rl, err := c.do(ctx, DetailQuery(len(batch)), vars, atAlias)
 	if err != nil {
-		return nil, total, err
+		return nil, nil, total, err
 	}
 	total.add(rl)
-	skip := map[string]bool{}
+	skip := map[string]api.GraphQLErrorItem{}
 	for _, e := range errs {
-		skip[e.Path[0].(string)] = true
+		alias := e.Path[0].(string)
+		if _, seen := skip[alias]; !seen {
+			skip[alias] = e
+		}
 	}
-	for i := range batch {
+	for i, id := range batch {
 		alias := fmt.Sprintf("p%d", i)
+		if e, ok := skip[alias]; ok {
+			skipped = append(skipped, SkippedPR{ID: id, Type: e.Type, Message: e.Message})
+			continue
+		}
 		node, ok := raw[alias]
-		if !ok || string(node) == "null" || skip[alias] {
+		if !ok || string(node) == "null" {
 			continue
 		}
 		snap, next, err := parsePRPage(node)
 		if err != nil {
-			return nil, total, err
+			return nil, nil, total, err
 		}
 		if snap.ID == "" {
 			continue // the ID is not a pull request
@@ -290,7 +355,7 @@ func (c *client) fetchBatch(ctx context.Context, viewer string, batch []string) 
 		for next.HasNextPage {
 			more, nextPage, rl, err := c.checksPage(ctx, snap.ID, next.EndCursor)
 			if err != nil {
-				return nil, total, err
+				return nil, nil, total, err
 			}
 			total.add(rl)
 			snap.Checks = append(snap.Checks, more...)
@@ -298,7 +363,7 @@ func (c *client) fetchBatch(ctx context.Context, viewer string, batch []string) 
 		}
 		snaps = append(snaps, snap)
 	}
-	return snaps, total, nil
+	return snaps, skipped, total, nil
 }
 
 func (c *client) checksPage(ctx context.Context, id, after string) ([]Check, pageInfo, RateLimit, error) {

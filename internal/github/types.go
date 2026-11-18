@@ -88,6 +88,12 @@ func (s Snapshot) Fingerprint() Fingerprint {
 	return Fingerprint{ID: s.ID, UpdatedAt: s.UpdatedAt, HeadOID: s.HeadOID, RollupState: s.RollupState}
 }
 
+// SkippedPR is a requested PR a call left out because GitHub answered it
+// with an error, such as FORBIDDEN when an SSO session has expired.
+type SkippedPR struct {
+	ID, Type, Message string
+}
+
 type RateLimit struct {
 	Remaining, Cost int
 	ResetAt         time.Time

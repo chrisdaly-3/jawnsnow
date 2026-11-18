@@ -133,6 +133,8 @@ type Model struct {
 	quota        poll.Quota
 	rateNote     string
 	feedNote     string // the searches the last poll skipped, and why
+	// unreachableNote counts the PRs the last poll couldn't reach, and why.
+	unreachableNote string
 
 	// One save runs at a time, so an older write can't land after a newer
 	// one. Changes made meanwhile wait in dirty and deleted.
@@ -498,6 +500,7 @@ func (m Model) finishPoll(res poll.Result) (Model, tea.Cmd) {
 		m.quota.ObserveSuccess()
 		m.lastErr, m.lastPoll = nil, now
 		m.feedNote = feedNote(res.FeedErrs)
+		m.unreachableNote = unreachableNote(res.Unreachable)
 		if m.pollIdle {
 			m.lastIdlePoll = m.pollStarted
 		}
@@ -525,6 +528,18 @@ func feedNote(errs []error) string {
 		notes[i] = strings.Join(strings.Fields(err.Error()), " ")
 	}
 	return strings.Join(notes, "; ")
+}
+
+// unreachableNote is the banner for PRs a poll skipped because GitHub
+// answered them with an error; they keep their last status.
+func unreachableNote(skipped []github.SkippedPR) string {
+	switch len(skipped) {
+	case 0:
+		return ""
+	case 1:
+		return fmt.Sprintf("1 PR unreachable (%s)", github.SkippedTypes(skipped))
+	}
+	return fmt.Sprintf("%d PRs unreachable (%s)", len(skipped), github.SkippedTypes(skipped))
 }
 
 func (m Model) markSave(ids ...string) Model {
