@@ -1,5 +1,5 @@
 # jawnSnow config — ~/.config/jawnsnow/config.toml
-# jawnSnow reloads this file when it changes and never writes to it.
+# snow created this file once with the defaults. It reloads it when it changes and never writes to it again.
 # Durations are Go-style: "90s", "5m", "36h"; "d" (days) is also accepted.
 
 # ─── Mode ─────────────────────────────────────────────────────────────────────

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/chrisdaly-3/jawnsnow/internal/config"
 	"github.com/chrisdaly-3/jawnsnow/internal/github"
@@ -66,25 +67,76 @@ func writeConfig(t *testing.T, home, body string) {
 	}
 }
 
-func TestStartupMissingConfigUsesDefaults(t *testing.T) {
-	isolate(t)
+func TestStartupCreatesDefaultConfig(t *testing.T) {
+	home := isolate(t)
 	deps, cleanup, err := buildDeps(os.Getenv, noClient)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer cleanup()
+	got, err := os.ReadFile(filepath.Join(home, ".config", "jawnsnow", "config.toml"))
+	if err != nil {
+		t.Fatalf("config was not created: %v", err)
+	}
+	if !bytes.Equal(got, config.DefaultTOML()) {
+		t.Errorf("created file is not the default config")
+	}
+	// The TUI clears this banner once a config file reloads.
+	if !strings.HasPrefix(deps.ConfigBanner, "Created ~/.config/jawnsnow/config.toml") || hasBanner(deps.Banners, "Created") {
+		t.Fatalf("ConfigBanner = %q (banners %q)", deps.ConfigBanner, deps.Banners)
+	}
 	if deps.Config.Mode.Default != config.Defaults().Mode.Default || len(deps.Config.Feeds) != len(config.Defaults().Feeds) {
 		t.Fatalf("config is not the defaults: %+v", deps.Config)
-	}
-	// The TUI clears this banner once a config file loads.
-	if !strings.Contains(deps.ConfigBanner, "No config at") || hasBanner(deps.Banners, "No config at") {
-		t.Fatalf("ConfigBanner should say there is no config, got %q (banners %q)", deps.ConfigBanner, deps.Banners)
 	}
 	if !hasBanner(deps.Banners, `gh is not logged in — run "gh auth login"; polling is off`) {
 		t.Fatalf("missing gh banner in %q", deps.Banners)
 	}
-	if deps.Client != nil || deps.Reloads != nil || deps.Store == nil || deps.Now == nil {
+	if deps.Client != nil || deps.Reloads == nil || deps.Store == nil || deps.Now == nil {
 		t.Fatalf("unexpected deps: client=%v reloads=%v store=%v", deps.Client, deps.Reloads, deps.Store)
+	}
+}
+
+func TestStartupKeepsExistingConfig(t *testing.T) {
+	home := isolate(t)
+	body := "[github]\npoll_interval = \"2m\"\n"
+	writeConfig(t, home, body)
+	deps, cleanup, err := buildDeps(os.Getenv, noClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	got, _ := os.ReadFile(filepath.Join(home, ".config", "jawnsnow", "config.toml"))
+	if string(got) != body {
+		t.Errorf("existing config was rewritten: %q", got)
+	}
+	if deps.ConfigBanner != "" || hasBanner(deps.Banners, "Created") {
+		t.Errorf("unexpected banners %q %q", deps.ConfigBanner, deps.Banners)
+	}
+	if deps.Config.GitHub.PollInterval.Duration != 2*time.Minute {
+		t.Errorf("poll interval = %v, want 2m", deps.Config.GitHub.PollInterval)
+	}
+}
+
+func TestStartupCreateFailureFallsBack(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
+	home := isolate(t)
+	cfgParent := filepath.Join(home, ".config")
+	if err := os.Mkdir(cfgParent, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(cfgParent, 0o755) })
+	deps, cleanup, err := buildDeps(os.Getenv, noClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	if !strings.Contains(deps.ConfigBanner, "could not create it") || !strings.Contains(deps.ConfigBanner, "No config at ~/.config/jawnsnow/config.toml") {
+		t.Fatalf("ConfigBanner = %q", deps.ConfigBanner)
+	}
+	if deps.Config.Mode.Default != config.Defaults().Mode.Default {
+		t.Fatalf("config is not the defaults")
 	}
 }
 

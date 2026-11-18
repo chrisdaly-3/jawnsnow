@@ -90,10 +90,18 @@ func buildDeps(getenv func(string) string, newClient func() (github.Client, erro
 	var configBanner string
 
 	path := config.Path()
+	shown := tildePath(path, getenv("HOME"))
+	created, createErr := config.WriteDefaultIfMissing(path)
+	switch {
+	case createErr != nil:
+		configBanner = fmt.Sprintf("No config at %s — using defaults (could not create it: %v). Run \"snow config default\" to start one.", shown, createErr)
+	case created:
+		configBanner = fmt.Sprintf("Created %s with the defaults — edit it any time; snow reloads on save.", shown)
+	}
 	cfg, warnings, err := config.Load(path)
 	switch {
 	case errors.Is(err, os.ErrNotExist):
-		configBanner = fmt.Sprintf("No config at %s — using defaults. Run \"snow config default\" to start one.", tildePath(path, getenv("HOME")))
+		// Creating the file failed above, and its banner says so.
 	case err != nil:
 		return tui.Deps{}, noop, err
 	default:
@@ -136,8 +144,8 @@ func buildDeps(getenv func(string) string, newClient func() (github.Client, erro
 		deps.Client = client
 	}
 
-	// A missing config directory is the first-run case the banner above
-	// already explains, so it is not an error.
+	// A missing config directory means creating the file failed, which the
+	// banner above already explains, so it is not an error.
 	if w, err := config.NewWatcher(path); err == nil {
 		watcher = w
 		deps.Reloads = w.Events()
