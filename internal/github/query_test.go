@@ -18,11 +18,11 @@ func assertEq[T comparable](t *testing.T, got, want T) {
 func TestFeedQuery(t *testing.T) {
 	now := time.Date(2026, 11, 18, 12, 0, 0, 0, time.UTC)
 	f := config.Feed{Query: "is:pr is:open review-requested:@me", Since: config.Duration{Duration: 36 * time.Hour}}
-	assertEq(t, FeedQuery(f, now), "is:pr is:open review-requested:@me draft:false updated:>=2026-11-17T00:00:00Z")
+	assertEq(t, FeedQuery(f, now), "is:pr is:open review-requested:@me draft:false updated:>=2026-11-17T00:00:00Z sort:updated-desc")
 	f.IncludeDrafts = true
-	assertEq(t, FeedQuery(f, now), "is:pr is:open review-requested:@me updated:>=2026-11-17T00:00:00Z")
+	assertEq(t, FeedQuery(f, now), "is:pr is:open review-requested:@me updated:>=2026-11-17T00:00:00Z sort:updated-desc")
 	f.Since = config.Duration{Duration: 90 * time.Minute}
-	assertEq(t, FeedQuery(f, now), "is:pr is:open review-requested:@me updated:>=2026-11-18T10:00:00Z")
+	assertEq(t, FeedQuery(f, now), "is:pr is:open review-requested:@me updated:>=2026-11-18T10:00:00Z sort:updated-desc")
 }
 
 func TestDetailQueryAliasesEachPR(t *testing.T) {

@@ -60,6 +60,8 @@ var checksPageQuery = `query ChecksPage($id: ID!, $after: String) {
 // FeedQuery turns a feed into a GitHub search string, bounded to PRs updated
 // within the feed's window. The bound is truncated to the UTC day (or hour for
 // windows under a day) so the string, and so the search cache key, is stable.
+// Search returns at most 100 PRs; sorting by update makes the ones it drops
+// the least recently active.
 func FeedQuery(f config.Feed, now time.Time) string {
 	q := f.Query
 	if !f.IncludeDrafts {
@@ -73,7 +75,7 @@ func FeedQuery(f config.Feed, now time.Time) string {
 		since := now.Add(-f.Since.Duration).UTC().Truncate(unit)
 		q += " updated:>=" + since.Format(time.RFC3339)
 	}
-	return q
+	return q + " sort:updated-desc"
 }
 
 // DetailQuery builds a query that fetches n pull requests as aliases p0..p{n-1},
