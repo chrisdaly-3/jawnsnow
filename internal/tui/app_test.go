@@ -179,6 +179,10 @@ type harness struct {
 type opts struct {
 	noClient bool
 	reloads  <-chan config.Reload
+	// loadErr replaces the store's answer to the load with this error.
+	loadErr error
+	// noLoad holds the load back, as if the store were still reading.
+	noLoad bool
 }
 
 // newHarness builds a model over a real store seeded with prs, runs Init and
@@ -227,7 +231,13 @@ func newHarness(t *testing.T, o opts, prs ...tracker.Tracked) *harness {
 	if len(loaded) != 1 {
 		t.Fatalf("Init produced %d loadedMsg, want 1 (all: %#v)", len(loaded), msgs)
 	}
-	m, h.pollCmd = update(t, m, loaded[0])
+	switch {
+	case o.noLoad:
+	case o.loadErr != nil:
+		m, h.pollCmd = update(t, m, loadedMsg{err: o.loadErr})
+	default:
+		m, h.pollCmd = update(t, m, loaded[0])
+	}
 	h.m = m
 	return h
 }
@@ -317,6 +327,46 @@ func TestFailedFeedSearchStillUpdatesTrackedPRs(t *testing.T) {
 	h.press(t, "R")
 	if strings.Contains(content(h.m), "search feed") {
 		t.Errorf("the feed error outlived a clean poll:\n%s", content(h.m))
+	}
+}
+
+func TestLoadErrorTurnsSavingOff(t *testing.T) {
+	hidden := tracker.Hide(wallPR("1"), t0.Add(-time.Minute))
+	h := newHarness(t, opts{loadErr: errors.New("disk on fire")}, hidden)
+	moved := snap("1")
+	moved.HeadOID, moved.UpdatedAt = "head-1b", t0
+	h.client.snaps["1"] = moved
+	h.client.found = []string{"1"}
+	h.finishPoll(t)
+
+	if got := h.m.prs["1"]; got.PR.HeadOID != "head-1b" {
+		t.Errorf("PR 1 head = %q, want the poll applied to the screen", got.PR.HeadOID)
+	}
+	stored, err := h.store.LoadTracked(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p := stored["1"]; p.Place != tracker.PlaceWaiting || p.WaitReason != tracker.WaitHidden || p.PR.HeadOID != "head-1" {
+		t.Errorf("stored PR 1 = place %q reason %q head %q, want the stored hidden row untouched", p.Place, p.WaitReason, p.PR.HeadOID)
+	}
+	want := "could not load saved PRs: disk on fire — not saving this session"
+	if c := ansi.Strip(content(h.m)); !strings.Contains(c, want) {
+		t.Errorf("View does not say %q:\n%s", want, c)
+	}
+
+	m, cmd := h.m.apply(actionHide{ID: "1"})
+	if cmd != nil {
+		t.Error("a hide started a save although saving is off")
+	}
+	h.m = m
+}
+
+func TestNoPollBeforeTheLoad(t *testing.T) {
+	h := newHarness(t, opts{noLoad: true}, wallPR("1"))
+	h.press(t, "R")
+	h.m, _ = settle(t, h.m, pollTickMsg{gen: h.m.pollGen})
+	if h.m.polling || h.client.polls != 0 {
+		t.Errorf("a poll started before the saved PRs loaded (polling=%v, searches=%d)", h.m.polling, h.client.polls)
 	}
 }
 

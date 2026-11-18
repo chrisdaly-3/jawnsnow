@@ -108,6 +108,10 @@ type Model struct {
 	open    func(url string) error
 
 	prs map[string]tracker.Tracked
+	// loaded is set once the stored PRs arrive; no poll starts before, or
+	// its result would be saved over rows not yet read. readOnly is set when
+	// that load failed: nothing is saved for the rest of the session.
+	loaded, readOnly bool
 
 	polling      bool
 	pollStarted  time.Time
@@ -217,8 +221,10 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 	case loadedMsg:
+		m.loaded = true
 		if msg.err != nil {
-			m.notice = "could not load saved PRs: " + msg.err.Error()
+			m.readOnly = true
+			m.banners = append(slices.Clone(m.banners), "could not load saved PRs: "+msg.err.Error()+" — not saving this session")
 		} else {
 			m.prs = msg.prs
 		}
@@ -392,10 +398,11 @@ func (m Model) updatePR(id string, change func(tracker.Tracked, time.Time) track
 	return m.flush()
 }
 
-// startPoll starts a poll unless one is in flight or there is no client.
-// The command gets copies, so later changes to the model don't race it.
+// startPoll starts a poll unless one is in flight, the stored PRs haven't
+// loaded, or there is no client. The command gets copies, so later changes
+// to the model don't race it.
 func (m Model) startPoll() (Model, tea.Cmd) {
-	if m.client == nil || m.polling {
+	if m.client == nil || m.polling || !m.loaded {
 		return m, nil
 	}
 	now := m.now()
@@ -494,8 +501,13 @@ func (m Model) markDelete(ids ...string) Model {
 }
 
 // flush starts a save of the pending changes unless one is running; the
-// running save's savedMsg flushes again.
+// running save's savedMsg flushes again. In a read-only session it drops
+// them.
 func (m Model) flush() (Model, tea.Cmd) {
+	if m.readOnly {
+		m.dirty, m.deleted = map[string]bool{}, map[string]bool{}
+		return m, nil
+	}
 	if m.saving || (len(m.dirty) == 0 && len(m.deleted) == 0) {
 		return m, nil
 	}
