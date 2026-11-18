@@ -161,3 +161,16 @@ func TestLoadRepoScopeDefaultsToFull(t *testing.T) {
 		t.Fatalf("Validate() = %v", err)
 	}
 }
+
+func TestLoadFeedSinceDefaultsTo14d(t *testing.T) {
+	p := writeConfig(t, "[[feeds]]\nname = \"team\"\nquery = \"is:pr is:open team-review-requested:org/team\"\n\n[[feeds]]\nname = \"mine\"\nquery = \"is:pr author:@me\"\nsince = \"36h\"\n")
+	cfg, _, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEq(t, cfg.Feeds[0].Since.Duration, 14*24*time.Hour)
+	assertEq(t, cfg.Feeds[1].Since.Duration, 36*time.Hour)
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() = %v", err)
+	}
+}

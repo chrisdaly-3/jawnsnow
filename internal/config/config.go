@@ -114,6 +114,9 @@ type Chrome struct {
 	Muted  string `toml:"muted"`
 }
 
+// DefaultSince is a feed's time gate when it doesn't set one.
+const DefaultSince = 14 * 24 * time.Hour
+
 // Defaults returns the configuration used when no file is present. It sets
 // every scalar default itself rather than relying on decoding onto it.
 func Defaults() Config {
@@ -126,7 +129,7 @@ func Defaults() Config {
 		Feeds: []Feed{{
 			Name:  "review-requested",
 			Query: "is:pr is:open review-requested:@me",
-			Since: Duration{14 * 24 * time.Hour},
+			Since: Duration{DefaultSince},
 		}},
 		Done: DoneConfig{KeepFor: Duration{30 * 24 * time.Hour}},
 		Review: ReviewConfig{

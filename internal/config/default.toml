@@ -38,13 +38,13 @@ ignore_checks = []
 # Default: one feed, "is:pr is:open review-requested:@me" with since = "14d".
 
 [[feeds]]
-# Label shown in filters and on cards. Must be unique.
-# Default: "review-requested"
+# Label shown in filters and on cards. Required, and must be unique.
+# The default feed is named "review-requested".
 name = "review-requested"
 
 # Any standard GitHub PR search. jawnSnow adds "draft:false" (unless
-# include_drafts) and the "updated:>=" time gate from `since`.
-# Default: "is:pr is:open review-requested:@me"
+# include_drafts) and the "updated:>=" time gate from `since`. Required.
+# The default feed's query is "is:pr is:open review-requested:@me".
 query = "is:pr is:open review-requested:@me"
 
 # Time gate: only PRs updated within this window. A tracked PR with no activity

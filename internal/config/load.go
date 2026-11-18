@@ -40,6 +40,11 @@ func Load(path string) (cfg Config, warnings []string, err error) {
 	if md.IsDefined("feeds") {
 		cfg.Feeds = fileOnly.Feeds
 	}
+	for i := range cfg.Feeds {
+		if cfg.Feeds[i].Since.Duration == 0 {
+			cfg.Feeds[i].Since = Duration{DefaultSince}
+		}
+	}
 	// scope defaults to "full"; map values are copies, so write them back.
 	for name, r := range cfg.Repos {
 		if r.Scope == "" {
