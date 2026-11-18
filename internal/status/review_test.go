@@ -60,7 +60,7 @@ func TestOnlyBaseMergesSince(t *testing.T) {
 	}{
 		{"base merge only", "B", commits[:3], true},
 		{"real commit after merge", "B", commits[:4], false},
-		{"merge of own commits only", "M", commits[3:], false},
+		{"merge of own commits only", "C", commits, false},
 		{"unknown since (force-push)", "X", commits, false},
 		{"nothing after since", "B", commits[:2], true},
 	}
