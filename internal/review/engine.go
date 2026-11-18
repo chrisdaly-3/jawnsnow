@@ -72,7 +72,9 @@ type repoPool struct {
 
 // Run reviews req.PR and saves the result. A review whose pipeline fails
 // at any step is saved as failed with the error text, and the error is
-// returned with it. Cost rows and the saved review are written even after
+// returned with it. A continuation that fails after an earlier run gave
+// parseable output is the exception: that output is kept and the review is
+// incomplete. Cost rows and the saved review are written even after
 // ctx is cancelled, so a stopped run's spend is still counted.
 func (e *Engine) Run(ctx context.Context, req Request, onEvent func(Event)) (store.Review, error) {
 	pr := req.PR.PR
@@ -227,6 +229,7 @@ func (e *Engine) review(ctx context.Context, req Request, rv *store.Review, onEv
 		kept       []store.Finding
 		notes      []string
 		runOutcome string
+		contFailed string // why a continuation failed after a parseable run
 	)
 	for continuations := 0; ; continuations++ {
 		start := time.Now()
@@ -235,12 +238,13 @@ func (e *Engine) review(ctx context.Context, req Request, rv *store.Review, onEv
 		rv.CostUSD += res.CostUSD
 		seen.Reads = append(seen.Reads, res.Reads...)
 		seen.Searched = append(seen.Searched, res.Searched...)
+		var parsed Output
 		if runErr == nil {
-			out, runErr = ParseOutput(res.Output)
+			parsed, runErr = ParseOutput(res.Output)
 		}
 		runOutcome = outcomeFailed
 		if runErr == nil {
-			raw = res.Output
+			out, raw = parsed, res.Output
 			gaps = ReviewGaps(rc.Scope, files, worktree, seen, out)
 			kept, notes, lint = CheckFindings(out, files)
 			runOutcome = outcomeComplete
@@ -251,8 +255,14 @@ func (e *Engine) review(ctx context.Context, req Request, rv *store.Review, onEv
 		if err := e.addCost(ctx, rv, res, runOutcome, took); err != nil {
 			return errors.Join(runErr, err)
 		}
-		if runErr != nil {
+		if runErr != nil && raw == nil {
 			return runErr
+		}
+		if runErr != nil {
+			// An earlier run of this pass gave a usable review; failing the
+			// whole review would pay for it again on retry.
+			contFailed = fmt.Sprintf("continuation %d failed: %v; showing the earlier pass", continuations, runErr)
+			break
 		}
 		left := choice.PerReviewUSD - rv.CostUSD
 		if len(gaps)+len(lint) == 0 || continuations == maxContinuations || left <= 0 {
@@ -267,6 +277,10 @@ func (e *Engine) review(ctx context.Context, req Request, rv *store.Review, onEv
 	}
 
 	rv.Outcome = runOutcome
+	if contFailed != "" {
+		rv.Outcome = outcomeIncomplete
+		notes = append(notes, contFailed)
+	}
 	rv.Verdict, rv.VerdictReason, rv.Understanding = out.Verdict, out.VerdictReason, out.Understanding
 	rv.Assumptions = out.Assumptions
 	if rv.Raw, err = withExamined(raw, VerifiedExamined(out.Examined, seen, worktree)); err != nil {

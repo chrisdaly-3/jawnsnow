@@ -749,3 +749,40 @@ func TestEnginePruneIdle(t *testing.T) {
 		t.Errorf("idle slot kept: %+v", slots)
 	}
 }
+
+func TestEngineContinuationFailureKeepsEarlierOutput(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		cont fakeRun
+	}{
+		{"error result", fakeRun{Cost: 0.25, IsError: true, Output: output(nil, nil)}},
+		{"no output", fakeRun{Cost: 0.25}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env := newEngineEnv(t)
+			gappy := fakeRun{Reads: []string{"{{WORKTREE}}/README.md"}, Output: output([]outFinding{bFinding}, nil), Cost: 0.5}
+			env.claude.script(gappy, tc.cont, gappy)
+			rv, err := env.run(t, Request{Mode: ModeAuto})
+			if err != nil {
+				t.Fatalf("Run: %v", err)
+			}
+			if n := len(env.claude.calls()); n != 2 {
+				t.Errorf("calls = %d, want 2 (no run after the failed continuation)", n)
+			}
+			if rv.Outcome != "incomplete" || rv.Error != "" || rv.Verdict != "comment" {
+				t.Errorf("outcome %s error %q verdict %q", rv.Outcome, rv.Error, rv.Verdict)
+			}
+			if !strings.Contains(rv.Note, "continuation 1 failed: ") || !strings.Contains(rv.Note, "showing the earlier pass") {
+				t.Errorf("note = %q", rv.Note)
+			}
+			saved := env.stored(t)
+			if len(saved) != 1 || saved[0].Outcome != "incomplete" || len(saved[0].Findings) != 1 || saved[0].Findings[0].Path != "b.txt" {
+				t.Errorf("stored = %+v", saved)
+			}
+			rows := env.costRows(t)
+			if len(rows) != 2 || rows[0].Outcome != "incomplete" || rows[1].Outcome != "failed" || rv.CostUSD != 0.75 {
+				t.Errorf("cost rows = %+v, review cost %v", rows, rv.CostUSD)
+			}
+		})
+	}
+}
