@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -134,5 +135,15 @@ func TestAgentEditOpensEditor(t *testing.T) {
 	t.Setenv("EDITOR", "")
 	if got := editorCommand().Args[0]; got != "vi" {
 		t.Errorf("with neither set the editor is %q, want vi", got)
+	}
+}
+
+func TestEditorCommandSplitsArgs(t *testing.T) {
+	t.Setenv("VISUAL", "")
+	t.Setenv("EDITOR", "code --wait")
+	got := editorCommand().Args
+	want := []string{"code", "--wait", config.Path()}
+	if !slices.Equal(got, want) {
+		t.Errorf("Args = %v, want %v", got, want)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -54,6 +55,9 @@ func TestDetectClaudeBadAuthJSON(t *testing.T) {
 	if !got.Found || got.LoggedIn || got.Err == "" {
 		t.Fatalf("DetectClaude = %+v, want found, logged out, Err set", got)
 	}
+	if r := got.Unusable(); !strings.HasPrefix(r, "claude is not working: ") || strings.Contains(r, "not logged in") {
+		t.Errorf("Unusable = %q, want a claude is not working reason", r)
+	}
 }
 
 func TestDetectClaudeMissing(t *testing.T) {
@@ -80,5 +84,45 @@ func TestDetectClaudeTimeout(t *testing.T) {
 	}
 	if got.LoggedIn {
 		t.Errorf("DetectClaude = %+v, want not logged in", got)
+	}
+}
+
+func TestDetectClaudeForkingWrapperTimesOut(t *testing.T) {
+	old := detectTimeout
+	detectTimeout = 500 * time.Millisecond
+	t.Cleanup(func() { detectTimeout = old })
+	p := filepath.Join(t.TempDir(), "claude")
+	if err := os.WriteFile(p, []byte("#!/bin/sh\nsleep 30 &\nwait\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	got := DetectClaude(context.Background(), p)
+	if d := time.Since(start); d > 5*time.Second {
+		t.Fatalf("DetectClaude took %v with a forking wrapper", d)
+	}
+	if got.Err == "" || got.LoggedIn {
+		t.Errorf("DetectClaude = %+v, want Err set and not logged in", got)
+	}
+}
+
+func TestDetectClaudeTruncatesHugeOutput(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "claude")
+	script := "#!/bin/sh\ncase \"$1\" in\n  --version) echo '2.1.327 (Claude Code)' ;;\n  auth) echo '{\"loggedIn\": true}'; head -c 200000 /dev/zero | tr '\\0' x ;;\nesac\n"
+	if err := os.WriteFile(p, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got := DetectClaude(context.Background(), p)
+	if !got.Found || got.Version != "2.1.327" {
+		t.Fatalf("DetectClaude = %+v, want found with version", got)
+	}
+	// The JSON is followed by junk, so parsing fails, but not by blocking or
+	// a pipe error: the output was read and capped.
+	if strings.Contains(got.Err, "broken pipe") || strings.Contains(got.Err, "signal") {
+		t.Errorf("Err = %q, want output truncated without a process error", got.Err)
+	}
+	var w cappedWriter
+	w.max = 4
+	if n, err := w.Write([]byte("abcdefgh")); n != 8 || err != nil || string(w.buf) != "abcd" {
+		t.Errorf("cappedWriter kept %q (n=%d err=%v), want abcd", w.buf, n, err)
 	}
 }
