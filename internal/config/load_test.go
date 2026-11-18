@@ -148,3 +148,16 @@ func TestIgnoreChecksForCombines(t *testing.T) {
 	}
 	assertEq(t, c.RepoFor("x/y").Scope, "full")
 }
+
+func TestLoadRepoScopeDefaultsToFull(t *testing.T) {
+	p := writeConfig(t, "[repos.\"chainguard-dev/mono\"]\npath = \"~/code/mono\"\n")
+	cfg, _, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEq(t, cfg.Repos["chainguard-dev/mono"].Scope, "full")
+	assertEq(t, cfg.RepoFor("chainguard-dev/mono").Scope, "full")
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() = %v", err)
+	}
+}

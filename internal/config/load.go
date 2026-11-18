@@ -40,6 +40,13 @@ func Load(path string) (cfg Config, warnings []string, err error) {
 	if md.IsDefined("feeds") {
 		cfg.Feeds = fileOnly.Feeds
 	}
+	// scope defaults to "full"; map values are copies, so write them back.
+	for name, r := range cfg.Repos {
+		if r.Scope == "" {
+			r.Scope = "full"
+			cfg.Repos[name] = r
+		}
+	}
 	for _, k := range md.Undecoded() {
 		warnings = append(warnings, fmt.Sprintf("unknown key %q", k.String()))
 	}
