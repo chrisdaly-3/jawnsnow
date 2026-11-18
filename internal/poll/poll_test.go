@@ -179,7 +179,7 @@ func TestFetchFailsOnSearchRateLimit(t *testing.T) {
 		feedErr: map[string]error{feedA.Query: limited},
 	}
 	res := Fetch(context.Background(), c, Request{Feeds: []config.Feed{feedA, feedB}, DetailIDs: []string{"4"}, Now: now})
-	if !IsRateLimited(res.Err) {
+	if !github.IsRateLimited(res.Err) {
 		t.Fatalf("Err = %v, want a rate-limit error", res.Err)
 	}
 	if !strings.Contains(res.Err.Error(), `"A"`) {

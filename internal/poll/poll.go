@@ -50,7 +50,7 @@ func Fetch(ctx context.Context, c github.Client, req Request) Result {
 		res.observe(rl)
 		if err != nil {
 			err = fmt.Errorf("search feed %q: %w", f.Name, err)
-			if IsRateLimited(err) {
+			if github.IsRateLimited(err) {
 				res.Err = err
 				return res
 			}

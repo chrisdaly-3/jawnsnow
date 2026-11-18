@@ -487,9 +487,9 @@ func (m Model) finishPoll(res poll.Result) (Model, tea.Cmd) {
 	m.quota.Observe(res.Rate)
 	var save tea.Cmd
 	switch {
-	case poll.IsRateLimited(res.Err):
+	case github.IsRateLimited(res.Err):
 		// The paced note in the banner explains this; the raw error doesn't.
-		m.quota.ObserveRateLimited(poll.RateLimitReset(res.Err, m.now()))
+		m.quota.ObserveRateLimited(github.RateLimitReset(res.Err, m.now()))
 		m.lastErr = nil
 	case res.Err != nil:
 		m.lastErr = res.Err

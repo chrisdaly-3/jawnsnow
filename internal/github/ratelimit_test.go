@@ -1,4 +1,4 @@
-package poll
+package github
 
 import (
 	"fmt"
