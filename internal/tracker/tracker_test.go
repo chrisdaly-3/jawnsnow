@@ -222,8 +222,51 @@ func TestApplyNoSnapshotKeepsPRButAppliesTimeRules(t *testing.T) {
 	if got.Place != PlaceWaiting || got.WaitReason != WaitStale || got.WaitingHead != "H1" {
 		t.Errorf("got %+v", got)
 	}
-	if got.Status.Status != status.CIWaiting || !got.LastSeen.Equal(old) {
-		t.Errorf("Status/LastSeen should be kept: %+v", got)
+	if !got.LastSeen.Equal(old) {
+		t.Errorf("LastSeen = %v, want it kept at %v", got.LastSeen, old)
+	}
+	// The status is derived again from the stored snapshot, which has no
+	// checks, not kept.
+	if got.Status.Status != status.ReadyForReview {
+		t.Errorf("Status = %s, want %s from the stored snapshot", got.Status.Status, status.ReadyForReview)
+	}
+}
+
+// codeownersWaiting is a PR whose only unfinished required check is
+// codeowners-gate, tracked with the status that gives it.
+func codeownersWaiting() Tracked {
+	pr := snap("A", func(s *github.Snapshot) {
+		s.Checks = []github.Check{{Name: "build", State: github.CheckSuccess, Required: true}, {Name: "codeowners-gate", State: github.CheckPending, Required: true}}
+	})
+	return Tracked{
+		PR: pr, Status: status.Derive(status.Input{PR: pr, Viewer: viewer}),
+		Feeds: []string{"long"}, Place: PlaceWall, FirstSeen: now.Add(-time.Hour), LastSeen: now.Add(-time.Hour), HeadSeenAt: now.Add(-time.Hour),
+	}
+}
+
+func TestApplyRecomputesStatusWithTheCurrentConfig(t *testing.T) {
+	waiting := codeownersWaiting()
+	if waiting.Status.Status != status.CIWaiting {
+		t.Fatalf("setup: Status = %s, want %s", waiting.Status.Status, status.CIWaiting)
+	}
+	cfg := testConfig()
+	cfg.GitHub.IgnoreChecks = []string{"codeowners-gate*"}
+	next, _ := Apply(map[string]Tracked{"A": waiting}, poll(now, nil), cfg)
+	if got := next["A"].Status; got.Status != status.ReadyForReview || got.CI != status.CIGreen || got.Spinning {
+		t.Errorf("Status = %+v, want READY_FOR_REVIEW with green CI after ignoring codeowners-gate", got)
+	}
+}
+
+func TestRecomputeUsesTheConfigAndLeavesItsInputAlone(t *testing.T) {
+	prev := map[string]Tracked{"A": codeownersWaiting()}
+	cfg := testConfig()
+	cfg.Repos = map[string]config.Repo{"o/r": {IgnoreChecks: []string{"codeowners-*"}}}
+	next := Recompute(prev, cfg, viewer)
+	if got := next["A"].Status.Status; got != status.ReadyForReview {
+		t.Errorf("Status = %s, want %s with the repo's ignore_checks", got, status.ReadyForReview)
+	}
+	if got := prev["A"].Status.Status; got != status.CIWaiting {
+		t.Errorf("Recompute changed its input: Status = %s", got)
 	}
 }
 

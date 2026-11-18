@@ -619,8 +619,10 @@ func (m Model) quit() (Model, tea.Cmd) {
 	return m, tea.Quit
 }
 
-// reload swaps in a good config and its theme. A bad one, or one whose theme
-// won't build, keeps the last good config and says so in a banner.
+// reload swaps in a good config and its theme, and derives every PR's
+// status again under it, such as after a change to ignore_checks. A bad
+// config, or one whose theme won't build, keeps the last good one and says
+// so in a banner.
 func (m Model) reload(r config.Reload) (Model, tea.Cmd) {
 	err := r.Err
 	if err == nil {
@@ -631,8 +633,32 @@ func (m Model) reload(r config.Reload) (Model, tea.Cmd) {
 	}
 	if err != nil {
 		m.configBanner = fmt.Sprintf("config error: %v — using last good config", err)
+		return m, m.listenReloads()
 	}
-	return m, m.listenReloads()
+	m, save := m.recomputeStatuses()
+	return m, tea.Batch(save, m.listenReloads())
+}
+
+// recomputeStatuses derives every PR's status again under the current
+// config and saves the ones that changed. Statuses depend on the viewer, so
+// until it is known the first poll does this instead.
+func (m Model) recomputeStatuses() (Model, tea.Cmd) {
+	if m.viewer == "" {
+		return m, nil
+	}
+	next := tracker.Recompute(m.prs, m.cfg, m.viewer)
+	var changed []string
+	for id, t := range next {
+		// YourReview depends only on the viewer and the reviews, which a
+		// reload doesn't change.
+		was := m.prs[id].Status
+		if t.Status.Status != was.Status || t.Status.CI != was.CI || t.Status.Spinning != was.Spinning {
+			changed = append(changed, id)
+		}
+	}
+	m.prs = next
+	m = m.markSave(changed...)
+	return m.flush()
 }
 
 // listenReloads waits for the next config reload. It stops when the

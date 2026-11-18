@@ -858,6 +858,51 @@ func TestReloadReplacesConfig(t *testing.T) {
 	}
 }
 
+func TestReloadRecomputesStatusesWithoutPolling(t *testing.T) {
+	waiting := wallPR("1")
+	waiting.PR.Checks = []github.Check{{Name: "build", State: github.CheckSuccess, Required: true}, {Name: "codeowners-gate", State: github.CheckPending, Required: true}}
+	h := newHarness(t, opts{}, waiting, wallPR("2"))
+	h.finishPoll(t)
+	if got := h.m.prs["1"].Status.Status; got != status.CIWaiting {
+		t.Fatalf("setup: PR 1 status = %s, want %s", got, status.CIWaiting)
+	}
+	polls, detail := h.client.polls, len(h.client.detail)
+
+	cfg := config.Defaults()
+	cfg.GitHub.IgnoreChecks = []string{"codeowners-gate*"}
+	h.m, _ = settle(t, h.m, reloadMsg{Config: cfg})
+	if got := h.m.prs["1"].Status.Status; got != status.ReadyForReview {
+		t.Errorf("PR 1 status = %s after the reload, want %s", got, status.ReadyForReview)
+	}
+	if h.client.polls != polls || len(h.client.detail) != detail || h.m.polling {
+		t.Errorf("the reload started a poll")
+	}
+	stored, err := h.store.LoadTracked(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := stored["1"].Status.Status; got != status.ReadyForReview {
+		t.Errorf("stored PR 1 status = %s, want %s", got, status.ReadyForReview)
+	}
+
+	// No longer waiting on CI, PR 1 isn't fetched every poll.
+	h.client.detail = nil
+	h.press(t, "R")
+	if len(h.client.detail) != 0 {
+		t.Errorf("Details calls = %v, want none for unchanged PRs not waiting on CI", h.client.detail)
+	}
+}
+
+func TestReloadBeforeTheViewerIsKnownLeavesStatuses(t *testing.T) {
+	waiting := wallPR("1")
+	waiting.Status = status.Result{Status: status.CIWaiting, CI: status.CIPending, Spinning: true}
+	h := newHarness(t, opts{noViewer: true}, waiting)
+	h.m, _ = update(t, h.m, reloadMsg{Config: config.Defaults()})
+	if got := h.m.prs["1"].Status; got != waiting.Status {
+		t.Errorf("status = %+v, want it kept until the viewer is known", got)
+	}
+}
+
 func TestNoConfigBannerClearsOnFirstGoodReload(t *testing.T) {
 	st, err := store.Open(t.TempDir() + "/db")
 	if err != nil {

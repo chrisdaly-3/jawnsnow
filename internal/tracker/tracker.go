@@ -4,6 +4,7 @@
 package tracker
 
 import (
+	"maps"
 	"slices"
 	"time"
 
@@ -52,11 +53,13 @@ type PollInput struct {
 }
 
 // Apply returns the tracked set after a poll, plus the sorted IDs that
-// stopped being tracked. It does not modify prev or in.
+// stopped being tracked. Every PR's status is derived again, from its fresh
+// snapshot or its stored one, so a config change reaches PRs that didn't
+// change. It does not modify prev or in.
 func Apply(prev map[string]Tracked, in PollInput, cfg config.Config) (next map[string]Tracked, removed []string) {
-	next = make(map[string]Tracked, len(prev))
-	for id, t := range prev {
-		next[id] = t
+	next = maps.Clone(prev)
+	if next == nil {
+		next = map[string]Tracked{}
 	}
 
 	for _, s := range in.Snapshots {
@@ -67,10 +70,10 @@ func Apply(prev map[string]Tracked, in PollInput, cfg config.Config) (next map[s
 			t.HeadSeenAt = in.Now
 		}
 		t.PR = s
-		t.Status = status.Derive(status.Input{PR: s, Viewer: in.Viewer, IgnoreChecks: cfg.IgnoreChecksFor(s.Repo)})
 		t.LastSeen = in.Now
 		next[s.ID] = t
 	}
+	recompute(next, cfg, in.Viewer)
 
 	for id, feeds := range in.Found {
 		if t, ok := next[id]; ok {
@@ -90,6 +93,22 @@ func Apply(prev map[string]Tracked, in PollInput, cfg config.Config) (next map[s
 	}
 	slices.Sort(removed)
 	return next, removed
+}
+
+// Recompute returns prs with every status derived again from its stored
+// snapshot, with cfg's ignore_checks and viewer. It makes no network call
+// and does not modify prs.
+func Recompute(prs map[string]Tracked, cfg config.Config, viewer string) map[string]Tracked {
+	next := maps.Clone(prs)
+	recompute(next, cfg, viewer)
+	return next
+}
+
+func recompute(prs map[string]Tracked, cfg config.Config, viewer string) {
+	for id, t := range prs {
+		t.Status = status.Derive(status.Input{PR: t.PR, Viewer: viewer, IgnoreChecks: cfg.IgnoreChecksFor(t.PR.Repo)})
+		prs[id] = t
+	}
 }
 
 func place(t Tracked, in PollInput, cfg config.Config) Tracked {
