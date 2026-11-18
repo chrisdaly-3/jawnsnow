@@ -1,0 +1,379 @@
+{
+ "node": {
+  "body": "Fixes the thing.",
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "alice"
+     },
+     "body": "Looks good",
+     "createdAt": "2026-11-18T09:00:00Z"
+    },
+    {
+     "author": null,
+     "body": "ghost comment",
+     "createdAt": "2026-11-18T09:30:00Z"
+    }
+   ]
+  },
+  "reviewThreads": {
+   "nodes": [
+    {
+     "id": "PRT_1",
+     "isResolved": true,
+     "path": "a/file0.go",
+     "line": 12,
+     "comments": {
+      "nodes": [
+       {
+        "author": {
+         "login": "bob"
+        },
+        "body": "nit here",
+        "createdAt": "2026-11-18T09:10:00Z"
+       },
+       {
+        "author": {
+         "login": "alice"
+        },
+        "body": "done",
+        "createdAt": "2026-11-18T09:20:00Z"
+       }
+      ]
+     }
+    },
+    {
+     "id": "PRT_2",
+     "isResolved": false,
+     "path": "a/file1.go",
+     "line": null,
+     "comments": {
+      "nodes": [
+       {
+        "author": {
+         "login": "bob"
+        },
+        "body": "outdated",
+        "createdAt": "2026-11-18T09:11:00Z"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  "files": {
+   "pageInfo": {
+    "hasNextPage": true,
+    "endCursor": "CUR1"
+   },
+   "nodes": [
+    {
+     "path": "a/file0.go"
+    },
+    {
+     "path": "a/file1.go"
+    },
+    {
+     "path": "a/file2.go"
+    },
+    {
+     "path": "a/file3.go"
+    },
+    {
+     "path": "a/file4.go"
+    },
+    {
+     "path": "a/file5.go"
+    },
+    {
+     "path": "a/file6.go"
+    },
+    {
+     "path": "a/file7.go"
+    },
+    {
+     "path": "a/file8.go"
+    },
+    {
+     "path": "a/file9.go"
+    },
+    {
+     "path": "a/file10.go"
+    },
+    {
+     "path": "a/file11.go"
+    },
+    {
+     "path": "a/file12.go"
+    },
+    {
+     "path": "a/file13.go"
+    },
+    {
+     "path": "a/file14.go"
+    },
+    {
+     "path": "a/file15.go"
+    },
+    {
+     "path": "a/file16.go"
+    },
+    {
+     "path": "a/file17.go"
+    },
+    {
+     "path": "a/file18.go"
+    },
+    {
+     "path": "a/file19.go"
+    },
+    {
+     "path": "a/file20.go"
+    },
+    {
+     "path": "a/file21.go"
+    },
+    {
+     "path": "a/file22.go"
+    },
+    {
+     "path": "a/file23.go"
+    },
+    {
+     "path": "a/file24.go"
+    },
+    {
+     "path": "a/file25.go"
+    },
+    {
+     "path": "a/file26.go"
+    },
+    {
+     "path": "a/file27.go"
+    },
+    {
+     "path": "a/file28.go"
+    },
+    {
+     "path": "a/file29.go"
+    },
+    {
+     "path": "a/file30.go"
+    },
+    {
+     "path": "a/file31.go"
+    },
+    {
+     "path": "a/file32.go"
+    },
+    {
+     "path": "a/file33.go"
+    },
+    {
+     "path": "a/file34.go"
+    },
+    {
+     "path": "a/file35.go"
+    },
+    {
+     "path": "a/file36.go"
+    },
+    {
+     "path": "a/file37.go"
+    },
+    {
+     "path": "a/file38.go"
+    },
+    {
+     "path": "a/file39.go"
+    },
+    {
+     "path": "a/file40.go"
+    },
+    {
+     "path": "a/file41.go"
+    },
+    {
+     "path": "a/file42.go"
+    },
+    {
+     "path": "a/file43.go"
+    },
+    {
+     "path": "a/file44.go"
+    },
+    {
+     "path": "a/file45.go"
+    },
+    {
+     "path": "a/file46.go"
+    },
+    {
+     "path": "a/file47.go"
+    },
+    {
+     "path": "a/file48.go"
+    },
+    {
+     "path": "a/file49.go"
+    },
+    {
+     "path": "a/file50.go"
+    },
+    {
+     "path": "a/file51.go"
+    },
+    {
+     "path": "a/file52.go"
+    },
+    {
+     "path": "a/file53.go"
+    },
+    {
+     "path": "a/file54.go"
+    },
+    {
+     "path": "a/file55.go"
+    },
+    {
+     "path": "a/file56.go"
+    },
+    {
+     "path": "a/file57.go"
+    },
+    {
+     "path": "a/file58.go"
+    },
+    {
+     "path": "a/file59.go"
+    },
+    {
+     "path": "a/file60.go"
+    },
+    {
+     "path": "a/file61.go"
+    },
+    {
+     "path": "a/file62.go"
+    },
+    {
+     "path": "a/file63.go"
+    },
+    {
+     "path": "a/file64.go"
+    },
+    {
+     "path": "a/file65.go"
+    },
+    {
+     "path": "a/file66.go"
+    },
+    {
+     "path": "a/file67.go"
+    },
+    {
+     "path": "a/file68.go"
+    },
+    {
+     "path": "a/file69.go"
+    },
+    {
+     "path": "a/file70.go"
+    },
+    {
+     "path": "a/file71.go"
+    },
+    {
+     "path": "a/file72.go"
+    },
+    {
+     "path": "a/file73.go"
+    },
+    {
+     "path": "a/file74.go"
+    },
+    {
+     "path": "a/file75.go"
+    },
+    {
+     "path": "a/file76.go"
+    },
+    {
+     "path": "a/file77.go"
+    },
+    {
+     "path": "a/file78.go"
+    },
+    {
+     "path": "a/file79.go"
+    },
+    {
+     "path": "a/file80.go"
+    },
+    {
+     "path": "a/file81.go"
+    },
+    {
+     "path": "a/file82.go"
+    },
+    {
+     "path": "a/file83.go"
+    },
+    {
+     "path": "a/file84.go"
+    },
+    {
+     "path": "a/file85.go"
+    },
+    {
+     "path": "a/file86.go"
+    },
+    {
+     "path": "a/file87.go"
+    },
+    {
+     "path": "a/file88.go"
+    },
+    {
+     "path": "a/file89.go"
+    },
+    {
+     "path": "a/file90.go"
+    },
+    {
+     "path": "a/file91.go"
+    },
+    {
+     "path": "a/file92.go"
+    },
+    {
+     "path": "a/file93.go"
+    },
+    {
+     "path": "a/file94.go"
+    },
+    {
+     "path": "a/file95.go"
+    },
+    {
+     "path": "a/file96.go"
+    },
+    {
+     "path": "a/file97.go"
+    },
+    {
+     "path": "a/file98.go"
+    },
+    {
+     "path": "a/file99.go"
+    }
+   ]
+  }
+ },
+ "rateLimit": {
+  "remaining": 4900,
+  "cost": 1,
+  "resetAt": "2026-11-18T13:00:00Z"
+ }
+}

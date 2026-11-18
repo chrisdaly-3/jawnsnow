@@ -36,6 +36,9 @@ type Client interface {
 	// a time, in the order of ids. A PR GitHub answers with an error is left
 	// out and returned as skipped, as with Fingerprints.
 	Details(ctx context.Context, viewer string, ids []string) ([]Snapshot, []SkippedPR, RateLimit, error)
+	// ReviewContext fetches what a review reads besides the diff: the PR body,
+	// comments, review threads and up to 500 changed file paths.
+	ReviewContext(ctx context.Context, id string) (PRContext, RateLimit, error)
 }
 
 // Doer is the slice of go-gh's GraphQLClient the client uses.

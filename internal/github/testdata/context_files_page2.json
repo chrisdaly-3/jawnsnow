@@ -1,0 +1,26 @@
+{
+ "node": {
+  "files": {
+   "pageInfo": {
+    "hasNextPage": false,
+    "endCursor": "CUR2"
+   },
+   "nodes": [
+    {
+     "path": "b/file0.go"
+    },
+    {
+     "path": "b/file1.go"
+    },
+    {
+     "path": "b/file2.go"
+    }
+   ]
+  }
+ },
+ "rateLimit": {
+  "remaining": 4900,
+  "cost": 1,
+  "resetAt": "2026-11-18T13:00:00Z"
+ }
+}

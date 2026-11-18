@@ -228,3 +228,7 @@ func TestCLIConfigDefault(t *testing.T) {
 		t.Fatal("stdout differs from DefaultTOML()")
 	}
 }
+
+func (fakeClient) ReviewContext(context.Context, string) (github.PRContext, github.RateLimit, error) {
+	return github.PRContext{}, github.RateLimit{}, nil
+}

@@ -1254,3 +1254,7 @@ func TestTinyWindowDoesNotPanic(t *testing.T) {
 		}
 	}
 }
+
+func (f *fakeClient) ReviewContext(context.Context, string) (github.PRContext, github.RateLimit, error) {
+	return github.PRContext{}, github.RateLimit{}, nil
+}

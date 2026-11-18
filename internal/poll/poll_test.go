@@ -460,3 +460,7 @@ func TestFetchSucceedsWhenALookupReachesAPR(t *testing.T) {
 		t.Errorf("Unreachable = %+v, want PR 2", res.Unreachable)
 	}
 }
+
+func (f *fakeClient) ReviewContext(context.Context, string) (github.PRContext, github.RateLimit, error) {
+	return github.PRContext{}, github.RateLimit{}, nil
+}
