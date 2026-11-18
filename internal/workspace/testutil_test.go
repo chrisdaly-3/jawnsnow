@@ -151,3 +151,67 @@ func (f *fakeSlots) DeleteSlot(_ context.Context, path string) error {
 	delete(f.slots, path)
 	return nil
 }
+
+// history is one working repo that tests build history in, commit by
+// commit, on whatever branch is checked out.
+type history struct {
+	t   *testing.T
+	dir string
+}
+
+func newHistory(t *testing.T) history {
+	t.Helper()
+	h := history{t: t, dir: realPath(t, t.TempDir())}
+	git(t, h.dir, "init")
+	return h
+}
+
+// commit writes files (path -> content; nil deletes the path) and commits
+// them, returning the commit ID.
+func (h history) commit(msg string, files map[string][]byte) string {
+	h.t.Helper()
+	for p, content := range files {
+		full := filepath.Join(h.dir, p)
+		if content == nil {
+			git(h.t, h.dir, "rm", "-q", "--", p)
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			h.t.Fatal(err)
+		}
+		if err := os.WriteFile(full, content, 0o644); err != nil {
+			h.t.Fatal(err)
+		}
+		git(h.t, h.dir, "add", "--", p)
+	}
+	git(h.t, h.dir, "commit", "-q", "-m", msg)
+	return git(h.t, h.dir, "rev-parse", "HEAD")
+}
+
+func (h history) git(args ...string) string {
+	h.t.Helper()
+	return git(h.t, h.dir, args...)
+}
+
+func (h history) repo() Repo {
+	return Repo{Name: "o/n", GitDir: filepath.Join(h.dir, ".git"), WorkDir: h.dir}
+}
+
+// lines returns "<prefix>1\n" through "<prefix>n\n".
+func lines(prefix string, n int) []string {
+	out := make([]string, n)
+	for i := range out {
+		out[i] = prefix + itoa(i+1) + "\n"
+	}
+	return out
+}
+
+// text joins ls into file content.
+func text(ls []string) []byte { return []byte(strings.Join(ls, "")) }
+
+// with returns a copy of ls with line n (1-based) replaced by s.
+func with(ls []string, n int, s string) []string {
+	out := append([]string(nil), ls...)
+	out[n-1] = s + "\n"
+	return out
+}
