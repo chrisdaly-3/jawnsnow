@@ -88,12 +88,13 @@ func (f *fakeClient) Details(_ context.Context, _ string, ids []string) ([]githu
 }
 
 // graphQL stands in for GitHub under the real client. Every search returns
-// the PRs in found. A nodes(ids:) lookup or a detail batch answers each PR
+// the PRs in found, or fails with searchErr. A nodes(ids:) lookup or a detail batch answers each PR
 // in snaps, or, for the IDs in forbidden, a null and a FORBIDDEN error at
 // its index or alias, as GitHub does once an SSO session expires.
 type graphQL struct {
 	snaps     map[string]github.Snapshot
 	found     []string
+	searchErr error
 	forbidden map[string]bool
 }
 
@@ -109,6 +110,8 @@ func (g *graphQL) DoWithContext(_ context.Context, query string, vars map[string
 	out := map[string]any{"rateLimit": map[string]any{"remaining": 4000, "cost": 1, "resetAt": t0.Add(time.Hour)}}
 	var errs []api.GraphQLErrorItem
 	switch {
+	case vars["q"] != nil && g.searchErr != nil:
+		return g.searchErr
 	case vars["q"] != nil:
 		nodes := []any{}
 		for _, id := range g.found {
@@ -436,7 +439,7 @@ func TestFailedFeedSearchStillUpdatesTrackedPRs(t *testing.T) {
 	}
 }
 
-func TestPollFailsWhenEveryPRIsUnreachable(t *testing.T) {
+func TestPollFailsWhenEveryFeedFailsAndEveryPRIsUnreachable(t *testing.T) {
 	prs := []tracker.Tracked{wallPR("1"), wallPR("2")}
 	gql := newGraphQL(prs...)
 	h := newHarness(t, opts{client: github.NewClient(gql)}, prs...)
@@ -445,17 +448,104 @@ func TestPollFailsWhenEveryPRIsUnreachable(t *testing.T) {
 		t.Fatalf("the first poll did not succeed:\n%s", c)
 	}
 
+	gql.searchErr = io.EOF
 	gql.forbidden = map[string]bool{"1": true, "2": true}
 	h.press(t, "R")
 	c := ansi.Strip(content(h.m))
-	if !strings.Contains(c, "poll failed: all 2 PRs unreachable: FORBIDDEN") {
-		t.Errorf("View does not show the poll failing:\n%s", c)
+	if !strings.Contains(c, "poll failed: all feeds failed") {
+		t.Errorf("status line does not show the poll failing:\n%s", c)
+	}
+	if want := `all feeds failed (search feed "review-requested": EOF); 2 PRs unreachable: FORBIDDEN`; !strings.Contains(c, " "+want) {
+		t.Errorf("banner does not carry the full error %q:\n%s", want, c)
 	}
 	if strings.Contains(c, "polled") {
-		t.Errorf("View calls a poll that reached no PR a success:\n%s", c)
+		t.Errorf("View calls a poll that reached nothing a success:\n%s", c)
 	}
 	if len(h.m.prs) != 2 || !reflect.DeepEqual(h.m.prs["1"].PR, prs[0].PR) {
 		t.Errorf("PRs = %v, want both kept as they were", h.m.prs)
+	}
+
+	gql.searchErr, gql.forbidden = nil, nil
+	h.press(t, "R")
+	if c := ansi.Strip(content(h.m)); strings.Contains(c, "all feeds failed") {
+		t.Errorf("the failure banner outlived a good poll:\n%s", c)
+	}
+}
+
+// A quiet review queue is a search that succeeds with nothing in it. With
+// every tracked PR unreachable the poll still succeeds, so the tracker's
+// time rules run and those PRs can go stale and age out.
+func TestPollSucceedsWhenAQuietFeedMeetsOnlyUnreachablePRs(t *testing.T) {
+	stale := wallPR("1")
+	stale.PR.UpdatedAt = t0.Add(-15 * 24 * time.Hour)
+	prs := []tracker.Tracked{stale, wallPR("2")}
+	gql := newGraphQL(prs...)
+	gql.forbidden = map[string]bool{"1": true, "2": true}
+	h := newHarness(t, opts{client: github.NewClient(gql)}, prs...)
+	h.finishPoll(t)
+	c := ansi.Strip(content(h.m))
+	if !strings.Contains(c, "polled 0s ago") || strings.Contains(c, "poll failed") {
+		t.Fatalf("a poll whose feed searched fine did not count as a success:\n%s", c)
+	}
+	if got := h.m.prs["1"].Place; got != tracker.PlaceWaiting {
+		t.Errorf("PR 1 place = %s, want waiting: the tracker's time rules did not run", got)
+	}
+	if !strings.Contains(c, "2 PRs unreachable (FORBIDDEN)") {
+		t.Errorf("banner does not count the unreachable PRs:\n%s", c)
+	}
+
+	h.clock.now = t0.Add(time.Minute)
+	h.press(t, "R")
+	c = ansi.Strip(content(h.m))
+	if !strings.Contains(c, "polled 0s ago") || strings.Contains(c, "poll failed") {
+		t.Errorf("the next poll did not succeed:\n%s", c)
+	}
+	if !strings.Contains(c, "2 PRs unreachable (FORBIDDEN)") {
+		t.Errorf("banner lost PR 1, which this poll didn't look up:\n%s", c)
+	}
+}
+
+// A waiting PR is looked up only on idle polls, so the polls between must
+// not drop it from the banner.
+func TestUnreachableWaitingPRStaysInTheBannerUntilReached(t *testing.T) {
+	hidden := tracker.Hide(wallPR("2"), t0.Add(-time.Minute))
+	prs := []tracker.Tracked{wallPR("1"), hidden}
+	gql := newGraphQL(prs...)
+	gql.forbidden = map[string]bool{"2": true}
+	h := newHarness(t, opts{client: github.NewClient(gql)}, prs...)
+	h.finishPoll(t) // idle poll
+	if c := ansi.Strip(content(h.m)); !strings.Contains(c, "1 PR unreachable (FORBIDDEN)") {
+		t.Fatalf("banner does not note the unreachable waiting PR:\n%s", c)
+	}
+
+	h.clock.now = t0.Add(time.Minute)
+	h.press(t, "R") // regular poll: PR 2 isn't looked up
+	if c := ansi.Strip(content(h.m)); !strings.Contains(c, "1 PR unreachable (FORBIDDEN)") {
+		t.Errorf("banner dropped PR 2 on a poll that didn't look it up:\n%s", c)
+	}
+
+	gql.forbidden = nil
+	h.clock.now = t0.Add(16 * time.Minute)
+	h.press(t, "R") // idle poll reaches PR 2
+	if c := ansi.Strip(content(h.m)); strings.Contains(c, "unreachable") {
+		t.Errorf("banner kept PR 2 after a poll reached it:\n%s", c)
+	}
+}
+
+func TestUnreachablePRLeavesTheBannerWhenItStopsBeingTracked(t *testing.T) {
+	old := wallPR("2")
+	old.PR.HeadCommittedAt, old.PR.UpdatedAt = t0.Add(-40*24*time.Hour), t0.Add(-40*24*time.Hour)
+	expired := tracker.Hide(old, t0.Add(-31*24*time.Hour))
+	prs := []tracker.Tracked{wallPR("1"), expired}
+	gql := newGraphQL(prs...)
+	gql.forbidden = map[string]bool{"2": true}
+	h := newHarness(t, opts{client: github.NewClient(gql)}, prs...)
+	h.finishPoll(t)
+	if _, ok := h.m.prs["2"]; ok {
+		t.Fatal("setup: PR 2 is past keep_for but still tracked")
+	}
+	if c := ansi.Strip(content(h.m)); strings.Contains(c, "unreachable") {
+		t.Errorf("banner counts a PR no longer tracked:\n%s", c)
 	}
 }
 

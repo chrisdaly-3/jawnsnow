@@ -4,6 +4,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -133,8 +134,13 @@ type Model struct {
 	quota        poll.Quota
 	rateNote     string
 	feedNote     string // the searches the last poll skipped, and why
-	// unreachableNote counts the PRs the last poll couldn't reach, and why.
-	unreachableNote string
+	// unreachable are the tracked PRs a poll couldn't reach and none has
+	// reached since. Waiting PRs are looked up only on idle polls, so one
+	// poll's skips alone would make the banner come and go.
+	unreachable map[string]github.SkippedPR
+	// failNote is the whole error of a poll that reached nothing, which the
+	// top line cuts short.
+	failNote string
 
 	// One save runs at a time, so an older write can't land after a newer
 	// one. Changes made meanwhile wait in dirty and deleted.
@@ -488,6 +494,7 @@ func (m Model) finishPoll(res poll.Result) (Model, tea.Cmd) {
 	m.polling = false
 	m.quota.Observe(res.Rate)
 	var save tea.Cmd
+	m.failNote = ""
 	switch {
 	case github.IsRateLimited(res.Err):
 		// The paced note in the banner explains this; the raw error doesn't.
@@ -495,12 +502,15 @@ func (m Model) finishPoll(res poll.Result) (Model, tea.Cmd) {
 		m.lastErr = nil
 	case res.Err != nil:
 		m.lastErr = res.Err
+		var nothing *poll.NothingReachedError
+		if errors.As(res.Err, &nothing) {
+			m.failNote = "poll failed: " + nothing.Error()
+		}
 	default:
 		now := m.now()
 		m.quota.ObserveSuccess()
 		m.lastErr, m.lastPoll = nil, now
 		m.feedNote = feedNote(res.FeedErrs)
-		m.unreachableNote = unreachableNote(res.Unreachable)
 		if m.pollIdle {
 			m.lastIdlePoll = m.pollStarted
 		}
@@ -508,6 +518,7 @@ func (m Model) finishPoll(res poll.Result) (Model, tea.Cmd) {
 			Found: res.Found, Snapshots: res.Snapshots, Viewer: m.viewer, Now: now,
 		}, m.cfg)
 		m.prs = next
+		m.unreachable = stillUnreachable(m.unreachable, res, next)
 		m = m.markSave(slices.Collect(maps.Keys(next))...)
 		m = m.markDelete(removed...)
 		m, save = m.flush()
@@ -530,9 +541,31 @@ func feedNote(errs []error) string {
 	return strings.Join(notes, "; ")
 }
 
-// unreachableNote is the banner for PRs a poll skipped because GitHub
-// answered them with an error; they keep their last status.
-func unreachableNote(skipped []github.SkippedPR) string {
+// stillUnreachable updates the unreachable PRs after a poll: a PR leaves
+// the set when the poll reached it or it is no longer tracked, and the
+// poll's skips join it.
+func stillUnreachable(prev map[string]github.SkippedPR, res poll.Result, tracked map[string]tracker.Tracked) map[string]github.SkippedPR {
+	next := maps.Clone(prev)
+	if next == nil {
+		next = map[string]github.SkippedPR{}
+	}
+	for _, id := range res.Reached {
+		delete(next, id)
+	}
+	for _, s := range res.Unreachable {
+		next[s.ID] = s
+	}
+	maps.DeleteFunc(next, func(id string, _ github.SkippedPR) bool {
+		_, ok := tracked[id]
+		return !ok
+	})
+	return next
+}
+
+// unreachableNote is the banner for the PRs GitHub answers with an error;
+// they keep their last status.
+func unreachableNote(unreachable map[string]github.SkippedPR) string {
+	skipped := slices.Collect(maps.Values(unreachable))
 	switch len(skipped) {
 	case 0:
 		return ""

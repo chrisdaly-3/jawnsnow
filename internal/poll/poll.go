@@ -2,10 +2,10 @@ package poll
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/chrisdaly-3/jawnsnow/internal/config"
@@ -30,13 +30,16 @@ type Request struct {
 // has the lowest Remaining seen during the poll and the summed cost.
 // FeedErrs are the searches that failed; the poll went on without those
 // feeds. Unreachable are the PRs GitHub answered with an error, sorted by
-// ID; they keep their last snapshot. When Err is set the rest is partial.
+// ID; they keep their last snapshot. Reached are the sorted IDs of the PRs
+// a search, lookup or detail fetch returned. When Err is set the rest is
+// partial.
 type Result struct {
 	Found       map[string][]string
 	Snapshots   []github.Snapshot
 	Rate        github.RateLimit
 	FeedErrs    []error
 	Unreachable []github.SkippedPR
+	Reached     []string
 	Err         error
 }
 
@@ -46,16 +49,27 @@ type Result struct {
 // costs far more than the fingerprint. A feed whose search fails is skipped
 // and reported in FeedErrs, so one bad query doesn't stop the others. A rate
 // limit, or a failed lookup or detail fetch, ends the poll. A PR GitHub
-// answers with an error is left out and listed in Unreachable; the poll
-// still succeeds unless it reached no PR at all, or every feed failed with
-// nothing else to check.
+// answers with an error is left out and listed in Unreachable. The poll
+// still succeeds unless it reached nothing: see NothingReachedError.
 func Fetch(ctx context.Context, c github.Client, req Request) (res Result) {
 	res.Found = map[string][]string{}
 	unreachable := map[string]github.SkippedPR{}
-	defer func() {
+	sortedUnreachable := func() []github.SkippedPR {
+		var out []github.SkippedPR
 		for _, id := range slices.Sorted(maps.Keys(unreachable)) {
-			res.Unreachable = append(res.Unreachable, unreachable[id])
+			out = append(out, unreachable[id])
 		}
+		return out
+	}
+	fresh := map[string]github.Fingerprint{}
+	defer func() {
+		res.Unreachable = sortedUnreachable()
+		reached := slices.Collect(maps.Keys(fresh))
+		for _, s := range res.Snapshots {
+			reached = append(reached, s.ID)
+		}
+		slices.Sort(reached)
+		res.Reached = slices.Compact(reached)
 	}()
 	// asked counts the PRs the lookup and detail calls asked for, and
 	// missed the ones they skipped.
@@ -69,7 +83,6 @@ func Fetch(ctx context.Context, c github.Client, req Request) (res Result) {
 			}
 		}
 	}
-	fresh := map[string]github.Fingerprint{}
 	for _, f := range req.Feeds {
 		fps, rl, err := c.Search(ctx, github.FeedQuery(f, req.Now))
 		res.observe(rl)
@@ -98,11 +111,6 @@ func Fetch(ctx context.Context, c github.Client, req Request) (res Result) {
 	}
 	slices.Sort(lookup)
 	lookup = slices.Compact(lookup)
-	if len(req.Feeds) > 0 && len(res.FeedErrs) == len(req.Feeds) && len(lookup) == 0 && len(req.DetailIDs) == 0 {
-		// Nothing was checked, so this poll can't pass for a quiet one.
-		res.Err = errors.Join(res.FeedErrs...)
-		return res
-	}
 	if len(lookup) > 0 {
 		fps, skipped, rl, err := c.Fingerprints(ctx, lookup)
 		res.observe(rl)
@@ -134,21 +142,38 @@ func Fetch(ctx context.Context, c github.Client, req Request) (res Result) {
 		note(len(ids), skipped)
 		res.Snapshots = snaps
 	}
-	if len(res.Found) == 0 && asked > 0 && missed == asked {
-		// No feed returned a PR and every lookup was refused, as when an
-		// SSO session expires: this poll reached nothing.
-		res.Err = allUnreachable(slices.Collect(maps.Values(unreachable)))
+	// A search that succeeds reached GitHub, even an empty one.
+	if len(req.Feeds) > 0 && len(res.FeedErrs) == len(req.Feeds) && (asked == 0 || missed == asked) {
+		res.Err = &NothingReachedError{FeedErrs: res.FeedErrs, Unreachable: sortedUnreachable()}
 	}
 	return res
 }
 
-// allUnreachable is the error for a poll that reached no PR.
-func allUnreachable(skipped []github.SkippedPR) error {
-	if len(skipped) == 1 {
-		return fmt.Errorf("PR unreachable: %s", github.SkippedTypes(skipped))
-	}
-	return fmt.Errorf("all %d PRs unreachable: %s", len(skipped), github.SkippedTypes(skipped))
+// NothingReachedError fails a poll that reached nothing: every feed search
+// failed, and the lookups had nothing to check or GitHub refused every PR
+// they asked for, as when an SSO session expires.
+type NothingReachedError struct {
+	FeedErrs    []error
+	Unreachable []github.SkippedPR
 }
+
+func (e *NothingReachedError) Error() string {
+	msgs := make([]string, len(e.FeedErrs))
+	for i, err := range e.FeedErrs {
+		msgs[i] = err.Error()
+	}
+	s := "all feeds failed (" + strings.Join(msgs, "; ") + ")"
+	switch n := len(e.Unreachable); n {
+	case 0:
+		return s
+	case 1:
+		return s + "; 1 PR unreachable: " + github.SkippedTypes(e.Unreachable)
+	default:
+		return fmt.Sprintf("%s; %d PRs unreachable: %s", s, n, github.SkippedTypes(e.Unreachable))
+	}
+}
+
+func (e *NothingReachedError) Unwrap() []error { return e.FeedErrs }
 
 func (r *Result) observe(rl github.RateLimit) {
 	if rl == (github.RateLimit{}) {

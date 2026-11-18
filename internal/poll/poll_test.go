@@ -338,6 +338,9 @@ func TestFetchFailsWhenEveryFeedFails(t *testing.T) {
 	if !errors.Is(res.Err, io.EOF) || !errors.Is(res.Err, io.ErrUnexpectedEOF) {
 		t.Fatalf("Err = %v, want both feed errors", res.Err)
 	}
+	if want := `all feeds failed (search feed "A": EOF; search feed "B": unexpected EOF)`; res.Err.Error() != want {
+		t.Errorf("Err = %q, want %q", res.Err, want)
+	}
 	if len(res.FeedErrs) != 2 {
 		t.Errorf("FeedErrs = %v, want both", res.FeedErrs)
 	}
@@ -383,30 +386,63 @@ func TestFetchSucceedsWhenOnlyWatchedPRsAreUnreachable(t *testing.T) {
 }
 
 func TestFetchFailsWhenItReachesNoPR(t *testing.T) {
-	for name, feedErr := range map[string]map[string]error{
-		"feeds fail":         {feedA.Query: io.EOF},
-		"feeds find nothing": nil,
-	} {
-		t.Run(name, func(t *testing.T) {
-			c := &fakeClient{
-				feedErr:    feedErr,
-				fps:        map[string]github.Fingerprint{"1": unchanged},
-				fpSkip:     map[string]string{"1": "FORBIDDEN"},
-				detailSkip: map[string]string{"1": "FORBIDDEN", "2": "NOT_FOUND"},
-			}
-			res := Fetch(context.Background(), c, Request{
-				Feeds: []config.Feed{feedA}, Now: now, Watch: []string{"1"}, DetailIDs: []string{"1", "2"},
-			})
-			if res.Err == nil || res.Err.Error() != "all 2 PRs unreachable: FORBIDDEN, NOT_FOUND" {
-				t.Fatalf("Err = %v, want the poll failed naming both types", res.Err)
-			}
-			if github.IsRateLimited(res.Err) {
-				t.Error("an unreachable PR reads as a rate limit")
-			}
-			if len(res.Unreachable) != 2 {
-				t.Errorf("Unreachable = %+v, want PRs 1 and 2", res.Unreachable)
-			}
-		})
+	c := &fakeClient{
+		feedErr:    map[string]error{feedA.Query: io.EOF},
+		fps:        map[string]github.Fingerprint{"1": unchanged},
+		fpSkip:     map[string]string{"1": "FORBIDDEN"},
+		detailSkip: map[string]string{"1": "FORBIDDEN", "2": "NOT_FOUND"},
+	}
+	res := Fetch(context.Background(), c, Request{
+		Feeds: []config.Feed{feedA}, Now: now, Watch: []string{"1"}, DetailIDs: []string{"1", "2"},
+	})
+	want := `all feeds failed (search feed "A": EOF); 2 PRs unreachable: FORBIDDEN, NOT_FOUND`
+	if res.Err == nil || res.Err.Error() != want {
+		t.Fatalf("Err = %v, want %q", res.Err, want)
+	}
+	if !errors.Is(res.Err, io.EOF) {
+		t.Errorf("Err = %v, want it to wrap the feed error", res.Err)
+	}
+	if github.IsRateLimited(res.Err) {
+		t.Error("an unreachable PR reads as a rate limit")
+	}
+	if len(res.Unreachable) != 2 {
+		t.Errorf("Unreachable = %+v, want PRs 1 and 2", res.Unreachable)
+	}
+}
+
+// A search that succeeds reached GitHub, even when it found nothing, as a
+// quiet review queue does. So the poll succeeds and the tracker can age
+// out PRs that stay unreachable.
+func TestFetchSucceedsWhenAFeedFindsNothingAndEveryPRIsUnreachable(t *testing.T) {
+	c := &fakeClient{
+		fpSkip:     map[string]string{"1": "NOT_FOUND"},
+		detailSkip: map[string]string{"1": "NOT_FOUND"},
+	}
+	res := Fetch(context.Background(), c, Request{Feeds: []config.Feed{feedA}, Now: now, Watch: []string{"1"}, DetailIDs: []string{"1"}})
+	if res.Err != nil {
+		t.Fatalf("Err = %v, want a successful poll", res.Err)
+	}
+	if want := []github.SkippedPR{{ID: "1", Type: "NOT_FOUND"}}; !reflect.DeepEqual(res.Unreachable, want) {
+		t.Errorf("Unreachable = %+v, want %+v", res.Unreachable, want)
+	}
+}
+
+func TestFetchReportsTheReachedPRs(t *testing.T) {
+	c := &fakeClient{
+		search:     map[string][]string{feedA.Query: {"1"}},
+		fpSkip:     map[string]string{"3": "FORBIDDEN"},
+		detailSkip: map[string]string{"5": "FORBIDDEN"},
+	}
+	res := Fetch(context.Background(), c, Request{
+		Feeds: []config.Feed{feedA}, Now: now, Watch: []string{"2", "3"}, DetailIDs: []string{"4", "5"},
+		Known: map[string]github.Fingerprint{"2": {ID: "2"}},
+	})
+	if res.Err != nil {
+		t.Fatalf("Err = %v", res.Err)
+	}
+	// 1 from the feed, 2 from its lookup, 4 from its detail fetch.
+	if want := []string{"1", "2", "4"}; !reflect.DeepEqual(res.Reached, want) {
+		t.Errorf("Reached = %v, want %v", res.Reached, want)
 	}
 }
 

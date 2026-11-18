@@ -70,8 +70,8 @@ func (m Model) tabs() string {
 }
 
 // bannerLines are the notes under the top line: startup banners, config
-// trouble, rate-limit pacing, skipped feeds, unreachable PRs and failed
-// saves or opens.
+// trouble, rate-limit pacing, a poll that reached nothing, skipped feeds,
+// unreachable PRs and failed saves or opens.
 func (m Model) bannerLines(width int) []string {
 	texts := append([]string(nil), m.banners...)
 	if m.configBanner != "" {
@@ -80,7 +80,7 @@ func (m Model) bannerLines(width int) []string {
 	for _, w := range m.warnings {
 		texts = append(texts, "config warning: "+w)
 	}
-	for _, s := range []string{m.rateNote, m.feedNote, m.unreachableNote, m.notice} {
+	for _, s := range []string{m.rateNote, m.failNote, m.feedNote, unreachableNote(m.unreachable), m.notice} {
 		if s != "" {
 			texts = append(texts, s)
 		}
