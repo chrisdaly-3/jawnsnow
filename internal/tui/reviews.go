@@ -6,20 +6,15 @@ import (
 	"fmt"
 	"maps"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
-	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 
 	"github.com/chrisdaly-3/jawnsnow/internal/config"
 	"github.com/chrisdaly-3/jawnsnow/internal/review"
 	"github.com/chrisdaly-3/jawnsnow/internal/schedule"
-	"github.com/chrisdaly-3/jawnsnow/internal/status"
 	"github.com/chrisdaly-3/jawnsnow/internal/store"
-	"github.com/chrisdaly-3/jawnsnow/internal/theme"
 	"github.com/chrisdaly-3/jawnsnow/internal/tracker"
 )
 
@@ -50,10 +45,6 @@ var (
 	pickEfforts = []string{"low", "medium", "high", "xhigh", "max"}
 )
 
-// reviewSpinner animates the running-review badge whatever the PR's status
-// spinner is.
-var reviewSpinner = spinner.Dot
-
 // reviewState is what the model knows about one PR's reviews.
 type reviewState struct {
 	running bool
@@ -67,13 +58,19 @@ type reviewState struct {
 	failHead    string
 	head        string // the head the running review started at
 	skip        string // why the last auto-mode evaluation didn't review it
+	// cancelled is set when latest is a review that was cancelled, by a
+	// quit or by its PR leaving the wall, rather than one that failed.
+	cancelled bool
 }
 
 type (
+	// reviewDoneMsg ends a review. Cancelled is set when its context was
+	// cancelled; the engine then saves it as failed, but it didn't fail.
 	reviewDoneMsg struct {
-		PRID   string
-		Review store.Review
-		Err    error
+		PRID      string
+		Review    store.Review
+		Err       error
+		Cancelled bool
 	}
 	// reviewEventMsg is a progress event. next is the running review's
 	// channel, which the model waits on again for its next message.
@@ -281,7 +278,9 @@ func (m Model) startReview(t tracker.Tracked, mode review.Mode, oneRun *config.T
 				default:
 				}
 			})
-			ch <- reviewDoneMsg{PRID: id, Review: r, Err: err}
+			// The context, not err, says whether it was cancelled: the engine's
+			// error names the killed process.
+			ch <- reviewDoneMsg{PRID: id, Review: r, Err: err, Cancelled: ctx.Err() != nil}
 			close(ch)
 		}()
 		return waitReview(ch)()
@@ -320,8 +319,9 @@ func (m Model) finishReview(msg reviewDoneMsg) (Model, tea.Cmd) {
 				r.Error = msg.Err.Error()
 			}
 		}
-		s.latest = &r
+		s.latest, s.cancelled = &r, msg.Cancelled
 		switch {
+		case msg.Cancelled: // backoff is for broken runs, not stopped ones
 		case !failed:
 			s.failures, s.failHead = 0, ""
 		case s.failHead != head:
@@ -421,6 +421,9 @@ func (m Model) applyInputs(msg reviewInputsMsg) (Model, tea.Cmd) {
 		m = m.withState(id, func(s *reviewState) {
 			// A review that finished during the read is newer than its result.
 			if s.latest == nil || !in.latest.StartedAt.Before(s.latest.StartedAt) {
+				if s.latest == nil || s.latest.ID != in.latest.ID {
+					s.cancelled = false
+				}
 				s.latest = in.latest
 			}
 		})
@@ -664,148 +667,4 @@ func (m Model) cancelAndQuit() (Model, tea.Cmd) {
 	m.reviews.quitting, m.reviews.queue, m.reviews.confirm, m.reviews.picker = true, nil, nil, nil
 	m.notice = fmt.Sprintf("cancelling %d running reviews…", n)
 	return m, m.tick(quitWait, func(time.Time) tea.Msg { return reviewQuitTimeoutMsg{} })
-}
-
-// ---- rendering ----
-
-// displayPRs is the PRs as the wall draws them: a PR whose review is
-// running spins. It is decided here, at render, because every poll derives
-// the stored statuses again.
-func (m Model) displayPRs() []tracker.Tracked {
-	prs := m.wallPRs()
-	for i, t := range prs {
-		if m.reviews.state[t.PR.ID].running {
-			prs[i].Status.Spinning = true
-		}
-	}
-	return prs
-}
-
-// reviewSpinInterval is the running-review badge's frame period, or 0 when
-// no review runs.
-func (m Model) reviewSpinInterval() time.Duration {
-	if m.runningCount() == 0 {
-		return 0
-	}
-	return reviewSpinner.FPS
-}
-
-// reviewBadges is each wall PR's Claude badge.
-func (m Model) reviewBadges(frame int) map[string]string {
-	out := map[string]string{}
-	for id, t := range m.prs {
-		if t.Place != tracker.PlaceWall {
-			continue
-		}
-		if b := m.badge(t, frame); b != "" {
-			out[id] = b
-		}
-	}
-	return out
-}
-
-func (m Model) badge(t tracker.Tracked, frame int) string {
-	th := m.theme
-	s := m.reviews.state[t.PR.ID]
-	switch {
-	case s.running:
-		f := reviewSpinner.Frames[frame%len(reviewSpinner.Frames)]
-		return th.Accent().Render(strings.TrimSpace(f) + " Claude reviewing…")
-	case s.skip == "teammate" && !reviewedAt(s.latest, t.PR.HeadOID):
-		return th.Muted().Render("· teammate reviewed")
-	}
-	return verdictBadge(th, s.latest)
-}
-
-// reviewedAt reports whether r is a review at head that didn't fail.
-func reviewedAt(r *store.Review, head string) bool {
-	return r != nil && r.HeadOID == head && r.Outcome != "failed"
-}
-
-// verdictBadge is the badge for a finished review, or "" for none.
-func verdictBadge(th theme.Theme, r *store.Review) string {
-	switch {
-	case r == nil:
-		return ""
-	case r.Outcome == "failed":
-		return th.StatusFg(string(status.CIFailed)).Render("! review failed")
-	}
-	if n := blockingCount(r.Findings); n > 0 {
-		return th.StatusFg(string(status.CIFailed)).Render("✦ Claude: " + strconv.Itoa(n) + " blocking")
-	}
-	return th.StatusFg(string(status.Approved)).Render("✦ Claude: clean")
-}
-
-// blockingCount counts the blocking findings still open.
-func blockingCount(fs []store.Finding) int {
-	n := 0
-	for _, f := range fs {
-		if f.Blocking && f.Ledger != "addressed" && f.Ledger != "answered" {
-			n++
-		}
-	}
-	return n
-}
-
-// reviewVerdicts is the latest verdict of each waiting PR, for the Done view.
-func (m Model) reviewVerdicts() map[string]string {
-	out := map[string]string{}
-	for id, s := range m.reviews.state {
-		if t, ok := m.prs[id]; ok && t.Place == tracker.PlaceWaiting {
-			if b := verdictBadge(m.theme, s.latest); b != "" {
-				out[id] = b
-			}
-		}
-	}
-	return out
-}
-
-// tickerText summarizes a tool call: "reading pkg/foo.go".
-func tickerText(ev review.Event) string {
-	verb := map[string]string{"Read": "reading", "Grep": "searching", "Glob": "listing"}[ev.Tool]
-	if verb == "" {
-		verb = strings.ToLower(ev.Tool)
-	}
-	return clean(strings.TrimSpace(verb + " " + ev.Path))
-}
-
-// spendLine is the status bar's spend, and a note when auto mode paused
-// for the budget.
-func (m Model) spendLine() string {
-	th := m.theme
-	s := th.Muted().Render(fmt.Sprintf("$%.2f / $%s today", m.reviews.spent, money(m.cfg.Review.Budget.DailyUSD)))
-	if m.mode == modeAuto && m.reviews.budgetPaused {
-		s += th.Muted().Render(" · ") + th.Accent().Render("auto-review paused: daily budget")
-	}
-	return s
-}
-
-// reviewPrompt is the open question, which the footer shows in place of
-// the key hints.
-func (m Model) reviewPrompt() string {
-	if m.reviews.confirm == nil {
-		return ""
-	}
-	return m.theme.Accent().Render(m.reviews.confirm.prompt)
-}
-
-// pickerBody draws the c picker over the view.
-func (m Model) pickerBody(width, height int) string {
-	p, th := m.reviews.picker, m.theme
-	items, idx, title := pickModels, p.modelIdx, "Review with model"
-	if p.choosingEffort {
-		items, idx, title = pickEfforts, p.effortIdx, "Effort for "+pickModels[p.modelIdx]
-	}
-	var b strings.Builder
-	b.WriteString(th.Accent().Render(title))
-	for i, it := range items {
-		mark := "  "
-		if i == idx {
-			mark = th.Accent().Render("▸ ")
-		}
-		b.WriteString("\n" + mark + it)
-	}
-	b.WriteString("\n" + th.Muted().Render("j/k move · enter pick · esc cancel"))
-	box := th.Border(true).Padding(0, 2).Render(b.String())
-	return lipgloss.Place(max(width, 0), max(height, 0), lipgloss.Center, lipgloss.Center, box)
 }

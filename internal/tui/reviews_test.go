@@ -35,6 +35,11 @@ type fakeReviewer struct {
 	blocking int
 	fail     error
 	n        int
+	// block makes Run signal entered, then wait for its context to end and
+	// return a failed review, as a killed claude does. Set it before the
+	// run starts.
+	block   bool
+	entered chan struct{}
 }
 
 func (f *fakeReviewer) Run(ctx context.Context, req review.Request, onEvent func(review.Event)) (store.Review, error) {
@@ -51,7 +56,14 @@ func (f *fakeReviewer) Run(ctx context.Context, req review.Request, onEvent func
 		rv.Findings = append(rv.Findings, store.Finding{Path: "a.go", Line: i + 1, Blocking: true, Body: "bug", Ledger: "new"})
 	}
 	err := f.fail
+	block, entered := f.block, f.entered
 	f.mu.Unlock()
+	if block {
+		close(entered)
+		<-ctx.Done()
+		// The engine's error names the dead process, not context.Canceled.
+		err = errors.New("claude: signal: killed")
+	}
 	onEvent(review.Event{Tool: "Read", Path: "pkg/foo.go"})
 	if err != nil {
 		rv.Outcome, rv.Error, rv.Findings = "failed", err.Error(), nil
@@ -393,13 +405,115 @@ func TestReleaseWhenPRLeavesWall(t *testing.T) {
 func TestNoRunForReleasedPR(t *testing.T) {
 	h := newHarness(t, opts{reviews: true}, wallPR("1"), wallPR("2"))
 	h.finishPoll(t)
-	m, _ := h.m.apply(actionHide{ID: "1"})
-	h.m = m
+	// PR 1 is still on the wall, so only the released mark can refuse it.
+	h.m.reviews.released = map[string]bool{"1": true}
+	h.m.mode = modeAuto
+	h.m, _ = settle(t, h.m, reviewTickMsg{})
+	h.runReviews(t)
+	if got := h.reviewer.requestedIDs(); !slices.Equal(got, []string{"2"}) {
+		t.Errorf("auto mode reviewed %v, want only [2]: PR 1 is released", got)
+	}
 	m, cmd := h.m.forceReview("1", nil, true)
 	h.m = m
 	if cmd != nil || len(h.runs) != 0 {
-		t.Error("a review started for a PR that left the wall")
+		t.Error("space started a review of a released PR")
 	}
+}
+
+func TestCancelledReviewIsNotAFailure(t *testing.T) {
+	h := newHarness(t, opts{reviews: true}, wallPR("1"))
+	h.reviewer.block, h.reviewer.entered = true, make(chan struct{})
+	h.finishPoll(t)
+	h.m, _ = settle(t, h.m, spaceKey())
+	if len(h.runs) != 1 {
+		t.Fatalf("space started %d reviews, want 1", len(h.runs))
+	}
+	run := h.runs[0]
+	h.runs = nil
+	out := make(chan tea.Msg, 1)
+	go func() { out <- run() }()
+	<-h.reviewer.entered
+
+	h.press(t, "x") // PR 1 leaves the wall mid-run
+	var first tea.Msg
+	select {
+	case first = <-out:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the release did not cancel the running review")
+	}
+	h.m, _ = settle(t, h.m, first)
+
+	s := h.m.reviews.state["1"]
+	if s.running {
+		t.Fatal("the cancelled review is still running")
+	}
+	if s.failures != 0 {
+		t.Errorf("failures = %d after a cancelled review, want 0", s.failures)
+	}
+	if s.latest == nil || s.latest.ID == "" {
+		t.Errorf("latest = %v, want the cancelled run's saved review", s.latest)
+	}
+	m, _ := h.m.apply(actionUnhide{ID: "1"})
+	h.m = m
+	c := content(h.m)
+	if !strings.Contains(c, "· review cancelled") || strings.Contains(c, "review failed") {
+		t.Errorf("badge after a cancelled review, want \"· review cancelled\":\n%s", c)
+	}
+}
+
+// queueHarness has PRs 1 and 2 under auto review, filling max_in_flight,
+// and the cursor on PR 3, which auto mode skips: it is reviewed at its head.
+func queueHarness(t *testing.T) *harness {
+	t.Helper()
+	third := seenAgo("3", 10*time.Minute)
+	third.PR.Number = 3
+	h := newHarness(t, opts{reviews: true, auto: true}, seenAgo("1", 3*time.Hour), seenAgo("2", 2*time.Hour), third)
+	rv := store.Review{ID: "old", PRID: "3", Repo: "acme/widgets", Number: 3, HeadOID: "head-3", Mode: "auto", Outcome: "complete", StartedAt: t0.Add(-time.Minute)}
+	if err := h.store.SaveReview(context.Background(), rv); err != nil {
+		t.Fatal(err)
+	}
+	h.finishPoll(t)
+	if len(h.runs) != 2 {
+		t.Fatalf("auto mode started %d reviews, want 2", len(h.runs))
+	}
+	h.m, _ = settle(t, h.m, spaceKey())
+	if len(h.runs) != 2 {
+		t.Fatalf("space at max_in_flight started a review (%d running)", len(h.runs))
+	}
+	if !strings.Contains(content(h.m), "review queued: 2 already running") {
+		t.Errorf("no queued notice:\n%s", content(h.m))
+	}
+	return h
+}
+
+func TestSpaceQueuesWhenAtMaxInFlight(t *testing.T) {
+	t.Run("starts when a slot frees", func(t *testing.T) {
+		h := queueHarness(t)
+		h.runReviews(t)
+		if len(h.runs) != 1 {
+			t.Fatalf("%d reviews started after two finished, want the queued one", len(h.runs))
+		}
+		h.runReviews(t)
+		reqs := h.reviewer.requested()
+		if got := h.reviewer.requestedIDs(); !slices.Equal(got, []string{"1", "2", "3"}) {
+			t.Fatalf("reviews = %v, want [1 2 3]", got)
+		}
+		if r := reqs[2]; !r.Force || r.Mode != review.ModeManual {
+			t.Errorf("queued request: force %v mode %q, want a forced manual review", r.Force, r.Mode)
+		}
+	})
+	t.Run("dropped when released", func(t *testing.T) {
+		h := queueHarness(t)
+		h.press(t, "x") // the cursor is still on PR 3
+		if h.m.queued("3") {
+			t.Fatal("PR 3 is still queued after leaving the wall")
+		}
+		h.runReviews(t)
+		h.runReviews(t)
+		if got := h.reviewer.requestedIDs(); !slices.Equal(got, []string{"1", "2"}) {
+			t.Errorf("reviews = %v, want [1 2]: the released PR's queued review is dropped", got)
+		}
+	})
 }
 
 func TestQuitCancelsRunningReviews(t *testing.T) {
