@@ -188,3 +188,15 @@ func TestNewRejectsBadColor(t *testing.T) {
 		}
 	}
 }
+
+func TestBannerFillsWithTheIndexAndContrastingText(t *testing.T) {
+	th := mustNew(t, config.ThemeConfig{})
+	got := th.Banner(203, "REQUEST CHANGES")
+	if !strings.Contains(got, "REQUEST CHANGES") || !strings.Contains(got, "48;5;203") {
+		t.Errorf("Banner = %q, want text on background 203", got)
+	}
+	t.Setenv("NO_COLOR", "1")
+	if got := mustNew(t, config.ThemeConfig{}).Banner(203, "X"); got != " X " {
+		t.Errorf("NO_COLOR Banner = %q, want plain text", got)
+	}
+}

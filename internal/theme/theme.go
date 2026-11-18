@@ -218,3 +218,23 @@ func (t Theme) fg(c color.Color) lipgloss.Style {
 
 // StatusFg styles text in the status's color, or plain with NO_COLOR.
 func (t Theme) StatusFg(status string) lipgloss.Style { return t.fg(t.statuses[status].color) }
+
+// Banner is text on a filled banner in the xterm-256 color index, in the
+// black or white that reads best on it. It is plain with NO_COLOR.
+func (t Theme) Banner(index int, text string) string {
+	text = " " + text + " "
+	if t.noColor {
+		return text
+	}
+	return lipgloss.NewStyle().Bold(true).
+		Foreground(lipgloss.Color(strconv.Itoa(ContrastFG(index)))).
+		Background(lipgloss.Color(strconv.Itoa(index))).Render(text)
+}
+
+// NoColor reports whether NO_COLOR asked for plain text.
+func (t Theme) NoColor() bool { return t.noColor }
+
+// AccentColor and MutedColor are the chrome colors, for renderers that take
+// color strings rather than lipgloss styles.
+func (t Theme) AccentColor() color.Color { return t.accentColor }
+func (t Theme) MutedColor() color.Color  { return t.mutedColor }

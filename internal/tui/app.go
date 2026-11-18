@@ -107,14 +107,20 @@ type (
 	// for one.
 	actionReview    struct{ ID string }
 	actionPickModel struct{ ID string }
+	// actionOpenDrawer opens the review drawer on a PR.
+	actionOpenDrawer struct{ ID string }
+	// actionCopy puts Text on the clipboard.
+	actionCopy struct{ Text string }
 )
 
-func (actionNone) isAction()      {}
-func (actionHide) isAction()      {}
-func (actionOpen) isAction()      {}
-func (actionUnhide) isAction()    {}
-func (actionReview) isAction()    {}
-func (actionPickModel) isAction() {}
+func (actionNone) isAction()       {}
+func (actionHide) isAction()       {}
+func (actionOpen) isAction()       {}
+func (actionUnhide) isAction()     {}
+func (actionReview) isAction()     {}
+func (actionPickModel) isAction()  {}
+func (actionOpenDrawer) isAction() {}
+func (actionCopy) isAction()       {}
 
 // Model is the root Bubble Tea model.
 type Model struct {
@@ -171,8 +177,9 @@ type Model struct {
 	warnings     []string
 	notice       string
 
-	wall wallModel
-	done doneModel
+	wall   wallModel
+	done   doneModel
+	drawer drawerModel
 	// spinning is true while the spinner's tick loop runs; spinFrame is
 	// the frame counter every spinning card indexes its own spinner with.
 	spinning  bool
@@ -200,7 +207,7 @@ func New(d Deps) Model {
 		banners: d.Banners, configBanner: d.ConfigBanner, reloads: d.Reloads, now: now, tick: tea.Tick,
 		open:   func(url string) error { return browser.New("", io.Discard, io.Discard).Browse(url) },
 		launch: func(c tea.Cmd) tea.Cmd { return c }, reviews: newReviews(d.Reviewer, d.ReviewsOff),
-		prs: map[string]tracker.Tracked{}, wall: newWall(), done: newDone(), dirty: map[string]bool{}, deleted: map[string]bool{},
+		prs: map[string]tracker.Tracked{}, wall: newWall(), done: newDone(), drawer: newDrawer(), dirty: map[string]bool{}, deleted: map[string]bool{},
 		mode: mode, width: 80, height: 24,
 	}
 }
@@ -218,6 +225,8 @@ func (m Model) Init() tea.Cmd {
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	next, cmd := m.update(msg)
+	next, closing := next.closeGoneDrawer()
+	cmd = tea.Batch(cmd, closing)
 	next, spin := next.ensureSpinner()
 	if spin != nil {
 		cmd = tea.Batch(cmd, spin)
@@ -262,6 +271,17 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		var cmd tea.Cmd
+		m.drawer, cmd = m.drawer.resize(msg.Width)
+		return m, cmd
+	case drawerTickMsg:
+		return m.drawerUpdate(msg)
+	case drawerLoadedMsg:
+		if msg.Err != nil {
+			m.notice = "could not read reviews: " + msg.Err.Error()
+			return m, nil
+		}
+		return m.drawerUpdate(msg)
 	case loadedMsg:
 		m.loaded = true
 		if msg.err != nil {
@@ -346,6 +366,12 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	case "?":
 		m.help = true
 	case "esc":
+		if m.view == ViewWall && m.drawer.isOpen() {
+			var cmd tea.Cmd
+			m.drawer, cmd = m.drawer.hide()
+			m.focus = 0
+			return m, cmd
+		}
 		return m.updateView(msg)
 	case "]":
 		m = m.switchView((m.view + 1) % viewCount)
@@ -354,9 +380,9 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	case "1", "2", "3", "4", "5":
 		m = m.switchView(View(k[0] - '1'))
 	case "tab":
-		m.focus = (m.focus + 1) % paneCount(m.view)
+		m.focus = (m.focus + 1) % m.paneCount()
 	case "shift+tab":
-		n := paneCount(m.view)
+		n := m.paneCount()
 		m.focus = (m.focus + n - 1) % n
 	case "R":
 		return m.startPoll()
@@ -372,11 +398,58 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 func (m Model) updateView(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	switch m.view {
 	case ViewWall:
+		if m.drawer.isOpen() && m.focus == drawerPane {
+			return m.drawerUpdate(msg)
+		}
 		return m.wallUpdate(msg)
 	case ViewDone:
 		return m.doneUpdate(msg)
 	}
 	return m, nil
+}
+
+// drawerUpdate gives msg to the drawer and applies the action it returns.
+func (m Model) drawerUpdate(msg tea.Msg) (Model, tea.Cmd) {
+	d, cmd, act := m.drawer.update(msg, m.drawerCtx())
+	m.drawer = d
+	m, actCmd := m.apply(act)
+	return m, tea.Batch(cmd, actCmd)
+}
+
+// drawerCtx is what the drawer needs to know from the rest of the model.
+func (m Model) drawerCtx() drawerCtx {
+	id := m.drawer.prID
+	s := m.reviews.state[id]
+	_, h := m.bodySize()
+	return drawerCtx{
+		PR: m.prs[id], Running: s.running, Ticker: s.ticker, Frame: m.spinFrame,
+		Focused: m.focus == drawerPane, Now: m.now(), Theme: m.theme, Tick: m.tick, Height: h,
+	}
+}
+
+// loadDrawer reads a PR's reviews in a command.
+func (m Model) loadDrawer(id string) tea.Cmd {
+	st := m.store
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), inputsTimeout)
+		defer cancel()
+		rs, err := st.Reviews(ctx, id)
+		return drawerLoadedMsg{PRID: id, Reviews: rs, Err: err}
+	}
+}
+
+// closeGoneDrawer slides the drawer out when its PR is no longer tracked.
+func (m Model) closeGoneDrawer() (Model, tea.Cmd) {
+	if !m.drawer.isOpen() {
+		return m, nil
+	}
+	if _, ok := m.prs[m.drawer.prID]; ok {
+		return m, nil
+	}
+	var cmd tea.Cmd
+	m.drawer, cmd = m.drawer.hide()
+	m.focus = 0
+	return m, cmd
 }
 
 // doneUpdate gives msg to the Done view and applies the action it returns.
@@ -393,6 +466,7 @@ func (m Model) doneUpdate(msg tea.Msg) (Model, tea.Cmd) {
 // wallUpdate gives msg to the Wall and applies the action it returns.
 func (m Model) wallUpdate(msg tea.Msg) (Model, tea.Cmd) {
 	w, h := m.bodySize()
+	w -= m.drawer.width()
 	m.wall.setSize(w, h)
 	m.wall.now, m.wall.feeds = m.now(), m.feedNames()
 	wall, cmd, act := m.wall.update(msg, m.wallPRs())
@@ -414,12 +488,18 @@ func (m Model) feedNames() []string {
 	return names
 }
 
-// paneCount is the number of focusable panes in v: the Done view's two
-// tables, and one for every other view until plan 2 adds the drawer beside
-// the Wall.
-func paneCount(v View) int {
-	if v == ViewDone {
+// drawerPane is the focus index of the review drawer, beside the Wall.
+const drawerPane = 1
+
+// paneCount is the number of focusable panes in the current view: the Done
+// view's two tables, the Wall and the drawer while it is open, and one for
+// every other view.
+func (m Model) paneCount() int {
+	switch {
+	case m.view == ViewDone:
 		return donePanes
+	case m.view == ViewWall && m.drawer.isOpen():
+		return 2
 	}
 	return 1
 }
@@ -446,6 +526,12 @@ func (m Model) apply(a action) (Model, tea.Cmd) {
 		return m.forceReview(a.ID, nil, false)
 	case actionPickModel:
 		return m.openPicker(a.ID), nil
+	case actionOpenDrawer:
+		var cmd tea.Cmd
+		m.drawer, cmd = m.drawer.show(a.ID, m.width)
+		return m, tea.Batch(cmd, m.loadDrawer(a.ID))
+	case actionCopy:
+		return m, tea.SetClipboard(a.Text)
 	}
 	return m, nil
 }
@@ -787,8 +873,13 @@ func (m Model) body(width, height int) string {
 	case ViewWall:
 		w := m.wall
 		w.now, w.feeds, w.badges = m.now(), m.feedNames(), m.reviewBadges(m.spinFrame)
-		w.setSize(width, height)
-		return w.view(width, height, m.displayPRs(), m.theme, m.spinFrame)
+		dw := min(m.drawer.width(), max(width-1, 0))
+		w.setSize(width-dw, height)
+		wallView := w.view(width-dw, height, m.displayPRs(), m.theme, m.spinFrame)
+		if dw == 0 {
+			return wallView
+		}
+		return m.withDrawer(wallView, width-dw, dw, height)
 	case ViewDone:
 		d := m.done
 		d.now, d.focus, d.verdicts = m.now(), m.focus, m.reviewVerdicts()
@@ -814,4 +905,19 @@ func fit(s string, width, height int) []string {
 		lines = append(lines, "")
 	}
 	return lines
+}
+
+// withDrawer puts the drawer beside the wall's lines, which it pads to
+// wallW cells so the drawer's edge lines up.
+func (m Model) withDrawer(wallView string, wallW, drawerW, height int) string {
+	c := m.drawerCtx()
+	left := fit(wallView, wallW, height)
+	right := strings.Split(m.drawer.view(drawerW, height, c), "\n")
+	for i := range left {
+		left[i] += strings.Repeat(" ", max(wallW-ansi.StringWidth(left[i]), 0))
+		if i < len(right) {
+			left[i] += right[i]
+		}
+	}
+	return strings.Join(left, "\n")
 }

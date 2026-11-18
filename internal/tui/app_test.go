@@ -1159,6 +1159,8 @@ func TestModeToggle(t *testing.T) {
 
 func TestHelpListsEveryKey(t *testing.T) {
 	h := newHarness(t, opts{}, wallPR("1"))
+	// Tall enough for every section: the key list outgrew 30 lines.
+	h.m, _ = update(t, h.m, tea.WindowSizeMsg{Width: 160, Height: 50})
 	h.press(t, "?")
 	c := content(h.m)
 	for _, k := range allKeys() {
@@ -1198,8 +1200,8 @@ func TestHelpSwallowsOtherKeys(t *testing.T) {
 func TestFocusCycles(t *testing.T) {
 	h := newHarness(t, opts{}, wallPR("1"))
 	h.press(t, "tab", "shift+tab", "shift+tab")
-	if h.m.focus < 0 || h.m.focus >= paneCount(h.m.view) {
-		t.Errorf("focus = %d, out of range for %d panes", h.m.focus, paneCount(h.m.view))
+	if h.m.focus < 0 || h.m.focus >= h.m.paneCount() {
+		t.Errorf("focus = %d, out of range for %d panes", h.m.focus, h.m.paneCount())
 	}
 }
 

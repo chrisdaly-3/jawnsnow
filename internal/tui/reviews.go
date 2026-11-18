@@ -209,6 +209,9 @@ func (m Model) updateReviews(msg tea.Msg) (_ Model, _ tea.Cmd, ok bool) {
 		return m, waitReview(msg.next), true
 	case reviewDoneMsg:
 		m, cmd := m.finishReview(msg)
+		if m.drawer.isOpen() && m.drawer.prID == msg.PRID {
+			cmd = tea.Batch(cmd, m.loadDrawer(msg.PRID))
+		}
 		return m, cmd, true
 	case reviewInputsMsg:
 		m, cmd := m.applyInputs(msg)

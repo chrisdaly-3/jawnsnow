@@ -245,6 +245,10 @@ func (m wallModel) key(msg tea.KeyPressMsg, prs []tracker.Tracked) (wallModel, t
 		if t, ok := m.selected(lanes); ok {
 			return m, nil, actionOpen{URL: t.PR.URL}
 		}
+	case "enter":
+		if t, ok := m.selected(lanes); ok {
+			return m, nil, actionOpenDrawer{ID: t.PR.ID}
+		}
 	case "space":
 		if t, ok := m.selected(lanes); ok {
 			return m, nil, actionReview{ID: t.PR.ID}

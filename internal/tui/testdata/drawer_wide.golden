@@ -1,0 +1,40 @@
+│ feat(policies): fill Decision.repo_name from the registry             
+│  Ready for you   chainguard-dev/mono#85180                            
+│ first_pass · claude-opus-5-5 · high · $1.23 · 2h ago                  
+│                                                                       
+│  REQUEST CHANGES                                                      
+│ Two blocking problems in the registry lookup.                         
+│ 2 fixed · 1 still open · 1 new                                        
+│                                                                       
+│ ▸ pkg/registry/lookup.go:40  blocking  correctness  [still open]      
+│   Nil dereference when the registry returns no repo.                  
+│                                                                       
+│     repo := r.Repo                                                    
+│                                                                       
+│   Check r first.                                                      
+│                                                                       
+│   pkg/policy/decision.go:5-8  blocking  correctness  [fixed]          
+│   There is no fallback when the lookup fails:                         
+│                                                                       
+│   • return the image reference                                        
+│   • log the miss                                                      
+│                                                                       
+│   pkg/policy/decision.go:12                                           
+│   nit: rename x to repoName.                                          
+│                                                                       
+│   unanchored  [fixed]                                                 
+│   question: why not cache the lookup per digest?                      
+│                                                                       
+│ ▸ Understanding  u                                                    
+│                                                                       
+│ ▸ Assumptions  a                                                      
+│                                                                       
+│ Check notes                                                           
+│ Checks: tests were not run (the reviewer is read-only).               
+│                                                                       
+│                                                                       
+│                                                                       
+│                                                                       
+│                                                                       
+│                                                                       
+│ j/k scroll · n/p finding · </> pass · y copy · O open line            

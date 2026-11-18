@@ -1,0 +1,643 @@
+package tui
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"image/color"
+	"math"
+	"slices"
+	"strconv"
+	"strings"
+	"time"
+
+	tea "charm.land/bubbletea/v2"
+	"charm.land/glamour/v2"
+	gansi "charm.land/glamour/v2/ansi"
+	"charm.land/glamour/v2/styles"
+	"github.com/charmbracelet/harmonica"
+	"github.com/charmbracelet/x/ansi"
+
+	"github.com/chrisdaly-3/jawnsnow/internal/store"
+	"github.com/chrisdaly-3/jawnsnow/internal/theme"
+	"github.com/chrisdaly-3/jawnsnow/internal/tracker"
+)
+
+// drawerFraction is the drawer's share of the terminal once it has settled.
+const drawerFraction = 0.45
+
+// drawerTickMsg advances the drawer's slide one frame.
+type drawerTickMsg struct{}
+
+// drawerLoadedMsg carries a PR's stored reviews, newest first.
+type drawerLoadedMsg struct {
+	PRID    string
+	Reviews []store.Review
+	Err     error
+}
+
+// drawerCtx is what the root model tells the drawer on every call. The
+// drawer keeps none of it, so it can't go stale.
+type drawerCtx struct {
+	PR      tracker.Tracked
+	Running bool
+	Ticker  string // the running review's latest tool call
+	Frame   int    // the spinner frame
+	Focused bool
+	Now     time.Time
+	Theme   theme.Theme
+	Tick    func(time.Duration, func(time.Time) tea.Msg) tea.Cmd
+	// Height is the room the drawer gets, for scrolling to a finding.
+	Height int
+}
+
+// drawerModel is the right-hand drawer: one PR's reviews, one pass at a
+// time. It slides in with a spring, so its width is a float that eases to
+// the target.
+type drawerModel struct {
+	open bool
+	prID string
+
+	pos, vel, target float64
+	animating        bool
+	spring           harmonica.Spring
+
+	reviews []store.Review
+	loaded  bool
+	pass    int // index into reviews; 0 is the newest
+	sel     int // the selected finding, in orderedFindings order
+	scroll  int
+
+	understanding, assumptions bool
+	flash                      string // a note for the bottom line, until the next key
+
+	md *markdownCache
+}
+
+func newDrawer() drawerModel {
+	return drawerModel{spring: harmonica.NewSpring(harmonica.FPS(60), 6.0, 1.0), md: newMarkdownCache()}
+}
+
+func (m drawerModel) isOpen() bool { return m.open }
+
+// visible reports whether any of the drawer is on screen, which includes
+// the time it takes to slide out.
+func (m drawerModel) visible() bool { return m.width() > 0 }
+
+// width is the drawer's current width in cells.
+func (m drawerModel) width() int { return int(math.Round(max(m.pos, 0))) }
+
+func drawerTarget(termW int) float64 { return math.Round(drawerFraction * float64(termW)) }
+
+// startSlide starts the spring toward the model's target. The first frame
+// comes at once; later ones from the update's ticks.
+func (m drawerModel) startSlide() (drawerModel, tea.Cmd) {
+	if m.animating {
+		return m, nil // the running spring chases the new target
+	}
+	m.animating = true
+	return m, func() tea.Msg { return drawerTickMsg{} }
+}
+
+// show opens the drawer on prID for a termW-wide terminal. Showing another
+// PR keeps the drawer where it is and forgets the old PR's reviews.
+func (m drawerModel) show(prID string, termW int) (drawerModel, tea.Cmd) {
+	if m.prID != prID {
+		m.reviews, m.loaded, m.pass, m.sel, m.scroll = nil, false, 0, 0, 0
+		m.understanding, m.assumptions = false, false
+	}
+	m.open, m.prID, m.target = true, prID, drawerTarget(termW)
+	return m.startSlide()
+}
+
+// hide slides the drawer out.
+func (m drawerModel) hide() (drawerModel, tea.Cmd) {
+	m.open, m.target = false, 0
+	return m.startSlide()
+}
+
+// resize re-aims an open drawer at its share of a new terminal width.
+func (m drawerModel) resize(termW int) (drawerModel, tea.Cmd) {
+	if !m.open {
+		return m, nil
+	}
+	m.target = drawerTarget(termW)
+	return m.startSlide()
+}
+
+func (m drawerModel) step() drawerModel {
+	m.pos, m.vel = m.spring.Update(m.pos, m.vel, m.target)
+	if math.Abs(m.pos-m.target) < 0.5 && math.Abs(m.vel) < 0.5 {
+		m.pos, m.vel, m.animating = m.target, 0, false
+	}
+	return m
+}
+
+func (m drawerModel) update(msg tea.Msg, c drawerCtx) (drawerModel, tea.Cmd, action) {
+	switch msg := msg.(type) {
+	case drawerTickMsg:
+		if !m.animating {
+			return m, nil, actionNone{}
+		}
+		m = m.step()
+		if !m.animating || c.Tick == nil {
+			return m, nil, actionNone{}
+		}
+		return m, c.Tick(scrollTick, func(time.Time) tea.Msg { return drawerTickMsg{} }), actionNone{}
+	case drawerLoadedMsg:
+		return m.loadedReviews(msg), nil, actionNone{}
+	case tea.KeyPressMsg:
+		m.flash = ""
+		return m.key(msg, c)
+	}
+	return m, nil, actionNone{}
+}
+
+// loadedReviews takes a PR's reviews. The pass on screen stays on screen if
+// it is still there, so a new review arriving doesn't move you.
+func (m drawerModel) loadedReviews(msg drawerLoadedMsg) drawerModel {
+	if msg.PRID != m.prID || msg.Err != nil {
+		return m
+	}
+	var shown string
+	if r := m.current(); r != nil {
+		shown = r.ID
+	}
+	m.reviews, m.loaded = msg.Reviews, true
+	m.pass = max(slices.IndexFunc(m.reviews, func(r store.Review) bool { return r.ID == shown }), 0)
+	if r := m.current(); r == nil || r.ID != shown {
+		m.sel, m.scroll = 0, 0
+	}
+	return m
+}
+
+// current is the review on screen, or nil.
+func (m drawerModel) current() *store.Review {
+	if m.pass < 0 || m.pass >= len(m.reviews) {
+		return nil
+	}
+	return &m.reviews[m.pass]
+}
+
+func (m drawerModel) key(msg tea.KeyPressMsg, c drawerCtx) (drawerModel, tea.Cmd, action) {
+	_, anchors := m.layout(c)
+	var fs []store.Finding
+	if r := m.current(); r != nil {
+		fs = orderedFindings(r.Findings)
+	}
+	switch k := msg.String(); k {
+	case "j", "down":
+		m.scroll++
+	case "k", "up":
+		m.scroll--
+	case "n", "p":
+		if len(fs) > 0 {
+			m.sel = min(max(m.sel+map[string]int{"n": 1, "p": -1}[k], 0), len(fs)-1)
+			m.scroll = anchors[m.sel]
+		}
+	case "<", ">":
+		next := m.pass + map[string]int{"<": 1, ">": -1}[k]
+		if next >= 0 && next < len(m.reviews) {
+			m.pass, m.sel, m.scroll = next, 0, 0
+		}
+	case "u":
+		m.understanding = !m.understanding
+	case "a":
+		m.assumptions = !m.assumptions
+	case "o":
+		return m, nil, actionOpen{URL: c.PR.PR.URL}
+	case "O":
+		if len(fs) > 0 && m.sel < len(fs) {
+			return m, nil, actionOpen{URL: findingURL(c.PR.PR.URL, fs[m.sel])}
+		}
+	case "y":
+		if len(fs) > 0 && m.sel < len(fs) {
+			m.flash = "copied the finding"
+			return m, nil, actionCopy{Text: cleanBlock(fs[m.sel].Body)}
+		}
+	case "space":
+		return m, nil, actionReview{ID: m.prID}
+	case "c":
+		return m, nil, actionPickModel{ID: m.prID}
+	}
+	m.scroll = min(max(m.scroll, 0), m.maxScroll(c))
+	return m, nil, actionNone{}
+}
+
+// maxScroll is the largest scroll that still fills the drawer.
+func (m drawerModel) maxScroll(c drawerCtx) int {
+	lines, _ := m.layout(c)
+	return max(len(lines)-m.bodyHeight(c.Height), 0)
+}
+
+// bodyHeight is the room for scrolling content: all but the bottom line.
+func (m drawerModel) bodyHeight(height int) int { return max(height-1, 0) }
+
+// findingURL is the PR's Files tab, anchored on the finding's file and line
+// the way GitHub does it: the SHA-256 of the path, then R and the line on
+// the new side of the diff.
+func findingURL(prURL string, f store.Finding) string {
+	if prURL == "" {
+		return ""
+	}
+	url := strings.TrimRight(prURL, "/") + "/files"
+	if f.Path == "" {
+		return url
+	}
+	sum := sha256.Sum256([]byte(f.Path))
+	url += "#diff-" + hex.EncodeToString(sum[:])
+	if f.Line > 0 && !f.Unanchored {
+		url += "R" + strconv.Itoa(f.Line)
+	}
+	return url
+}
+
+// findingRank orders findings: blocking first, then the prefixes the
+// reviewer uses for the rest.
+func findingRank(f store.Finding) int {
+	if f.Blocking {
+		return 0
+	}
+	body := strings.ToLower(strings.TrimSpace(f.Body))
+	for i, p := range []string{"nit:", "non-blocking:", "question:"} {
+		if strings.HasPrefix(body, p) {
+			return i + 1
+		}
+	}
+	return 4
+}
+
+// orderedFindings is fs in the order the drawer lists them, keeping the
+// reviewer's order within each group.
+func orderedFindings(fs []store.Finding) []store.Finding {
+	out := slices.Clone(fs)
+	slices.SortStableFunc(out, func(a, b store.Finding) int { return findingRank(a) - findingRank(b) })
+	return out
+}
+
+// ---- rendering ----
+
+// layoutWidth is the width content is laid out at: the settled width while
+// the drawer slides, so text doesn't rewrap on every frame. The frame cuts
+// it off at the drawer's edge.
+func (m drawerModel) layoutWidth(width int) int { return max(width, int(m.target)) }
+
+// innerWidth is the room for content inside the border, its space and a
+// right margin.
+func innerWidth(layoutW int) int { return max(layoutW-3, 10) }
+
+var verdictBanners = map[string]struct {
+	label string
+	color int
+}{
+	"approve":         {"APPROVE", 41},
+	"request_changes": {"REQUEST CHANGES", 203},
+	"comment":         {"COMMENT", 39},
+}
+
+var ledgerLabels = []struct{ ledger, label string }{
+	{"addressed", "fixed"}, {"outstanding", "still open"}, {"answered", "answered"}, {"new", "new"},
+}
+
+// ledgerSummary is "2 fixed · 1 still open", or "" when no finding has a
+// ledger state.
+func ledgerSummary(fs []store.Finding) string {
+	var parts []string
+	for _, l := range ledgerLabels {
+		n := 0
+		for _, f := range fs {
+			if f.Ledger == l.ledger {
+				n++
+			}
+		}
+		if n > 0 {
+			parts = append(parts, fmt.Sprintf("%d %s", n, l.label))
+		}
+	}
+	return strings.Join(parts, " · ")
+}
+
+// findingLocation is "path:line", "path:start-line", or "path · unanchored".
+func findingLocation(f store.Finding) string {
+	path := cleanLine(f.Path)
+	switch {
+	case f.Unanchored && path == "":
+		return "unanchored"
+	case f.Unanchored:
+		return path + " · unanchored"
+	case f.Line > 0 && f.StartLine > 0 && f.StartLine < f.Line:
+		return fmt.Sprintf("%s:%d-%d", path, f.StartLine, f.Line)
+	case f.Line > 0:
+		return fmt.Sprintf("%s:%d", path, f.Line)
+	case path == "":
+		return "unanchored"
+	}
+	return path
+}
+
+// layout lays the whole drawer out as lines, and returns the line each
+// finding (in orderedFindings order) starts on.
+func (m drawerModel) layout(c drawerCtx) (lines []string, anchors []int) {
+	th := c.Theme
+	inner := innerWidth(m.layoutWidth(m.width()))
+	add := func(ls ...string) { lines = append(lines, ls...) }
+	wrap := func(s string) []string { return strings.Split(ansi.Wrap(s, inner, ""), "\n") }
+
+	for _, l := range wrap(cleanLine(c.PR.PR.Title)) {
+		add(th.Accent().Bold(true).Render(l))
+	}
+	chip := th.ChipLine(string(c.PR.Status.Status))
+	add(ansi.Truncate(chip+th.Muted().Render("  "+cleanLine(c.PR.PR.Repo)+"#"+strconv.Itoa(c.PR.PR.Number)), inner, "…"))
+
+	r := m.current()
+	switch {
+	case !m.loaded:
+		add("", th.Muted().Render("Loading reviews…"))
+		return lines, nil
+	case r == nil:
+		add("", th.Muted().Render("No reviews yet. Press space to review."))
+		return lines, nil
+	}
+
+	meta := []string{cleanLine(r.Tier), cleanLine(r.Model), cleanLine(r.Effort), fmt.Sprintf("$%.2f", r.CostUSD)}
+	if !r.StartedAt.IsZero() {
+		meta = append(meta, ago(c.Now.Sub(r.StartedAt))+" ago")
+	}
+	if len(m.reviews) > 1 {
+		meta = append(meta, fmt.Sprintf("pass %d/%d", m.pass+1, len(m.reviews)))
+	}
+	meta = slices.DeleteFunc(meta, func(s string) bool { return s == "" })
+	for _, l := range wrap(strings.Join(meta, " · ")) {
+		add(th.Muted().Render(l))
+	}
+	add("")
+
+	banner := ""
+	if b, ok := verdictBanners[r.Verdict]; ok {
+		banner = th.Banner(b.color, b.label)
+	} else if r.Verdict != "" {
+		banner = th.Muted().Render(strings.ToUpper(cleanLine(r.Verdict)))
+	}
+	switch r.Outcome {
+	case "incomplete":
+		banner += "  " + th.StatusFg("CI_WAITING").Render("incomplete")
+	case "failed":
+		banner += "  " + th.StatusFg("CI_FAILED").Render("failed")
+	}
+	if strings.TrimSpace(banner) != "" {
+		add(banner)
+	}
+	if reason := cleanLine(r.VerdictReason); reason != "" {
+		add(wrap(reason)...)
+	}
+	if r.Outcome == "failed" && r.Error != "" {
+		for _, l := range wrap(cleanLine(r.Error)) {
+			add(th.StatusFg("CI_FAILED").Render(l))
+		}
+	}
+	if s := ledgerSummary(r.Findings); s != "" {
+		add(th.Muted().Render(s))
+	}
+	add("")
+
+	fs := orderedFindings(r.Findings)
+	if len(fs) == 0 {
+		add(th.Muted().Render("No findings."), "")
+	}
+	for i, f := range fs {
+		anchors = append(anchors, len(lines))
+		add(m.findingHeader(c, f, i == m.sel, inner)...)
+		for _, l := range m.md.render(cleanBlock(f.Body), inner-2, th) {
+			add("  " + l)
+		}
+		add("")
+	}
+
+	lines = append(lines, m.section(th, "Understanding", m.understanding, "u", inner, func() []string {
+		return m.md.render(cleanBlock(r.Understanding), inner-2, th)
+	})...)
+	lines = append(lines, m.section(th, "Assumptions", m.assumptions, "a", inner, func() []string {
+		var out []string
+		for _, a := range r.Assumptions {
+			for i, l := range strings.Split(ansi.Wrap(cleanLine(a.Claim), max(inner-4, 1), ""), "\n") {
+				out = append(out, map[bool]string{true: "• ", false: "  "}[i == 0]+l)
+			}
+			if ev := cleanLine(a.Evidence); ev != "" {
+				for _, l := range strings.Split(ansi.Wrap(ev, max(inner-4, 1), ""), "\n") {
+					out = append(out, th.Muted().Render("  "+l))
+				}
+			}
+		}
+		if len(out) == 0 {
+			out = []string{th.Muted().Render("None.")}
+		}
+		return out
+	})...)
+	if note := cleanBlock(r.Note); strings.TrimSpace(note) != "" {
+		add(th.Accent().Render("Check notes"))
+		for _, l := range wrap(strings.Join(strings.Fields(note), " ")) {
+			add(th.Muted().Render(l))
+		}
+	}
+	return lines, anchors
+}
+
+func (m drawerModel) section(th theme.Theme, title string, expanded bool, key string, inner int, body func() []string) []string {
+	if !expanded {
+		return []string{th.Accent().Render("▸ "+title) + th.Muted().Render("  "+key), ""}
+	}
+	out := []string{th.Accent().Render("▾ "+title) + th.Muted().Render("  "+key)}
+	for _, l := range body() {
+		out = append(out, "  "+l)
+	}
+	return append(out, "")
+}
+
+// findingHeader is a finding's location line, and its tags (blocking, the
+// category, where the ledger has it) after it, on a line of their own when
+// they don't fit.
+func (m drawerModel) findingHeader(c drawerCtx, f store.Finding, selected bool, inner int) []string {
+	th := c.Theme
+	mark := "  "
+	if selected {
+		mark = th.Accent().Render("▸ ")
+	}
+	loc := mark + th.Accent().Render(findingLocation(f))
+	var tags []string
+	if f.Blocking {
+		tags = append(tags, th.StatusFg("CI_FAILED").Render("blocking"))
+	}
+	if cat := cleanLine(f.Category); cat != "" {
+		tags = append(tags, th.Muted().Render(cat))
+	}
+	for _, l := range ledgerLabels[:3] {
+		if f.Ledger == l.ledger {
+			tags = append(tags, th.Muted().Render("["+l.label+"]"))
+		}
+	}
+	if len(tags) == 0 {
+		return []string{ansi.Truncate(loc, inner, "…")}
+	}
+	joined := strings.Join(tags, "  ")
+	if ansi.StringWidth(loc)+2+ansi.StringWidth(joined) <= inner {
+		return []string{loc + "  " + joined}
+	}
+	return []string{ansi.Truncate(loc, inner, "…"), ansi.Truncate("  "+joined, inner, "…")}
+}
+
+// view draws the drawer width cells wide and height lines high: a border on
+// its left edge, then the content scrolled to m.scroll, and a bottom line
+// that is the live ticker while a review runs.
+func (m drawerModel) view(width, height int, c drawerCtx) string {
+	if width <= 0 || height <= 0 {
+		return ""
+	}
+	th := c.Theme
+	c.Height = height
+	lines, _ := m.layout(c)
+	bodyH := m.bodyHeight(height)
+	scroll := min(max(m.scroll, 0), max(len(lines)-bodyH, 0))
+	lines = lines[min(scroll, len(lines)):]
+	lines = fit(strings.Join(lines, "\n"), 1<<20, bodyH)
+	lines = append(lines, m.bottomLine(c, innerWidth(m.layoutWidth(width))))
+
+	edge := th.Muted()
+	if c.Focused {
+		edge = th.Accent()
+	}
+	bar := edge.Render("│")
+	out := make([]string, len(lines))
+	for i, l := range lines {
+		l = bar + " " + ansi.Truncate(l, max(width-2, 0), "")
+		out[i] = l + strings.Repeat(" ", max(width-ansi.StringWidth(l), 0))
+	}
+	return strings.Join(out, "\n")
+}
+
+func (m drawerModel) bottomLine(c drawerCtx, inner int) string {
+	th := c.Theme
+	switch {
+	case c.Running:
+		frame := reviewSpinner.Frames[c.Frame%len(reviewSpinner.Frames)]
+		text := cleanLine(c.Ticker)
+		if text == "" {
+			text = "Claude reviewing…"
+		}
+		return th.Accent().Render(strings.TrimSpace(frame)) + " " + text
+	case m.flash != "":
+		return th.Accent().Render(m.flash)
+	}
+	return th.Muted().Render(ansi.Truncate("j/k scroll · n/p finding · </> pass · y copy · O open line", inner, "…"))
+}
+
+// cleanLine is clean for text that belongs on one line.
+func cleanLine(s string) string { return strings.TrimSpace(clean(s)) }
+
+// cleanBlock is clean for text with line breaks, like a markdown body: it
+// strips the same escape sequences and control characters, but keeps the
+// newlines markdown needs.
+func cleanBlock(s string) string {
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	lines := strings.Split(s, "\n")
+	for i, l := range lines {
+		lines[i] = clean(l)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// ---- markdown ----
+
+// markdownCache renders markdown with glamour and remembers the result. A
+// glamour renderer is slow to build and the drawer redraws on every spinner
+// frame, so both renderers and rendered text are kept. It is a pointer in
+// the model because the model is copied on every update; only the
+// Bubble Tea goroutine touches it.
+type markdownCache struct {
+	renderers map[mdKey]*glamour.TermRenderer
+	text      map[mdText][]string
+}
+
+type mdKey struct {
+	width         int
+	accent, muted string
+	plain         bool
+}
+
+type mdText struct {
+	mdKey
+	src string
+}
+
+func newMarkdownCache() *markdownCache {
+	return &markdownCache{renderers: map[mdKey]*glamour.TermRenderer{}, text: map[mdText][]string{}}
+}
+
+// render turns src, which must already be clean, into lines of at most
+// width cells.
+func (c *markdownCache) render(src string, width int, th theme.Theme) []string {
+	width = max(width, 10)
+	key := mdKey{width: width, accent: colorString(th.AccentColor()), muted: colorString(th.MutedColor()), plain: th.NoColor()}
+	if lines, ok := c.text[mdText{key, src}]; ok {
+		return lines
+	}
+	lines := c.renderUncached(src, key)
+	c.text[mdText{key, src}] = lines
+	return lines
+}
+
+func (c *markdownCache) renderUncached(src string, key mdKey) []string {
+	plain := func() []string { return strings.Split(ansi.Wrap(src, key.width, ""), "\n") }
+	r, ok := c.renderers[key]
+	if !ok {
+		var err error
+		r, err = glamour.NewTermRenderer(glamour.WithStyles(glamourStyle(key)), glamour.WithWordWrap(key.width))
+		if err != nil {
+			return plain()
+		}
+		c.renderers[key] = r
+	}
+	out, err := r.Render(src)
+	if err != nil {
+		return plain()
+	}
+	lines := strings.Split(strings.Trim(out, "\n"), "\n")
+	for i, l := range lines {
+		lines[i] = strings.TrimRight(l, " ")
+	}
+	return lines
+}
+
+// glamourStyle is the markdown style: glamour's ASCII style with the
+// theme's colors on top. Glamour's own dark and light styles are not used:
+// they color with hex values, which a 256-color terminal maps onto the
+// basic 16, the one range snow's colors never use.
+func glamourStyle(k mdKey) gansi.StyleConfig {
+	s := styles.ASCIIStyleConfig
+	zero := uint(0)
+	s.Document.BlockPrefix, s.Document.BlockSuffix, s.Document.Margin = "", "", &zero
+	if k.plain {
+		return s
+	}
+	accent, muted, yes := k.accent, k.muted, true
+	for _, h := range []*gansi.StyleBlock{&s.Heading, &s.H1, &s.H2, &s.H3, &s.H4, &s.H5, &s.H6} {
+		h.Color, h.Bold = &accent, &yes
+	}
+	s.Strong = gansi.StylePrimitive{Bold: &yes}
+	s.Emph = gansi.StylePrimitive{Italic: &yes}
+	s.Strikethrough = gansi.StylePrimitive{CrossedOut: &yes}
+	s.Code.StylePrimitive = gansi.StylePrimitive{Color: &muted}
+	s.CodeBlock.StyleBlock.StylePrimitive = gansi.StylePrimitive{Color: &muted}
+	s.BlockQuote.StylePrimitive = gansi.StylePrimitive{Color: &muted}
+	s.Link = gansi.StylePrimitive{Color: &accent, Underline: &yes}
+	s.LinkText = gansi.StylePrimitive{Color: &accent}
+	return s
+}
+
+// colorString is a color as glamour reads it: an xterm index, or #rrggbb.
+func colorString(c color.Color) string {
+	if i, ok := c.(ansi.IndexedColor); ok {
+		return strconv.Itoa(int(i))
+	}
+	r, g, b, _ := c.RGBA()
+	return fmt.Sprintf("#%02x%02x%02x", r>>8, g>>8, b>>8)
+}
