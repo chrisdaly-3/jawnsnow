@@ -103,12 +103,14 @@ func WriteReviewFiles(ctx context.Context, r Repo, dir string, in FilesInput) (R
 	return files, nil
 }
 
-// since builds since.txt from the PR's own patch, prFiles: for a path the
-// last review saw, the hunks whose +/- lines were not a hunk of the patch
-// then; for a path new to the PR, its whole patch; for a path the PR no
-// longer touches, "# reverted: <path>". A base merge moves the PR's hunks
-// but does not change their +/- lines, and its own changes are in neither
-// patch, so it adds nothing.
+// since builds since.txt from the PR's own patch, prFiles. For a path the
+// last review saw, it holds the hunks whose +/- lines were not a hunk of
+// the patch then, followed by "# reverted hunk in <path>: <@@ header>" for
+// each hunk of the patch then that is gone now. A path new to the PR gets
+// its whole patch, and a path the PR no longer touches gets
+// "# reverted: <path>". A base merge moves the PR's hunks but does not
+// change their +/- lines, and its own changes are in neither patch, so it
+// adds nothing.
 func (r Repo) since(ctx context.Context, in FilesInput, changed []string, prFiles map[string]*fileDiff) ([]byte, error) {
 	raw, err := r.diff(ctx, nil, in.LastMergeBase, in.LastReviewed)
 	if err != nil {
@@ -129,35 +131,46 @@ func (r Repo) since(ctx context.Context, in FilesInput, changed []string, prFile
 		if now == nil {
 			return nil, fmt.Errorf("changed path %q is missing from the diff", p)
 		}
-		reviewed := map[string]int{} // hunk key -> times seen last review
-		if slices.Contains(lastChanged, p) {
-			last := lastFiles[p]
-			if last == nil {
-				return nil, fmt.Errorf("changed path %q is missing from the last reviewed diff", p)
-			}
-			for _, s := range last.sections {
+		if !slices.Contains(lastChanged, p) {
+			for _, s := range now.sections {
+				out.Write(s.header)
 				for _, h := range s.hunks {
-					reviewed[h.key()]++
+					out.Write(h.text)
 				}
 			}
+			continue
 		}
+		last := lastFiles[p]
+		if last == nil {
+			return nil, fmt.Errorf("changed path %q is missing from the last reviewed diff", p)
+		}
+
+		reviewed := last.hunkKeys()
 		for _, s := range now.sections {
-			var kept []*hunk
+			var fresh []*hunk
 			for _, h := range s.hunks {
 				if k := h.key(); reviewed[k] > 0 {
 					reviewed[k]--
-					continue
+				} else {
+					fresh = append(fresh, h)
 				}
-				kept = append(kept, h)
 			}
-			// A path new to the PR keeps a section with no hunks, such as a
-			// new empty file.
-			if len(kept) == 0 && slices.Contains(lastChanged, p) {
-				continue
+			if len(fresh) > 0 {
+				out.Write(s.header)
+				for _, h := range fresh {
+					out.Write(h.text)
+				}
 			}
-			out.Write(s.header)
-			for _, h := range kept {
-				out.Write(h.text)
+		}
+
+		current := now.hunkKeys()
+		for _, s := range last.sections {
+			for _, h := range s.hunks {
+				if k := h.key(); current[k] > 0 {
+					current[k]--
+				} else if h.header != "" {
+					fmt.Fprintf(&out, "# reverted hunk in %s: %s\n", quotePath(p), h.header)
+				}
 			}
 		}
 	}
@@ -225,13 +238,25 @@ type section struct {
 // hunk is one "@@" block of a section, numbered, or the "Binary files …
 // differ" line of a binary change.
 type hunk struct {
-	text []byte
+	text   []byte
+	header string // the "@@" line; "" for a binary change
 	// changes are its +/- lines in order: the hunk without line numbers or
 	// context. A binary change is its new blob ID.
 	changes []string
 }
 
 func (h *hunk) key() string { return strings.Join(h.changes, "\n") }
+
+// hunkKeys counts f's hunks by key.
+func (f *fileDiff) hunkKeys() map[string]int {
+	keys := map[string]int{}
+	for _, s := range f.sections {
+		for _, h := range s.hunks {
+			keys[h.key()]++
+		}
+	}
+	return keys
+}
 
 // parseDiff prefixes every line of a file's new version in diff with its
 // new-file line number, as "L<n> ", and splits the diff by path. Deleted
@@ -275,7 +300,7 @@ func parseDiff(diff []byte) ([]byte, map[string]*fileDiff, error) {
 			if count > 0 {
 				cur.ranges = append(cur.ranges, [2]int{start, start + count - 1})
 			}
-			h = &hunk{}
+			h = &hunk{header: l}
 			sec.hunks = append(sec.hunks, h)
 			inHunk, n = true, start
 		case inHunk && (l == "" || l[0] == ' ' || l[0] == '+'):

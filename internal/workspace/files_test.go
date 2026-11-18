@@ -417,3 +417,52 @@ func TestEditAtFirstLine(t *testing.T) {
 		t.Fatalf("Hunks = %v", files.Hunks)
 	}
 }
+
+// partialRevert is a PR that changed lines 5 and 25 of f.txt at the last
+// review (commit a), and has since put line 25 back.
+func partialRevert(t *testing.T, more map[int]string) (h history, base, a, head string) {
+	t.Helper()
+	h = newHistory(t)
+	f := lines("f", 40)
+	base = h.commit("base", map[string][]byte{"f.txt": text(f)})
+	h.git("checkout", "-q", "-b", "pr")
+	a = h.commit("pr A", map[string][]byte{"f.txt": text(with(with(f, 5, "pr-f5"), 25, "pr-f25"))})
+	now := with(f, 5, "pr-f5")
+	for n, s := range more {
+		now = with(now, n, s)
+	}
+	head = h.commit("pr B", map[string][]byte{"f.txt": text(now)})
+	return h, base, a, head
+}
+
+func TestSinceListsPartialRevert(t *testing.T) {
+	h, base, a, head := partialRevert(t, nil)
+	files, err := WriteReviewFiles(context.Background(), h.repo(), t.TempDir(), FilesInput{
+		MergeBase: base, Head: head, LastReviewed: a, LastMergeBase: base,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if since := readFile(t, files.Since); since != "# reverted hunk in f.txt: @@ -22,7 +22,7 @@ f21\n" {
+		t.Fatalf("since.txt = %q", since)
+	}
+}
+
+// A path with new hunks and a reverted one shows the new hunks first.
+func TestSinceListsPartialRevertAfterNewHunks(t *testing.T) {
+	h, base, a, head := partialRevert(t, map[int]string{35: "pr-f35"})
+	files, err := WriteReviewFiles(context.Background(), h.repo(), t.TempDir(), FilesInput{
+		MergeBase: base, Head: head, LastReviewed: a, LastMergeBase: base,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	since := readFile(t, files.Since)
+	if !strings.HasPrefix(since, "diff --git a/f.txt b/f.txt\n") ||
+		!strings.HasSuffix(since, "L35 +pr-f35\nL36  f36\nL37  f37\nL38  f38\n# reverted hunk in f.txt: @@ -22,7 +22,7 @@ f21\n") {
+		t.Fatalf("since.txt:\n%s", since)
+	}
+	if strings.Contains(since, "pr-f5") || strings.Count(since, "\n@@ ") != 1 {
+		t.Fatalf("since.txt shows more than the line-35 hunk:\n%s", since)
+	}
+}
