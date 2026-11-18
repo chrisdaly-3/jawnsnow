@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/chrisdaly-3/jawnsnow/internal/github"
 	"github.com/chrisdaly-3/jawnsnow/internal/status"
@@ -49,7 +50,7 @@ func donePRs() []tracker.Tracked {
 
 func testDone(width, height, focus int) doneModel {
 	d := newDone()
-	d.now, d.focus = t0, focus
+	d.now, d.focus, d.loc = t0, focus, time.UTC
 	d.setSize(width, height)
 	return d
 }
@@ -177,5 +178,19 @@ func TestDoneUnhideStalePRThroughRootModel(t *testing.T) {
 	}
 	if stored["1"].Place != tracker.PlaceWall {
 		t.Errorf("stored PR 1 place = %q, want wall", stored["1"].Place)
+	}
+}
+
+func TestDoneDatesUseTheLocalZone(t *testing.T) {
+	// 03:00 UTC on Nov 18 is still Nov 17 eight hours west.
+	prs := []tracker.Tracked{doneCard("m1", "o/r", 1, "late", "alice", status.Merged, time.Date(2026, 11, 18, 3, 0, 0, 0, time.UTC))}
+	d := testDone(120, 20, 0)
+	d.loc = time.FixedZone("PST", -8*3600)
+	out := ansi.Strip(renderDone(t, d, 120, 20, prs))
+	if !strings.Contains(out, "Nov 17") || strings.Contains(out, "Nov 18") {
+		t.Errorf("Done date not in the local zone:\n%s", out)
+	}
+	if newDone().loc != time.Local {
+		t.Error("the Done view does not default to the local zone")
 	}
 }

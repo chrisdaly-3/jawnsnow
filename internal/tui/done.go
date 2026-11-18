@@ -41,9 +41,10 @@ type doneModel struct {
 
 	w, h int
 	now  time.Time
+	loc  *time.Location // the zone dates are shown in
 }
 
-func newDone() doneModel { return doneModel{w: 120, h: 30} }
+func newDone() doneModel { return doneModel{w: 120, h: 30, loc: time.Local} }
 
 func (m *doneModel) setSize(w, h int) { m.w, m.h = w, h }
 
@@ -198,14 +199,14 @@ func (m doneModel) cells(pane int, t tracker.Tracked, th theme.Theme) table.Row 
 	if pane == paneWaiting {
 		return table.Row{pr, author, string(t.WaitReason), sinceAge(t.WaitingSince, m.now), ""}
 	}
-	return table.Row{pr, author, th.ChipLine(string(t.Status.Status)), doneDate(t.DoneAt), ""}
+	return table.Row{pr, author, th.ChipLine(string(t.Status.Status)), doneDate(t.DoneAt, m.loc), ""}
 }
 
-func doneDate(at time.Time) string {
+func doneDate(at time.Time, loc *time.Location) string {
 	if at.IsZero() {
 		return "–"
 	}
-	return at.Format("Jan 2")
+	return at.In(loc).Format("Jan 2")
 }
 
 // sinceAge is how long ago from was, in the largest whole unit.
