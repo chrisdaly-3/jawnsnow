@@ -72,6 +72,9 @@ type Deps struct {
 	// for the reason in ReviewsOff.
 	Reviewer   Reviewer
 	ReviewsOff string
+	// Claude is what startup detection found about the claude CLI. The zero
+	// value means detection didn't run, and nothing is refused.
+	Claude review.ClaudeInfo
 }
 
 type (
@@ -140,6 +143,8 @@ type Model struct {
 	reviews reviewsModel
 	// session is the Agent view's model picks for this session.
 	session review.SessionTiers
+	claude  review.ClaudeInfo
+	agent   agentModel
 
 	prs map[string]tracker.Tracked
 	// loaded is set once the stored PRs arrive; no poll starts before, or
@@ -199,11 +204,11 @@ func New(d Deps) Model {
 		now = time.Now
 	}
 	mode := modeWatcher
-	if d.Config.Mode.Default == modeAuto && d.Reviewer != nil {
+	if d.Config.Mode.Default == modeAuto && d.Reviewer != nil && claudeRefused(d.Claude) == "" {
 		mode = modeAuto
 	}
 	return Model{
-		cfg: d.Config, theme: d.Theme, client: d.Client, store: d.Store, viewer: d.Viewer,
+		cfg: d.Config, claude: d.Claude, theme: d.Theme, client: d.Client, store: d.Store, viewer: d.Viewer,
 		banners: d.Banners, configBanner: d.ConfigBanner, reloads: d.Reloads, now: now, tick: tea.Tick,
 		open:   func(url string) error { return browser.New("", io.Discard, io.Discard).Browse(url) },
 		launch: func(c tea.Cmd) tea.Cmd { return c }, reviews: newReviews(d.Reviewer, d.ReviewsOff),
@@ -312,6 +317,10 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 			return m.quit()
 		}
 		return m.flush()
+	case editedMsg:
+		if msg.err != nil {
+			m.notice = "could not run the editor: " + msg.err.Error()
+		}
 	case openedMsg:
 		if msg.err != nil {
 			m.notice = "could not open the browser: " + msg.err.Error()
@@ -404,6 +413,8 @@ func (m Model) updateView(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		return m.wallUpdate(msg)
 	case ViewDone:
 		return m.doneUpdate(msg)
+	case ViewAgent:
+		return m.agentKey(msg)
 	}
 	return m, nil
 }
@@ -889,7 +900,7 @@ func (m Model) body(width, height int) string {
 		d.setSize(width, height)
 		return d.view(width, height, m.wallPRs(), m.theme)
 	case ViewAgent:
-		return placeholder(m.theme, width, height, "Coming in plan 2")
+		return m.agentBody(width, height)
 	default:
 		return placeholder(m.theme, width, height, "Coming in plan 3")
 	}

@@ -114,7 +114,11 @@ type reviewConfirm struct {
 
 // modelPicker is the c picker: a model, then an effort.
 type modelPicker struct {
-	id                  string
+	id string
+	// session is set when the Agent view opened the picker: the pick goes to
+	// tier's session choice and no review starts.
+	session             bool
+	tier                review.Tier
 	choosingEffort      bool
 	modelIdx, effortIdx int
 }
@@ -157,8 +161,25 @@ func newReviews(r Reviewer, off string) reviewsModel {
 // capturing reports whether a question or the picker takes every key.
 func (r reviewsModel) capturing() bool { return r.confirm != nil || r.picker != nil }
 
+// claudeRefused is why reviews can't run with this claude, or "" when they
+// can. A zero ClaudeInfo means detection didn't run, which refuses nothing.
+func claudeRefused(c review.ClaudeInfo) string {
+	if c == (review.ClaudeInfo{}) {
+		return ""
+	}
+	return c.Unusable()
+}
+
+// unavailableReason is why no review can start, or "" when one can.
+func (m Model) unavailableReason() string {
+	if m.reviews.reviewer == nil {
+		return m.reviews.off
+	}
+	return claudeRefused(m.claude)
+}
+
 func (m Model) unavailable() Model {
-	m.notice = "reviews unavailable: " + m.reviews.off
+	m.notice = "reviews unavailable: " + m.unavailableReason()
 	return m
 }
 
@@ -447,7 +468,7 @@ func (m Model) applyInputs(msg reviewInputsMsg) (Model, tea.Cmd) {
 // autoStart, in auto mode, decides each wall PR and starts the allowed
 // ones, oldest head first, until max_in_flight reviews run.
 func (m Model) autoStart() (Model, tea.Cmd) {
-	if m.mode != modeAuto || m.reviews.reviewer == nil || m.viewer == "" || m.reviews.quitting {
+	if m.mode != modeAuto || m.unavailableReason() != "" || m.viewer == "" || m.reviews.quitting {
 		return m, nil
 	}
 	var wall []tracker.Tracked
@@ -509,7 +530,7 @@ func (m Model) toggleMode() (Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	if m.reviews.reviewer == nil {
+	if m.unavailableReason() != "" {
 		return m.unavailable(), nil
 	}
 	m.mode = modeAuto
@@ -522,7 +543,7 @@ func (m Model) toggleMode() (Model, tea.Cmd) {
 // budget is spent, unless confirmed, and queues the review when
 // max_in_flight reviews are running.
 func (m Model) forceReview(id string, oneRun *config.Tier, confirmed bool) (Model, tea.Cmd) {
-	if m.reviews.reviewer == nil {
+	if m.unavailableReason() != "" {
 		return m.unavailable(), nil
 	}
 	t, ok := m.reviewable(id)
@@ -545,7 +566,7 @@ func (m Model) forceReview(id string, oneRun *config.Tier, confirmed bool) (Mode
 }
 
 func (m Model) openPicker(id string) Model {
-	if m.reviews.reviewer == nil {
+	if m.unavailableReason() != "" {
 		return m.unavailable()
 	}
 	if _, ok := m.reviewable(id); ok {
@@ -583,6 +604,10 @@ func (m Model) reviewKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		m.reviews.picker = nil
 		return m, nil
 	case "enter":
+		if p.choosingEffort && p.session {
+			m.reviews.picker = nil
+			return m.setSessionPick(p.tier, &config.Tier{Model: pickModels[p.modelIdx], Effort: pickEfforts[p.effortIdx]}), nil
+		}
 		if p.choosingEffort {
 			m.reviews.picker = nil
 			return m.forceReview(p.id, &config.Tier{Model: pickModels[p.modelIdx], Effort: pickEfforts[p.effortIdx]}, false)

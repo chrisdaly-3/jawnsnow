@@ -19,6 +19,7 @@ import (
 
 	"github.com/chrisdaly-3/jawnsnow/internal/config"
 	"github.com/chrisdaly-3/jawnsnow/internal/github"
+	"github.com/chrisdaly-3/jawnsnow/internal/review"
 	"github.com/chrisdaly-3/jawnsnow/internal/status"
 	"github.com/chrisdaly-3/jawnsnow/internal/store"
 	"github.com/chrisdaly-3/jawnsnow/internal/theme"
@@ -294,6 +295,8 @@ type opts struct {
 	// reviews are unavailable without one.
 	reviews    bool
 	reviewsOff string
+	// claude is what detection found; the zero value means none ran.
+	claude review.ClaudeInfo
 	// auto starts in auto mode; config edits the default config.
 	auto   bool
 	config func(*config.Config)
@@ -330,7 +333,7 @@ func newHarness(t *testing.T, o opts, prs ...tracker.Tracked) *harness {
 	}
 	d := Deps{
 		Config: cfg, Theme: th, Store: st, Viewer: "me",
-		Reloads: o.reloads, Now: h.clock.Now, ReviewsOff: o.reviewsOff,
+		Reloads: o.reloads, Now: h.clock.Now, ReviewsOff: o.reviewsOff, Claude: o.claude,
 	}
 	if o.reviews {
 		h.reviewer = &fakeReviewer{store: st, clock: h.clock}
@@ -983,8 +986,8 @@ func TestViewCycling(t *testing.T) {
 	if h.m.view != ViewAgent {
 		t.Errorf("[ from Wall: view = %v, want Agent", h.m.view)
 	}
-	if !strings.Contains(content(h.m), "Coming in plan 2") {
-		t.Errorf("Agent placeholder missing:\n%s", content(h.m))
+	if !strings.Contains(content(h.m), "claude") {
+		t.Errorf("Agent view missing:\n%s", content(h.m))
 	}
 }
 

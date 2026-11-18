@@ -49,6 +49,12 @@ var keyMap = []keySection{
 		{"y", "copy the finding"},
 		{"space c", "review again, or pick a model"},
 	}},
+	{"Agent", []keyHint{
+		{"j k", "choose a tier"},
+		{"enter", "pick a model and effort for this session"},
+		{"x", "clear the tier's session pick"},
+		{"e", "edit config.toml in $VISUAL or $EDITOR"},
+	}},
 	{"Done", []keyHint{
 		{"j k", "previous or next row"},
 		{"x", "unhide"},
@@ -66,8 +72,9 @@ func allKeys() []keyHint {
 
 // footerKeys are the short hints for each view, before the global ones.
 var footerKeys = map[View][]keyHint{
-	ViewWall: {{"h/l", "lane"}, {"j/k", "card"}, {"space", "review"}, {"x", "hide"}, {"o", "open"}, {"/", "filter"}, {"a", "author"}},
-	ViewDone: {{"j/k", "row"}, {"x", "unhide"}, {"o", "open"}},
+	ViewWall:  {{"h/l", "lane"}, {"j/k", "card"}, {"space", "review"}, {"x", "hide"}, {"o", "open"}, {"/", "filter"}, {"a", "author"}},
+	ViewAgent: {{"j/k", "tier"}, {"enter", "pick"}, {"x", "clear"}, {"e", "edit config"}},
+	ViewDone:  {{"j/k", "row"}, {"x", "unhide"}, {"o", "open"}},
 }
 
 var footerGlobal = []keyHint{{"[ ]", "views"}, {"R", "poll"}, {"m", "mode"}, {"?", "help"}, {"q", "quit"}}

@@ -153,6 +153,9 @@ func (m Model) reviewPrompt() string {
 func (m Model) pickerBody(width, height int) string {
 	p, th := m.reviews.picker, m.theme
 	items, idx, title := pickModels, p.modelIdx, "Review with model"
+	if p.session {
+		title = "Session model for " + string(p.tier)
+	}
 	if p.choosingEffort {
 		items, idx, title = pickEfforts, p.effortIdx, "Effort for "+pickModels[p.modelIdx]
 	}
