@@ -2,10 +2,22 @@
 package cli
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io"
+	"os"
+	"strings"
+	"time"
+
+	tea "charm.land/bubbletea/v2"
+	"github.com/cli/go-gh/v2/pkg/auth"
 
 	"github.com/chrisdaly-3/jawnsnow/internal/config"
+	"github.com/chrisdaly-3/jawnsnow/internal/github"
+	"github.com/chrisdaly-3/jawnsnow/internal/store"
+	"github.com/chrisdaly-3/jawnsnow/internal/theme"
+	"github.com/chrisdaly-3/jawnsnow/internal/tui"
 )
 
 const usage = "usage: snow <command>\n\ncommands:\n  config default  print the commented default config\n  version         print the version\n"
@@ -14,10 +26,12 @@ const usage = "usage: snow <command>\n\ncommands:\n  config default  print the c
 // returns the process exit code.
 func Run(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprint(stderr, usage)
-		return 2
+		return runTUI(stderr)
 	}
 	switch args[0] {
+	case "help", "-h", "--help":
+		fmt.Fprint(stdout, usage)
+		return 0
 	case "version":
 		fmt.Fprintln(stdout, "snow dev")
 		return 0
@@ -35,4 +49,110 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "snow: unknown command %q\n\n%s", args[0], usage)
 		return 2
 	}
+}
+
+// runTUI starts the interface with the real config, store and gh login.
+func runTUI(stderr io.Writer) int {
+	deps, cleanup, err := buildDeps(os.Getenv, newGHClient)
+	if err != nil {
+		fmt.Fprintf(stderr, "snow: %v\n", err)
+		return 1
+	}
+	defer cleanup()
+	if _, err := tea.NewProgram(tui.New(deps)).Run(); err != nil {
+		fmt.Fprintf(stderr, "snow: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+// newGHClient returns a nil client when gh has no token for github.com.
+func newGHClient() (github.Client, error) {
+	if token, _ := auth.TokenForHost("github.com"); token == "" {
+		return nil, nil
+	}
+	return github.NewGHClient()
+}
+
+// buildDeps assembles the TUI's dependencies. The returned cleanup closes
+// the config watcher and then the store; it is safe to call even when err
+// is non-nil (it is then a no-op).
+func buildDeps(getenv func(string) string, newClient func() (github.Client, error)) (tui.Deps, func(), error) {
+	noop := func() {}
+	var banners []string
+
+	path := config.Path()
+	cfg, warnings, err := config.Load(path)
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		banners = append(banners, fmt.Sprintf("No config at %s — using defaults. Run \"snow config default\" to start one.", tildePath(path, getenv("HOME"))))
+	case err != nil:
+		return tui.Deps{}, noop, err
+	default:
+		if err := cfg.Validate(); err != nil {
+			return tui.Deps{}, noop, err
+		}
+		for _, w := range warnings {
+			banners = append(banners, "config: "+w)
+		}
+	}
+
+	th, err := theme.New(cfg.Theme)
+	if err != nil {
+		return tui.Deps{}, noop, err
+	}
+
+	st, err := store.Open(store.DataPath())
+	if err != nil {
+		return tui.Deps{}, noop, err
+	}
+
+	deps := tui.Deps{Config: cfg, Theme: th, Store: st, Now: time.Now}
+	var watcher *config.Watcher
+	cleanup := func() {
+		if watcher != nil {
+			_ = watcher.Close()
+		}
+		_ = st.Close()
+	}
+
+	client, err := newClient()
+	switch {
+	case err != nil:
+		banners = append(banners, fmt.Sprintf("gh client: %v; polling is off", err))
+		client = nil
+	case client == nil:
+		banners = append(banners, `gh is not logged in — run "gh auth login"; polling is off`)
+	}
+	if client != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		viewer, err := client.Viewer(ctx)
+		cancel()
+		if err != nil {
+			banners = append(banners, fmt.Sprintf("gh viewer lookup failed: %v; polling is off", err))
+		} else {
+			deps.Client = client
+			deps.Viewer = viewer
+		}
+	}
+
+	// A missing config directory is the first-run case the banner above
+	// already explains, so it is not an error.
+	if w, err := config.NewWatcher(path); err == nil {
+		watcher = w
+		deps.Reloads = w.Events()
+	} else if !errors.Is(err, os.ErrNotExist) {
+		banners = append(banners, fmt.Sprintf("config reload is off: %v", err))
+	}
+
+	deps.Banners = banners
+	return deps, cleanup, nil
+}
+
+// tildePath shortens a path under home to ~/....
+func tildePath(path, home string) string {
+	if home != "" && strings.HasPrefix(path, home+string(os.PathSeparator)) {
+		return "~" + strings.TrimPrefix(path, home)
+	}
+	return path
 }
