@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"maps"
 	"slices"
+	"sync"
 	"testing"
 	"time"
 
@@ -20,14 +23,17 @@ type call struct {
 // Like go-gh, it decodes the data before returning the call's error, so a
 // GraphQL error can arrive alongside a partly filled response.
 type fakeDoer struct {
+	mu      sync.Mutex
 	calls   []call
 	respond func(n int, query string, vars map[string]any) []byte
 	fail    func(n int, query string, vars map[string]any) error
 }
 
 func (f *fakeDoer) DoWithContext(_ context.Context, query string, vars map[string]any, resp any) error {
+	f.mu.Lock()
 	n := len(f.calls)
 	f.calls = append(f.calls, call{query, vars})
+	f.mu.Unlock()
 	if err := json.Unmarshal(f.respond(n, query, vars), resp); err != nil {
 		return err
 	}
@@ -82,23 +88,105 @@ func TestDetailPaginatesChecks(t *testing.T) {
 	assertEq(t, p0.Checks[2], Check{"legacy/deploy", CheckFailure, true})
 }
 
-func TestDetailsBatchesOf20(t *testing.T) {
-	d := &fakeDoer{respond: func(int, string, map[string]any) []byte { return []byte(`{}`) }}
-	ids := make([]string, 45)
-	for i := range ids {
-		ids[i] = "PR_" + string(rune('a'+i%26)) + string(rune('a'+i/26))
+// echoBatch answers a Details batch with a bare PR for each ID variable, and a
+// rate limit whose remaining budget is rem(id0).
+func echoBatch(vars map[string]any, rem func(id0 string) int) []byte {
+	out := map[string]any{}
+	for i := 0; ; i++ {
+		id, ok := vars[fmt.Sprintf("id%d", i)]
+		if !ok {
+			break
+		}
+		out[fmt.Sprintf("p%d", i)] = map[string]any{"id": id}
 	}
-	if _, _, err := NewClient(d).Details(context.Background(), ids); err != nil {
+	out["rateLimit"] = map[string]any{"remaining": rem(vars["id0"].(string)), "cost": 1, "resetAt": "2026-11-18T13:00:00Z"}
+	b, _ := json.Marshal(out)
+	return b
+}
+
+func manyIDs(n int) []string {
+	ids := make([]string, n)
+	for i := range ids {
+		ids[i] = fmt.Sprintf("PR_%03d", i)
+	}
+	return ids
+}
+
+func TestDetailsBatchesOf10InOrder(t *testing.T) {
+	ids := manyIDs(25)
+	// The middle batch reports the lowest remaining budget.
+	rem := func(id0 string) int { return map[string]int{"PR_000": 4000, "PR_010": 3900, "PR_020": 3950}[id0] }
+	d := &fakeDoer{respond: func(_ int, _ string, vars map[string]any) []byte { return echoBatch(vars, rem) }}
+	snaps, rl, err := NewClient(d).Details(context.Background(), ids)
+	if err != nil {
 		t.Fatal(err)
 	}
-	var sizes []int
+	sizes := map[string]int{}
 	for _, c := range d.calls {
-		sizes = append(sizes, len(c.vars))
+		sizes[c.vars["id0"].(string)] = len(c.vars)
 	}
-	if !slices.Equal(sizes, []int{20, 20, 5}) {
-		t.Errorf("id var counts = %v, want [20 20 5]", sizes)
+	if want := map[string]int{"PR_000": 10, "PR_010": 10, "PR_020": 5}; !maps.Equal(sizes, want) {
+		t.Errorf("batch sizes by first ID = %v, want %v", sizes, want)
 	}
-	assertEq(t, d.calls[2].vars["id0"].(string), ids[40])
+	var got []string
+	for _, s := range snaps {
+		got = append(got, s.ID)
+	}
+	if !slices.Equal(got, ids) {
+		t.Errorf("snapshot order = %v, want the request order", got)
+	}
+	assertEq(t, rl.Remaining, 3900)
+	assertEq(t, rl.Cost, 3)
+}
+
+// gatedDoer holds every call until release closes, and records how many were
+// in flight at once. full closes when limit calls are in flight.
+type gatedDoer struct {
+	mu             sync.Mutex
+	inflight, peak int
+	limit          int
+	full, release  chan struct{}
+}
+
+func (g *gatedDoer) DoWithContext(ctx context.Context, _ string, vars map[string]any, resp any) error {
+	g.mu.Lock()
+	g.inflight++
+	g.peak = max(g.peak, g.inflight)
+	if g.inflight == g.limit {
+		close(g.full)
+	}
+	g.mu.Unlock()
+	select {
+	case <-g.release:
+	case <-ctx.Done():
+	}
+	g.mu.Lock()
+	g.inflight--
+	g.mu.Unlock()
+	return json.Unmarshal(echoBatch(vars, func(string) int { return 1 }), resp)
+}
+
+func TestDetailsRunsAtMostThreeBatchesAtOnce(t *testing.T) {
+	g := &gatedDoer{limit: 3, full: make(chan struct{}), release: make(chan struct{})}
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := NewClient(g).Details(context.Background(), manyIDs(70))
+		done <- err
+	}()
+	select {
+	case <-g.full:
+	case <-time.After(5 * time.Second):
+		close(g.release)
+		t.Fatal("Details never had 3 batches in flight")
+	}
+	time.Sleep(50 * time.Millisecond) // room for a fourth call, if one were allowed
+	close(g.release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	assertEq(t, g.peak, 3)
 }
 
 func TestDetailsSkipsUnreachablePRs(t *testing.T) {
