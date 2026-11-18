@@ -12,6 +12,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/cli/go-gh/v2/pkg/api"
 
 	"github.com/chrisdaly-3/jawnsnow/internal/config"
@@ -274,6 +275,31 @@ func TestPollErrorKeepsWall(t *testing.T) {
 	}
 	if _, ticks := runCmd(t, cmd); !reflect.DeepEqual(pollTicks(ticks), []time.Duration{3 * time.Minute}) {
 		t.Errorf("next poll ticks = %v, want [3m0s]", pollTicks(ticks))
+	}
+}
+
+func TestFailedFeedSearchStillUpdatesTrackedPRs(t *testing.T) {
+	h := newHarness(t, opts{}, wallPR("1"))
+	h.client.err = io.EOF
+	s1 := snap("1")
+	s1.Title = "renamed"
+	h.client.snaps["1"] = s1
+	h.finishPoll(t)
+	if got := h.m.prs["1"].PR.Title; got != "renamed" {
+		t.Errorf("PR 1 title = %q, want the fresh detail despite the failed search", got)
+	}
+	c := ansi.Strip(content(h.m))
+	if !strings.Contains(c, `search feed "review-requested": EOF`) {
+		t.Errorf("View does not name the failed feed:\n%s", c)
+	}
+	if strings.Contains(c, "poll failed") {
+		t.Errorf("View calls a partly successful poll failed:\n%s", c)
+	}
+
+	h.client.err = nil
+	h.press(t, "R")
+	if strings.Contains(content(h.m), "search feed") {
+		t.Errorf("the feed error outlived a clean poll:\n%s", content(h.m))
 	}
 }
 

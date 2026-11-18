@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/cli/go-gh/v2/pkg/api"
@@ -39,9 +40,12 @@ func NewGHClient() (Client, error) {
 }
 
 // do runs a query and returns the top-level fields plus the call's rate limit.
-func (c *client) do(ctx context.Context, query string, vars map[string]any) (map[string]json.RawMessage, RateLimit, error) {
+// go-gh returns a GraphQL error whenever the response lists errors, even when
+// it also carries data. If skippable accepts the path of every error, do
+// keeps the data and drops the error; the fields those errors name are null.
+func (c *client) do(ctx context.Context, query string, vars map[string]any, skippable func(path []any) bool) (map[string]json.RawMessage, RateLimit, error) {
 	var raw map[string]json.RawMessage
-	if err := c.d.DoWithContext(ctx, query, vars, &raw); err != nil {
+	if err := c.d.DoWithContext(ctx, query, vars, &raw); err != nil && (raw == nil || !onlySkippable(err, skippable)) {
 		return nil, RateLimit{}, err
 	}
 	rl, err := splitRateLimit(raw)
@@ -52,6 +56,21 @@ func (c *client) do(ctx context.Context, query string, vars map[string]any) (map
 	return raw, rl, nil
 }
 
+// onlySkippable reports whether err is a GraphQL error whose every item has
+// a path skippable accepts. A rate limit is never skippable.
+func onlySkippable(err error, skippable func(path []any) bool) bool {
+	var gqlErr *api.GraphQLError
+	if skippable == nil || !errors.As(err, &gqlErr) || len(gqlErr.Errors) == 0 {
+		return false
+	}
+	for _, e := range gqlErr.Errors {
+		if e.Type == "RATE_LIMITED" || len(e.Path) == 0 || !skippable(e.Path) {
+			return false
+		}
+	}
+	return true
+}
+
 // add folds a later call's rate limit into the total: the latest remaining
 // and reset, and the summed cost.
 func (r *RateLimit) add(next RateLimit) {
@@ -60,7 +79,7 @@ func (r *RateLimit) add(next RateLimit) {
 }
 
 func (c *client) Viewer(ctx context.Context) (string, error) {
-	raw, _, err := c.do(ctx, viewerQuery, nil)
+	raw, _, err := c.do(ctx, viewerQuery, nil, nil)
 	if err != nil {
 		return "", err
 	}
@@ -76,7 +95,7 @@ func (c *client) SearchIDs(ctx context.Context, query string) ([]string, RateLim
 	var total RateLimit
 	var after any
 	for range searchMaxPages {
-		raw, rl, err := c.do(ctx, searchQuery, map[string]any{"q": query, "after": after})
+		raw, rl, err := c.do(ctx, searchQuery, map[string]any{"q": query, "after": after}, nil)
 		if err != nil {
 			return nil, total, err
 		}
@@ -109,10 +128,19 @@ func (c *client) Details(ctx context.Context, ids []string) ([]Snapshot, RateLim
 	for start := 0; start < len(ids); start += detailBatch {
 		batch := ids[start:min(start+detailBatch, len(ids))]
 		vars := make(map[string]any, len(batch))
+		aliases := make(map[string]bool, len(batch))
 		for i, id := range batch {
 			vars[fmt.Sprintf("id%d", i)] = id
+			aliases[fmt.Sprintf("p%d", i)] = true
 		}
-		raw, rl, err := c.do(ctx, DetailQuery(len(batch)), vars)
+		// A PR that was deleted, or that the viewer lost access to, comes
+		// back null with an error at its alias. Skipping it keeps the rest of
+		// the batch; the tracker keeps its last snapshot.
+		atAlias := func(path []any) bool {
+			s, ok := path[0].(string)
+			return ok && aliases[s]
+		}
+		raw, rl, err := c.do(ctx, DetailQuery(len(batch)), vars, atAlias)
 		if err != nil {
 			return nil, total, err
 		}
@@ -120,11 +148,14 @@ func (c *client) Details(ctx context.Context, ids []string) ([]Snapshot, RateLim
 		for i := range batch {
 			node, ok := raw[fmt.Sprintf("p%d", i)]
 			if !ok || string(node) == "null" {
-				continue // deleted or inaccessible
+				continue
 			}
 			snap, next, err := parsePRPage(node)
 			if err != nil {
 				return nil, total, err
+			}
+			if snap.ID == "" {
+				continue // the ID is not a pull request
 			}
 			for next.HasNextPage {
 				more, nextPage, rl, err := c.checksPage(ctx, snap.ID, next.EndCursor)
@@ -142,7 +173,7 @@ func (c *client) Details(ctx context.Context, ids []string) ([]Snapshot, RateLim
 }
 
 func (c *client) checksPage(ctx context.Context, id, after string) ([]Check, pageInfo, RateLimit, error) {
-	raw, rl, err := c.do(ctx, checksPageQuery, map[string]any{"id": id, "after": after})
+	raw, rl, err := c.do(ctx, checksPageQuery, map[string]any{"id": id, "after": after}, nil)
 	if err != nil {
 		return nil, pageInfo{}, rl, err
 	}

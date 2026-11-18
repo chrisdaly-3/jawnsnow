@@ -3,8 +3,11 @@ package github
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"slices"
 	"testing"
+
+	"github.com/cli/go-gh/v2/pkg/api"
 )
 
 type call struct {
@@ -13,15 +16,28 @@ type call struct {
 }
 
 // fakeDoer answers each call from respond and records what it was asked.
+// Like go-gh, it decodes the data before returning the call's error, so a
+// GraphQL error can arrive alongside a partly filled response.
 type fakeDoer struct {
 	calls   []call
 	respond func(n int, query string, vars map[string]any) []byte
+	fail    func(n int, query string, vars map[string]any) error
 }
 
 func (f *fakeDoer) DoWithContext(_ context.Context, query string, vars map[string]any, resp any) error {
 	n := len(f.calls)
 	f.calls = append(f.calls, call{query, vars})
-	return json.Unmarshal(f.respond(n, query, vars), resp)
+	if err := json.Unmarshal(f.respond(n, query, vars), resp); err != nil {
+		return err
+	}
+	if f.fail != nil {
+		return f.fail(n, query, vars)
+	}
+	return nil
+}
+
+func gqlErr(typ string, path ...any) *api.GraphQLError {
+	return &api.GraphQLError{Errors: []api.GraphQLErrorItem{{Type: typ, Message: typ, Path: path}}}
 }
 
 func TestSearchIDsPaginatesTo100(t *testing.T) {
@@ -79,4 +95,61 @@ func TestDetailsBatchesOf20(t *testing.T) {
 		t.Errorf("id var counts = %v, want [20 20 5]", sizes)
 	}
 	assertEq(t, d.calls[2].vars["id0"].(string), ids[40])
+}
+
+func TestDetailsSkipsUnreachablePRs(t *testing.T) {
+	d := &fakeDoer{
+		respond: func(int, string, map[string]any) []byte { return fixture(t, "detail_unreachable.json") },
+		fail:    func(int, string, map[string]any) error { return gqlErr("NOT_FOUND", "p1") },
+	}
+	snaps, rl, err := NewClient(d).Details(context.Background(), []string{"PR_p1", "PR_gone", "ISSUE_1"})
+	if err != nil {
+		t.Fatalf("Details error = %v, want the reachable PR", err)
+	}
+	// p1 is null with a NOT_FOUND error; p2 is a node that isn't a PR.
+	if len(snaps) != 1 || snaps[0].ID != "PR_p1" {
+		t.Fatalf("snapshots = %+v, want only PR_p1", snaps)
+	}
+	assertEq(t, rl.Remaining, 4900)
+}
+
+func TestDetailsFailsOnOtherGraphQLErrors(t *testing.T) {
+	for name, e := range map[string]*api.GraphQLError{
+		"no path":        gqlErr("INTERNAL"),
+		"other path":     gqlErr("FORBIDDEN", "rateLimit"),
+		"rate limited":   gqlErr("RATE_LIMITED", "p1"),
+		"one bad of two": {Errors: []api.GraphQLErrorItem{{Type: "NOT_FOUND", Path: []any{"p1"}}, {Type: "INTERNAL"}}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			d := &fakeDoer{
+				respond: func(int, string, map[string]any) []byte { return fixture(t, "detail_unreachable.json") },
+				fail:    func(int, string, map[string]any) error { return e },
+			}
+			_, _, err := NewClient(d).Details(context.Background(), []string{"PR_p1", "PR_gone", "ISSUE_1"})
+			var got *api.GraphQLError
+			if !errors.As(err, &got) || got != e {
+				t.Fatalf("Details error = %v, want the GraphQL error", err)
+			}
+		})
+	}
+}
+
+func TestDetailsFailsWhenChecksPageFails(t *testing.T) {
+	d := &fakeDoer{
+		respond: func(n int, _ string, _ map[string]any) []byte {
+			if n == 0 {
+				return fixture(t, "detail.json")
+			}
+			return []byte(`{}`)
+		},
+		fail: func(n int, _ string, _ map[string]any) error {
+			if n > 0 {
+				return gqlErr("INTERNAL")
+			}
+			return nil
+		},
+	}
+	if _, _, err := NewClient(d).Details(context.Background(), []string{"PR_p0", "PR_p1"}); err == nil {
+		t.Fatal("Details succeeded although a checks page failed")
+	}
 }

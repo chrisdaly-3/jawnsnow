@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cli/go-gh/v2/pkg/api"
+
 	"github.com/chrisdaly-3/jawnsnow/internal/config"
 	"github.com/chrisdaly-3/jawnsnow/internal/github"
 )
@@ -19,7 +21,7 @@ import (
 type fakeClient struct {
 	search     map[string][]string
 	searchRate map[string]github.RateLimit
-	searchErr  error
+	feedErr    map[string]error // by feed query
 	detailRate github.RateLimit
 	detailErr  error
 
@@ -29,8 +31,10 @@ type fakeClient struct {
 func (f *fakeClient) Viewer(context.Context) (string, error) { return "me", nil }
 
 func (f *fakeClient) SearchIDs(_ context.Context, q string) ([]string, github.RateLimit, error) {
-	if f.searchErr != nil {
-		return nil, github.RateLimit{}, f.searchErr
+	for prefix, err := range f.feedErr {
+		if strings.HasPrefix(q, prefix+" ") {
+			return nil, github.RateLimit{}, err
+		}
 	}
 	for prefix, ids := range f.search {
 		if strings.HasPrefix(q, prefix+" ") {
@@ -114,17 +118,41 @@ func TestFetchSkipsDetailsWhenNothingToFetch(t *testing.T) {
 	}
 }
 
-func TestFetchReturnsSearchError(t *testing.T) {
-	c := &fakeClient{searchErr: io.EOF}
-	res := Fetch(context.Background(), c, Request{Feeds: []config.Feed{feedA}, DetailIDs: []string{"4"}, Now: now})
-	if !errors.Is(res.Err, io.EOF) {
-		t.Fatalf("Err = %v, want io.EOF", res.Err)
+func TestFetchSkipsAFailingFeed(t *testing.T) {
+	c := &fakeClient{
+		search:  map[string][]string{feedB.Query: {"2"}},
+		feedErr: map[string]error{feedA.Query: io.EOF},
+	}
+	res := Fetch(context.Background(), c, Request{Feeds: []config.Feed{feedA, feedB}, DetailIDs: []string{"4"}, Now: now})
+	if res.Err != nil {
+		t.Fatalf("Err = %v, want the poll to carry on without feed A", res.Err)
+	}
+	if want := map[string][]string{"2": {"B"}}; !reflect.DeepEqual(res.Found, want) {
+		t.Errorf("Found = %v, want %v", res.Found, want)
+	}
+	if len(c.detailCalls) != 1 || !reflect.DeepEqual(c.detailCalls[0], []string{"2", "4"}) {
+		t.Errorf("Details calls = %v, want [[2 4]]", c.detailCalls)
+	}
+	if len(res.FeedErrs) != 1 || !errors.Is(res.FeedErrs[0], io.EOF) || !strings.Contains(res.FeedErrs[0].Error(), `"A"`) {
+		t.Errorf("FeedErrs = %v, want one error naming feed A", res.FeedErrs)
+	}
+}
+
+func TestFetchFailsOnSearchRateLimit(t *testing.T) {
+	limited := &api.GraphQLError{Errors: []api.GraphQLErrorItem{{Type: "RATE_LIMITED"}}}
+	c := &fakeClient{
+		search:  map[string][]string{feedB.Query: {"2"}},
+		feedErr: map[string]error{feedA.Query: limited},
+	}
+	res := Fetch(context.Background(), c, Request{Feeds: []config.Feed{feedA, feedB}, DetailIDs: []string{"4"}, Now: now})
+	if !IsRateLimited(res.Err) {
+		t.Fatalf("Err = %v, want a rate-limit error", res.Err)
 	}
 	if !strings.Contains(res.Err.Error(), `"A"`) {
 		t.Errorf("Err = %q, want it to name the feed", res.Err)
 	}
 	if len(c.detailCalls) != 0 {
-		t.Errorf("Details called after a search error")
+		t.Errorf("Details called after a rate-limited search")
 	}
 }
 

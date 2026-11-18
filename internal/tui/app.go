@@ -117,6 +117,7 @@ type Model struct {
 	lastErr      error
 	quota        poll.Quota
 	rateNote     string
+	feedNote     string // the searches the last poll skipped, and why
 
 	// One save runs at a time, so an older write can't land after a newer
 	// one. Changes made meanwhile wait in dirty and deleted.
@@ -434,6 +435,7 @@ func (m Model) finishPoll(res poll.Result) (Model, tea.Cmd) {
 		now := m.now()
 		m.quota.ObserveSuccess()
 		m.lastErr, m.lastPoll = nil, now
+		m.feedNote = feedNote(res.FeedErrs)
 		if m.pollIdle {
 			m.lastIdlePoll = m.pollStarted
 		}
@@ -451,6 +453,16 @@ func (m Model) finishPoll(res poll.Result) (Model, tea.Cmd) {
 	gen := m.pollGen
 	next := m.tick(wait, func(time.Time) tea.Msg { return pollTickMsg{gen: gen} })
 	return m, tea.Batch(save, next)
+}
+
+// feedNote is the banner for searches a poll skipped: each error names its
+// feed.
+func feedNote(errs []error) string {
+	notes := make([]string, len(errs))
+	for i, err := range errs {
+		notes[i] = strings.Join(strings.Fields(err.Error()), " ")
+	}
+	return strings.Join(notes, "; ")
 }
 
 func (m Model) markSave(ids ...string) Model {
