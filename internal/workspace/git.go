@@ -7,12 +7,14 @@ package workspace
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/chrisdaly-3/jawnsnow/internal/config"
@@ -29,10 +31,13 @@ type Repo struct {
 }
 
 // Git runs `git -C dir args...` and returns stdout. A failure carries
-// git's stderr. It never prompts for credentials and never uses a shell.
+// git's stderr. It never prompts for credentials, never runs hooks (a
+// relative core.hooksPath would resolve inside a worktree, which holds the
+// PR's files) and never uses a shell. Every call gets this, not just fetch.
 func Git(ctx context.Context, dir string, args ...string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
-	cmd.Env = buildEnv(os.Environ(), sshCommandConfigured(ctx, dir, args))
+	full := append([]string{"-C", dir, "-c", "core.hooksPath=/dev/null"}, args...)
+	cmd := exec.CommandContext(ctx, "git", full...)
+	cmd.Env = buildEnv(os.Environ(), sshCommandConfigured(ctx, dir))
 	// A killed git can leave a child (ssh, git-remote-https) holding the
 	// pipes; WaitDelay stops Run waiting on it forever.
 	cmd.WaitDelay = 5 * time.Second
@@ -60,25 +65,26 @@ func buildEnv(environ []string, sshCommandConfigured bool) []string {
 	return append(env, "GIT_SSH_COMMAND=ssh -o BatchMode=yes")
 }
 
-// sshCommandConfigured reports whether core.sshCommand is set. Only
-// commands that can reach a remote need to know.
-func sshCommandConfigured(ctx context.Context, dir string, args []string) bool {
-	remote := false
-	for _, a := range args {
-		if a == "fetch" || a == "clone" {
-			remote = true
-		}
-	}
-	if !remote {
-		return true
+// sshProbe caches the core.sshCommand probe per directory for the life of
+// the process, so the extra `git config` runs once per directory rather
+// than once per git call. A config change while snow runs is not seen.
+var sshProbe sync.Map // dir -> bool
+
+// sshCommandConfigured reports whether core.sshCommand is set for dir.
+func sshCommandConfigured(ctx context.Context, dir string) bool {
+	if v, ok := sshProbe.Load(dir); ok {
+		return v.(bool)
 	}
 	out, err := exec.CommandContext(ctx, "git", "-C", dir, "config", "--get", "core.sshCommand").Output()
-	return err == nil && len(strings.TrimSpace(string(out))) > 0
+	set := err == nil && len(strings.TrimSpace(string(out))) > 0
+	// Exit 1 means "not set"; any other failure (missing dir, cancelled
+	// context) says nothing, so it is not cached.
+	var exit *exec.ExitError
+	if err == nil || errors.As(err, &exit) && exit.ExitCode() == 1 {
+		sshProbe.Store(dir, set)
+	}
+	return set
 }
-
-// noHooks stops git running hooks: a relative core.hooksPath would resolve
-// inside a worktree, which holds the PR's files.
-var noHooks = []string{"-c", "core.hooksPath=/dev/null"}
 
 var nameRE = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]*/[A-Za-z0-9_][A-Za-z0-9_.-]*$`)
 

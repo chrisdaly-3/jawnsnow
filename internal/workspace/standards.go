@@ -169,7 +169,7 @@ func (e treeEntry) regular() bool { return e.mode == "100644" || e.mode == "1007
 // literally; recursive descends into directories. A missing path lists
 // nothing.
 func (r Repo) lsTree(ctx context.Context, commit string, recursive bool, paths ...string) ([]treeEntry, error) {
-	args := slices.Concat(noHooks, []string{"--literal-pathspecs", "ls-tree", "-z"})
+	args := []string{"--literal-pathspecs", "ls-tree", "-z"}
 	if recursive {
 		args = append(args, "-r")
 	}
@@ -191,5 +191,5 @@ func (r Repo) lsTree(ctx context.Context, commit string, recursive bool, paths .
 
 // showAt returns the content of file p at commit.
 func (r Repo) showAt(ctx context.Context, commit, p string) ([]byte, error) {
-	return Git(ctx, r.GitDir, slices.Concat(noHooks, []string{"show", commit + ":" + p})...)
+	return Git(ctx, r.GitDir, "show", commit+":"+p)
 }

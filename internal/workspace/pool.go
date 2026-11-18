@@ -26,7 +26,7 @@ var ErrPoolBusy = errors.New("no free worktree slot")
 
 // Pool hands out reusable detached worktrees named slot-<n> under one
 // directory. It only creates, moves and reuses worktrees inside that
-// directory; it never removes or prunes any worktree.
+// directory. Only cleanup.go removes worktrees, and only its own.
 type Pool struct {
 	repo Repo
 	dir  string
@@ -35,11 +35,12 @@ type Pool struct {
 	now  func() time.Time
 
 	mu   sync.Mutex
-	held map[string]bool // slots this process has handed out; the truth for Busy
+	held map[string]uint64 // slot path -> generation of its current holder; the truth for Busy
+	gen  uint64
 }
 
 func NewPool(r Repo, dir string, size int, st SlotStore, now func() time.Time) *Pool {
-	return &Pool{repo: r, dir: filepath.Clean(dir), size: size, st: st, now: now, held: map[string]bool{}}
+	return &Pool{repo: r, dir: filepath.Clean(dir), size: size, st: st, now: now, held: map[string]uint64{}}
 }
 
 // Acquire checks head out, detached, in a free slot and returns its path.
@@ -61,7 +62,7 @@ func (p *Pool) Acquire(ctx context.Context, number int, head string) (string, fu
 
 	var chosen string
 	for path, s := range known {
-		if p.held[path] {
+		if _, ok := p.held[path]; ok {
 			continue
 		}
 		// Prefer the slot that last held this PR, then the lowest path.
@@ -101,13 +102,20 @@ func (p *Pool) Acquire(ctx context.Context, number int, head string) (string, fu
 	if err := p.st.SaveSlot(ctx, slot); err != nil {
 		return "", nil, err
 	}
-	p.held[chosen] = true
+	p.gen++
+	gen := p.gen
+	p.held[chosen] = gen
 
 	var once sync.Once
 	release := func() {
 		once.Do(func() {
 			p.mu.Lock()
 			defer p.mu.Unlock()
+			// ReleasePR may have freed the slot and handed it to someone
+			// else; that holder's state is not ours to touch.
+			if p.held[chosen] != gen {
+				return
+			}
 			delete(p.held, chosen)
 			slot.Busy = false
 			slot.LastUsed = p.now()
@@ -128,7 +136,7 @@ func (p *Pool) checkout(ctx context.Context, path, head string) error {
 		}
 		return p.addWorktree(ctx, path, head)
 	}
-	_, err := Git(ctx, path, append(noHooks, "checkout", "--detach", "--force", head)...)
+	_, err := Git(ctx, path, "checkout", "--detach", "--force", head)
 	return err
 }
 
@@ -139,6 +147,6 @@ func (p *Pool) addWorktree(ctx context.Context, path, head string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	_, err := Git(ctx, p.repo.dir(), append(noHooks, "worktree", "add", "--detach", "--force", path, head)...)
+	_, err := Git(ctx, p.repo.dir(), "worktree", "add", "--detach", "--force", path, head)
 	return err
 }

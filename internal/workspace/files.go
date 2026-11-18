@@ -80,9 +80,7 @@ func WriteReviewFiles(ctx context.Context, r Repo, dir string, in FilesInput) (R
 		return ReviewFiles{}, err
 	}
 
-	log, err := Git(ctx, r.GitDir, slices.Concat(noHooks, []string{
-		"log", "--no-color", "--no-show-signature", "--format=%h %an %s", in.MergeBase + ".." + in.Head, "--",
-	})...)
+	log, err := Git(ctx, r.GitDir, "log", "--no-color", "--no-show-signature", "--format=%h %an %s", in.MergeBase+".."+in.Head, "--")
 	if err != nil {
 		return ReviewFiles{}, err
 	}
@@ -198,7 +196,7 @@ var diffFormat = []string{
 
 // diff runs `git diff [extra] from to -- paths` with the format pinned.
 func (r Repo) diff(ctx context.Context, extra []string, from, to string, paths ...string) ([]byte, error) {
-	return Git(ctx, r.GitDir, slices.Concat(noHooks, diffFormat, extra, []string{from, to, "--"}, paths)...)
+	return Git(ctx, r.GitDir, slices.Concat(diffFormat, extra, []string{from, to, "--"}, paths)...)
 }
 
 // changedPaths lists the paths that differ between from and to, sorted.
