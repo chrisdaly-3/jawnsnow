@@ -129,6 +129,7 @@ type Model struct {
 	notice       string
 
 	wall wallModel
+	done doneModel
 	// spinning is true while the spinner's tick loop runs; spinFrame is
 	// the frame counter every spinning card indexes its own spinner with.
 	spinning  bool
@@ -155,7 +156,7 @@ func New(d Deps) Model {
 		cfg: d.Config, theme: d.Theme, client: d.Client, store: d.Store, viewer: d.Viewer,
 		banners: d.Banners, reloads: d.Reloads, now: now, tick: tea.Tick,
 		open: func(url string) error { return browser.New("", io.Discard, io.Discard).Browse(url) },
-		prs:  map[string]tracker.Tracked{}, wall: newWall(), dirty: map[string]bool{}, deleted: map[string]bool{},
+		prs:  map[string]tracker.Tracked{}, wall: newWall(), done: newDone(), dirty: map[string]bool{}, deleted: map[string]bool{},
 		mode: mode, width: 80, height: 24,
 	}
 }
@@ -301,12 +302,25 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 }
 
 // updateView passes a key the root model doesn't use to the current view.
-// Task 12 routes the Done view here too.
 func (m Model) updateView(msg tea.KeyPressMsg) (Model, tea.Cmd) {
-	if m.view == ViewWall {
+	switch m.view {
+	case ViewWall:
 		return m.wallUpdate(msg)
+	case ViewDone:
+		return m.doneUpdate(msg)
 	}
 	return m, nil
+}
+
+// doneUpdate gives msg to the Done view and applies the action it returns.
+func (m Model) doneUpdate(msg tea.Msg) (Model, tea.Cmd) {
+	w, h := m.bodySize()
+	m.done.setSize(w, h)
+	m.done.now, m.done.focus = m.now(), m.focus
+	done, cmd, act := m.done.update(msg, m.wallPRs())
+	m.done = done
+	m, actCmd := m.apply(act)
+	return m, tea.Batch(cmd, actCmd)
 }
 
 // wallUpdate gives msg to the Wall and applies the action it returns.
@@ -333,9 +347,15 @@ func (m Model) feedNames() []string {
 	return names
 }
 
-// paneCount is the number of focusable panes in v. Every view has one pane
-// until plan 2 adds the drawer beside the Wall.
-func paneCount(View) int { return 1 }
+// paneCount is the number of focusable panes in v: the Done view's two
+// tables, and one for every other view until plan 2 adds the drawer beside
+// the Wall.
+func paneCount(v View) int {
+	if v == ViewDone {
+		return donePanes
+	}
+	return 1
+}
 
 func (m Model) switchView(v View) Model {
 	m.view, m.focus = v, 0
@@ -545,7 +565,7 @@ func (m Model) bodySize() (width, height int) {
 }
 
 // body renders the current view into width×height. Each view supplies its
-// own; Done arrives in Task 12.
+// own.
 func (m Model) body(width, height int) string {
 	if m.help {
 		return m.helpBody(width, height)
@@ -557,7 +577,10 @@ func (m Model) body(width, height int) string {
 		w.setSize(width, height)
 		return w.view(width, height, m.wallPRs(), m.theme, m.spinFrame)
 	case ViewDone:
-		return donePlaceholder(m, width, height)
+		d := m.done
+		d.now, d.focus = m.now(), m.focus
+		d.setSize(width, height)
+		return d.view(width, height, m.wallPRs(), m.theme)
 	case ViewAgent:
 		return placeholder(m.theme, width, height, "Coming in plan 2")
 	default:

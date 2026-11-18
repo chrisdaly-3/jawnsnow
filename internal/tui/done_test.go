@@ -1,0 +1,181 @@
+package tui
+
+import (
+	"context"
+	"slices"
+	"strings"
+	"testing"
+	"time"
+
+	tea "charm.land/bubbletea/v2"
+
+	"github.com/chrisdaly-3/jawnsnow/internal/github"
+	"github.com/chrisdaly-3/jawnsnow/internal/status"
+	"github.com/chrisdaly-3/jawnsnow/internal/tracker"
+)
+
+func doneCard(id, repo string, n int, title, author string, st status.Status, doneAt time.Time) tracker.Tracked {
+	state := github.PRMerged
+	if st == status.Closed {
+		state = github.PRClosed
+	}
+	return tracker.Tracked{
+		PR: github.Snapshot{
+			ID: id, Repo: repo, Number: n, Title: title, Author: author,
+			URL: "https://github.com/" + repo + "/pull/" + id, State: state,
+		},
+		Status: status.Result{Status: st},
+		Place:  tracker.PlaceDone, DoneAt: doneAt,
+	}
+}
+
+func waitingCard(id, repo string, n int, title, author string, reason tracker.WaitReason, since time.Time) tracker.Tracked {
+	t := wallCard(id, repo, n, title, author, status.ReadyForReview, false, 1, 1, time.Hour)
+	t.Place, t.WaitReason, t.WaitingSince = tracker.PlaceWaiting, reason, since
+	return t
+}
+
+// donePRs is two merged, one closed, one hidden and one stale PR, in no
+// particular order.
+func donePRs() []tracker.Tracked {
+	return []tracker.Tracked{
+		doneCard("m1", "chainguard-dev/mono", 85001, "feat(policies): add repo_name to the platform Decision", "alice", status.Merged, t0.Add(-26*time.Hour)),
+		waitingCard("w1", "chainguard-dev/mono", 85300, "chore: rotate the registry keys", "bob", tracker.WaitHidden, t0.Add(-3*time.Hour)),
+		doneCard("c1", "chainguard-dev/os", 4001, "bump zlib to 1.3.2", "erin", status.Closed, t0.Add(-100*time.Hour)),
+		waitingCard("w2", "chainguard-dev/enforce", 310, "refactor: split the poller", "frank", tracker.WaitStale, t0.Add(-50*time.Hour)),
+		doneCard("m2", "chainguard-dev/mono", 85044, "docs: explain the deploy order", "me", status.Merged, t0.Add(-2*time.Hour)),
+	}
+}
+
+func testDone(width, height, focus int) doneModel {
+	d := newDone()
+	d.now, d.focus = t0, focus
+	d.setSize(width, height)
+	return d
+}
+
+func renderDone(t *testing.T, d doneModel, width, height int, prs []tracker.Tracked) string {
+	t.Helper()
+	d.setSize(width, height)
+	return d.view(width, height, prs, testTheme(t))
+}
+
+func pressDone(t *testing.T, d doneModel, prs []tracker.Tracked, key string) (doneModel, action) {
+	t.Helper()
+	d, _, act := d.update(tea.KeyPressMsg(tea.Key{Text: key, Code: []rune(key)[0]}), prs)
+	return d, act
+}
+
+func ids(rows []tracker.Tracked) []string {
+	var out []string
+	for _, r := range rows {
+		out = append(out, r.PR.ID)
+	}
+	return out
+}
+
+func TestDoneGolden(t *testing.T) {
+	golden(t, "done.golden", renderDone(t, testDone(120, 20, 0), 120, 20, donePRs()))
+}
+
+func TestDoneTabSwitchesTables(t *testing.T) {
+	prs := donePRs()
+	// Merged table focused: x does nothing, since only waiting rows unhide.
+	d, act := pressDone(t, testDone(120, 20, 0), prs, "x")
+	if _, ok := act.(actionNone); !ok {
+		t.Errorf("x in Merged & closed = %#v, want actionNone", act)
+	}
+	// o opens the focused table's row.
+	if _, act = pressDone(t, d, prs, "o"); act != (actionOpen{URL: "https://github.com/chainguard-dev/mono/pull/m2"}) {
+		t.Errorf("o in Merged & closed = %#v, want the newest merged PR", act)
+	}
+	// Waiting focused: o opens the waiting row.
+	if _, act = pressDone(t, testDone(120, 20, 1), prs, "o"); act != (actionOpen{URL: "https://github.com/chainguard-dev/mono/pull/w1"}) {
+		t.Errorf("o in Waiting = %#v, want the newest waiting PR", act)
+	}
+	// Each table keeps its own cursor.
+	d = testDone(120, 20, 0)
+	d, _ = pressDone(t, d, prs, "j")
+	d.focus = 1
+	if _, act = pressDone(t, d, prs, "o"); act != (actionOpen{URL: "https://github.com/chainguard-dev/mono/pull/w1"}) {
+		t.Errorf("waiting cursor moved with the merged one: %#v", act)
+	}
+	d.focus = 0
+	if _, act = pressDone(t, d, prs, "o"); act != (actionOpen{URL: "https://github.com/chainguard-dev/mono/pull/m1"}) {
+		t.Errorf("merged cursor after j = %#v, want the second PR", act)
+	}
+	// k and j stay inside the table.
+	d, _ = pressDone(t, d, prs, "j")
+	d, _ = pressDone(t, d, prs, "j")
+	if _, act = pressDone(t, d, prs, "o"); act != (actionOpen{URL: "https://github.com/chainguard-dev/os/pull/c1"}) {
+		t.Errorf("j past the end = %#v, want the last row", act)
+	}
+}
+
+func TestDoneUnhideEmitsAction(t *testing.T) {
+	prs := donePRs()
+	d, act := pressDone(t, testDone(120, 20, 1), prs, "x")
+	if act != (actionUnhide{ID: "w1"}) {
+		t.Errorf("x on the first waiting row = %#v, want actionUnhide{w1}", act)
+	}
+	d, _ = pressDone(t, d, prs, "j")
+	if _, act = pressDone(t, d, prs, "x"); act != (actionUnhide{ID: "w2"}) {
+		t.Errorf("x on the stale row = %#v, want actionUnhide{w2}", act)
+	}
+}
+
+func TestDoneSorting(t *testing.T) {
+	prs := donePRs()
+	if got, want := ids(mergedRows(prs)), []string{"m2", "m1", "c1"}; !slices.Equal(got, want) {
+		t.Errorf("merged & closed order = %v, want newest DoneAt first %v", got, want)
+	}
+	if got, want := ids(waitingRows(prs)), []string{"w1", "w2"}; !slices.Equal(got, want) {
+		t.Errorf("waiting order = %v, want newest WaitingSince first %v", got, want)
+	}
+}
+
+func TestDoneEmptyTables(t *testing.T) {
+	out := renderDone(t, testDone(100, 12, 0), 100, 12, nil)
+	if n := strings.Count(out, "Nothing here yet"); n != 2 {
+		t.Errorf("empty Done shows %d %q lines, want 2:\n%s", n, "Nothing here yet", out)
+	}
+}
+
+func TestDoneCleansGitHubText(t *testing.T) {
+	prs := []tracker.Tracked{doneCard("m", "o/r", 1, "evil\x1b]0;pwn\x07 title", "a\x1b[2Jb", status.Merged, t0)}
+	out := renderDone(t, testDone(100, 12, 0), 100, 12, prs)
+	if strings.Contains(out, "\x1b]0;") || strings.Contains(out, "\x1b[2J") {
+		t.Errorf("escape sequence from GitHub text reached the frame: %q", out)
+	}
+}
+
+// A stale PR comes back to the wall with a full since window: Unhide stamps
+// ReturnedAt, and the root model saves it.
+func TestDoneUnhideStalePRThroughRootModel(t *testing.T) {
+	stale := wallPR("1")
+	stale.Place, stale.WaitReason, stale.WaitingSince = tracker.PlaceWaiting, tracker.WaitStale, t0.Add(-72*time.Hour)
+	h := newHarness(t, opts{}, stale, wallPR("2"))
+
+	h.press(t, "2")
+	if h.m.view != ViewDone || h.m.focus != 0 {
+		t.Fatalf("after 2: view %v focus %d, want Done and 0", h.m.view, h.m.focus)
+	}
+	h.press(t, "x") // the Merged & closed table is focused: nothing to unhide
+	if h.m.prs["1"].Place != tracker.PlaceWaiting {
+		t.Fatalf("x in Merged & closed changed PR 1 to %q", h.m.prs["1"].Place)
+	}
+	h.press(t, "tab", "x")
+	if h.m.focus != 1 {
+		t.Errorf("focus after tab = %d, want 1 (Waiting)", h.m.focus)
+	}
+	if p := h.m.prs["1"]; p.Place != tracker.PlaceWall || !p.ReturnedAt.Equal(t0) || p.WaitReason != "" {
+		t.Errorf("PR 1: place %q returned %v reason %q, want wall at %v with no reason", p.Place, p.ReturnedAt, p.WaitReason, t0)
+	}
+	stored, err := h.store.LoadTracked(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored["1"].Place != tracker.PlaceWall {
+		t.Errorf("stored PR 1 place = %q, want wall", stored["1"].Place)
+	}
+}
