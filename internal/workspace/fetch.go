@@ -52,9 +52,11 @@ func (r Repo) FetchPR(ctx context.Context, number int, baseRef string) (head, ba
 	defer mu.Unlock()
 	// gc.auto and maintenance are off so a fetch never repacks or prunes a
 	// user's clone.
+	// --refmap= stops git also updating refs/remotes/<remote>/* from the
+	// remote's configured fetch refspec.
 	_, err = Git(ctx, r.dir(),
-		"-c", "gc.auto=0", "-c", "maintenance.auto=false",
-		"fetch", "--no-tags", "--no-write-fetch-head", "--no-recurse-submodules", "--", source,
+		"-c", "gc.auto=0", "-c", "maintenance.auto=false", "-c", "core.hooksPath=/dev/null",
+		"fetch", "--refmap=", "--no-tags", "--no-write-fetch-head", "--no-recurse-submodules", "--", source,
 		fmt.Sprintf("+refs/pull/%d/head:%s", number, headRef),
 		fmt.Sprintf("+refs/heads/%s:%s", baseRef, baseLocal),
 	)

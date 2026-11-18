@@ -39,7 +39,7 @@ type Pool struct {
 }
 
 func NewPool(r Repo, dir string, size int, st SlotStore, now func() time.Time) *Pool {
-	return &Pool{repo: r, dir: dir, size: size, st: st, now: now, held: map[string]bool{}}
+	return &Pool{repo: r, dir: filepath.Clean(dir), size: size, st: st, now: now, held: map[string]bool{}}
 }
 
 // Acquire checks head out, detached, in a free slot and returns its path.
@@ -81,10 +81,16 @@ func (p *Pool) Acquire(ctx context.Context, number int, head string) (string, fu
 		}
 		for n := 1; ; n++ {
 			path := filepath.Join(p.dir, fmt.Sprintf("slot-%d", n))
-			if _, taken := known[path]; !taken {
-				chosen = path
-				break
+			if _, taken := known[path]; taken {
+				continue
 			}
+			// A directory with no store row is an orphan from an
+			// interrupted add; leave it alone and use the next number.
+			if _, err := os.Lstat(path); err == nil {
+				continue
+			}
+			chosen = path
+			break
 		}
 		if err := p.addWorktree(ctx, chosen, head); err != nil {
 			return "", nil, err
@@ -122,7 +128,7 @@ func (p *Pool) checkout(ctx context.Context, path, head string) error {
 		}
 		return p.addWorktree(ctx, path, head)
 	}
-	_, err := Git(ctx, path, "checkout", "--detach", "--force", head)
+	_, err := Git(ctx, path, append(noHooks, "checkout", "--detach", "--force", head)...)
 	return err
 }
 
@@ -133,6 +139,6 @@ func (p *Pool) addWorktree(ctx context.Context, path, head string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	_, err := Git(ctx, p.repo.dir(), "worktree", "add", "--detach", "--force", path, head)
+	_, err := Git(ctx, p.repo.dir(), append(noHooks, "worktree", "add", "--detach", "--force", path, head)...)
 	return err
 }

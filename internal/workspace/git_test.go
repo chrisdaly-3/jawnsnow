@@ -117,7 +117,7 @@ func TestFetchPRWritesJawnsnowRefs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	branchesBefore := git(t, s.clone, "for-each-ref", "refs/heads")
+	refsBefore := userRefs(t, s.clone)
 
 	head, base, err := r.FetchPR(ctx, 7, "main")
 	if err != nil {
@@ -132,8 +132,8 @@ func TestFetchPRWritesJawnsnowRefs(t *testing.T) {
 	if got := git(t, s.clone, "rev-parse", "refs/jawnsnow/7/base"); got != s.mainSHA {
 		t.Fatalf("refs/jawnsnow/7/base = %s", got)
 	}
-	if got := git(t, s.clone, "for-each-ref", "refs/heads"); got != branchesBefore {
-		t.Fatalf("user branches changed:\n%s\n->\n%s", branchesBefore, got)
+	if got := userRefs(t, s.clone); got != refsBefore {
+		t.Fatalf("refs outside refs/jawnsnow changed:\n%s\n->\n%s", refsBefore, got)
 	}
 
 	mb, err := r.MergeBase(ctx, head, base)
@@ -173,5 +173,55 @@ func TestGitErrorCarriesStderr(t *testing.T) {
 	_, err := Git(context.Background(), t.TempDir(), "rev-parse", "--verify", "nope")
 	if err == nil || !strings.Contains(err.Error(), "nope") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// userRefs lists every ref except those jawnSnow owns.
+func userRefs(t *testing.T, dir string) string {
+	t.Helper()
+	var keep []string
+	for _, l := range strings.Split(git(t, dir, "for-each-ref"), "\n") {
+		if !strings.Contains(l, "\trefs/jawnsnow/") {
+			keep = append(keep, l)
+		}
+	}
+	return strings.Join(keep, "\n")
+}
+
+func TestBuildEnv(t *testing.T) {
+	has := func(env []string, kv string) bool {
+		for _, e := range env {
+			if e == kv {
+				return true
+			}
+		}
+		return false
+	}
+	const batch = "GIT_SSH_COMMAND=ssh -o BatchMode=yes"
+	env := buildEnv([]string{"A=1"}, false)
+	if !has(env, "GIT_TERMINAL_PROMPT=0") || !has(env, batch) || !has(env, "A=1") {
+		t.Fatalf("plain: %v", env)
+	}
+	if env := buildEnv([]string{"GIT_SSH_COMMAND=my-ssh"}, false); has(env, batch) {
+		t.Fatalf("env ssh command overridden: %v", env)
+	}
+	if env := buildEnv(nil, true); has(env, batch) || !has(env, "GIT_TERMINAL_PROMPT=0") {
+		t.Fatalf("core.sshCommand set: %v", env)
+	}
+}
+
+func TestRemoteForRequiresGitHubHost(t *testing.T) {
+	ctx := context.Background()
+	s := newScratch(t)
+	r := Repo{Name: "o/n", GitDir: filepath.Join(s.clone, ".git"), WorkDir: s.clone}
+	git(t, s.clone, "remote", "add", "a-mirror", "https://gitlab.com/o/n.git")
+	git(t, s.clone, "remote", "set-url", "upstream", "git@github.com:o/n.git")
+	got, err := r.RemoteFor(ctx)
+	if err != nil || got != "upstream" {
+		t.Fatalf("RemoteFor = %q, %v; want upstream", got, err)
+	}
+	git(t, s.clone, "remote", "remove", "upstream")
+	if got, _ := r.RemoteFor(ctx); got != "" {
+		t.Fatalf("gitlab-only: RemoteFor = %q", got)
 	}
 }

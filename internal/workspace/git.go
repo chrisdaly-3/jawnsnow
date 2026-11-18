@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/chrisdaly-3/jawnsnow/internal/config"
 )
@@ -31,7 +32,10 @@ type Repo struct {
 // git's stderr. It never prompts for credentials and never uses a shell.
 func Git(ctx context.Context, dir string, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	cmd.Env = buildEnv(os.Environ(), sshCommandConfigured(ctx, dir, args))
+	// A killed git can leave a child (ssh, git-remote-https) holding the
+	// pipes; WaitDelay stops Run waiting on it forever.
+	cmd.WaitDelay = 5 * time.Second
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {
@@ -39,6 +43,42 @@ func Git(ctx context.Context, dir string, args ...string) ([]byte, error) {
 	}
 	return stdout.Bytes(), nil
 }
+
+// buildEnv returns environ with prompts disabled. When no ssh command is
+// configured anywhere, ssh is told never to prompt, so it cannot grab
+// /dev/tty.
+func buildEnv(environ []string, sshCommandConfigured bool) []string {
+	env := append(environ[:len(environ):len(environ)], "GIT_TERMINAL_PROMPT=0")
+	if sshCommandConfigured {
+		return env
+	}
+	for _, e := range environ {
+		if strings.HasPrefix(e, "GIT_SSH_COMMAND=") {
+			return env
+		}
+	}
+	return append(env, "GIT_SSH_COMMAND=ssh -o BatchMode=yes")
+}
+
+// sshCommandConfigured reports whether core.sshCommand is set. Only
+// commands that can reach a remote need to know.
+func sshCommandConfigured(ctx context.Context, dir string, args []string) bool {
+	remote := false
+	for _, a := range args {
+		if a == "fetch" || a == "clone" {
+			remote = true
+		}
+	}
+	if !remote {
+		return true
+	}
+	out, err := exec.CommandContext(ctx, "git", "-C", dir, "config", "--get", "core.sshCommand").Output()
+	return err == nil && len(strings.TrimSpace(string(out))) > 0
+}
+
+// noHooks stops git running hooks: a relative core.hooksPath would resolve
+// inside a worktree, which holds the PR's files.
+var noHooks = []string{"-c", "core.hooksPath=/dev/null"}
 
 var nameRE = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]*/[A-Za-z0-9_][A-Za-z0-9_.-]*$`)
 
@@ -149,11 +189,43 @@ func (r Repo) RemoteFor(ctx context.Context) (string, error) {
 func sameRepo(url, name string) bool {
 	u := strings.TrimRight(url, "/")
 	u = strings.TrimSuffix(u, ".git")
+	if h := urlHost(u); h != "" && !strings.EqualFold(h, "github.com") {
+		return false
+	}
 	parts := strings.FieldsFunc(u, func(c rune) bool { return c == '/' || c == ':' })
 	if len(parts) < 2 {
 		return false
 	}
 	return strings.EqualFold(parts[len(parts)-2]+"/"+parts[len(parts)-1], name)
+}
+
+// urlHost returns the host of an scp-style or scheme URL, or "" for a
+// local path.
+func urlHost(u string) string {
+	if i := strings.Index(u, "://"); i >= 0 {
+		host := u[i+3:]
+		if j := strings.IndexByte(host, '/'); j >= 0 {
+			host = host[:j]
+		}
+		if k := strings.LastIndexByte(host, '@'); k >= 0 {
+			host = host[k+1:]
+		}
+		if c := strings.IndexByte(host, ':'); c >= 0 {
+			host = host[:c]
+		}
+		return host
+	}
+	if strings.HasPrefix(u, "/") || strings.HasPrefix(u, ".") {
+		return ""
+	}
+	if c := strings.IndexByte(u, ':'); c >= 0 && !strings.Contains(u[:c], "/") {
+		host := u[:c]
+		if k := strings.LastIndexByte(host, '@'); k >= 0 {
+			host = host[k+1:]
+		}
+		return host
+	}
+	return ""
 }
 
 // MergeBase returns the best common ancestor of a and b.
