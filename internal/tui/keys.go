@@ -23,6 +23,7 @@ var keyMap = []keySection{
 		{"R", "poll now"},
 		{"m", "toggle watcher or auto mode"},
 		{"?", "show or hide help"},
+		{"esc", "close help"},
 		{"q ctrl+c", "quit"},
 	}},
 	{"Wall", []keyHint{
@@ -32,6 +33,7 @@ var keyMap = []keySection{
 		{"o", "open in the browser"},
 		{"/", "filter"},
 		{"a", "filter by author"},
+		{"esc", "clear the filters"},
 	}},
 	{"Done", []keyHint{
 		{"j k", "previous or next row"},

@@ -285,16 +285,24 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	if m.view == ViewWall && !m.help && m.wall.capturing() && msg.String() != "ctrl+c" {
 		return m.updateView(msg)
 	}
+	// The help overlay hides the view, so only the keys that close it or
+	// quit do anything.
+	if m.help {
+		switch msg.String() {
+		case "q", "ctrl+c":
+			return m, tea.Quit
+		case "?", "esc":
+			m.help = false
+		}
+		return m, nil
+	}
 	switch k := msg.String(); k {
 	case "q", "ctrl+c":
 		return m, tea.Quit
 	case "?":
-		m.help = !m.help
+		m.help = true
 	case "esc":
-		if !m.help {
-			return m.updateView(msg)
-		}
-		m.help = false
+		return m.updateView(msg)
 	case "]":
 		m = m.switchView((m.view + 1) % viewCount)
 	case "[":

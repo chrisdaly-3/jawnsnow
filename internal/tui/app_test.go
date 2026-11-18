@@ -840,6 +840,29 @@ func TestHelpListsEveryKey(t *testing.T) {
 	}
 }
 
+func TestHelpSwallowsOtherKeys(t *testing.T) {
+	h := newHarness(t, opts{}, readyPR("1"))
+	h.finishPoll(t)
+	polls := h.client.polls
+	h.press(t, "?", "]", "x", "R", "m", "2", "tab")
+	if h.m.view != ViewWall || h.m.mode != modeWatcher || h.m.focus != 0 {
+		t.Errorf("keys under the help overlay acted: view %v mode %q focus %d", h.m.view, h.m.mode, h.m.focus)
+	}
+	if h.m.prs["1"].Place != tracker.PlaceWall {
+		t.Errorf("x under the help overlay hid PR 1")
+	}
+	if h.client.polls != polls {
+		t.Errorf("R under the help overlay polled")
+	}
+	if !h.m.help {
+		t.Fatal("the help overlay closed on a key that isn't ? or esc")
+	}
+	h.press(t, "esc")
+	if h.m.help {
+		t.Error("esc did not close the help overlay")
+	}
+}
+
 func TestFocusCycles(t *testing.T) {
 	h := newHarness(t, opts{}, wallPR("1"))
 	h.press(t, "tab", "shift+tab", "shift+tab")
