@@ -75,6 +75,21 @@ func TestApplyMergedMovesToDone(t *testing.T) {
 	}
 }
 
+func TestApplyReopenedPRReturnsToWall(t *testing.T) {
+	closedAt := now.Add(-days(3))
+	done := Tracked{
+		PR:    snap("A", func(s *github.Snapshot) { s.State = github.PRClosed; s.ClosedAt = closedAt }),
+		Feeds: []string{"long"}, Place: PlaceDone, DoneAt: closedAt, FirstSeen: now.Add(-days(5)),
+	}
+	reopened := snap("A", func(s *github.Snapshot) { s.UpdatedAt = now.Add(-time.Minute) })
+	next, removed := Apply(map[string]Tracked{"A": done}, poll(now, map[string][]string{"A": {"long"}}, reopened), testConfig())
+	got := next["A"]
+	if got.Place != PlaceWall || !got.ReturnedAt.Equal(now) || !got.DoneAt.IsZero() || len(removed) != 0 {
+		t.Errorf("reopened PR: Place=%s ReturnedAt=%v DoneAt=%v removed=%v, want wall, returned now, no DoneAt",
+			got.Place, got.ReturnedAt, got.DoneAt, removed)
+	}
+}
+
 func TestApplyStaleMovesToWaiting(t *testing.T) {
 	s := snap("A", func(s *github.Snapshot) { s.UpdatedAt = now.Add(-days(15)) })
 	next, _ := Apply(nil, poll(now, map[string][]string{"A": {"long"}}, s), testConfig())

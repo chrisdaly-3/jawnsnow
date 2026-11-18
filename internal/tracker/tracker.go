@@ -112,6 +112,11 @@ func place(t Tracked, in PollInput, cfg config.Config) Tracked {
 		return t
 	}
 
+	if t.Place == PlaceDone { // reopened
+		t = Unhide(t, in.Now)
+		t.DoneAt = time.Time{}
+	}
+
 	if t.Place == PlaceWaiting &&
 		(t.PR.HeadOID != t.WaitingHead || OthersActivityAt(t.PR, in.Viewer).After(t.WaitingSince)) {
 		t = Unhide(t, in.Now)
