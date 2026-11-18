@@ -37,9 +37,9 @@ var objectID = regexp.MustCompile(`^[0-9a-f]{40}([0-9a-f]{24})?$`)
 // WriteReviewFiles writes diff.txt (the PR's diff, line-numbered), log.txt
 // (its commits) and, for a follow-up, since.txt into dir, which must exist.
 //
-// since.txt holds only what the PR itself changed since the last review: a
-// path is in it only when the PR's own patch for it differs from the patch
-// at the last review, so a merge of the base branch adds nothing. When the
+// since.txt holds only what the PR itself changed since the last review:
+// the hunks of the PR's own patch that were not in its patch at the last
+// review, so a merge of the base branch adds nothing. When the
 // last reviewed commits are no longer in the repository (a force push
 // dropped them), there is nothing to compare against and the result is a
 // full pass.
@@ -69,8 +69,8 @@ func WriteReviewFiles(ctx context.Context, r Repo, dir string, in FilesInput) (R
 		return ReviewFiles{}, err
 	}
 	for p, f := range prFiles {
-		if len(f.hunks) > 0 {
-			files.Hunks[p] = f.hunks
+		if len(f.ranges) > 0 {
+			files.Hunks[p] = f.ranges
 		}
 	}
 	if files.Changed, err = r.changedPaths(ctx, in.MergeBase, in.Head); err != nil {
@@ -103,9 +103,12 @@ func WriteReviewFiles(ctx context.Context, r Repo, dir string, in FilesInput) (R
 	return files, nil
 }
 
-// since builds since.txt. Paths whose own patch changed are shown as their
-// diff from the last reviewed commit; paths new to the PR as the PR's
-// whole patch; paths the PR no longer touches as "# reverted: <path>".
+// since builds since.txt from the PR's own patch, prFiles: for a path the
+// last review saw, the hunks whose +/- lines were not a hunk of the patch
+// then; for a path new to the PR, its whole patch; for a path the PR no
+// longer touches, "# reverted: <path>". A base merge moves the PR's hunks
+// but does not change their +/- lines, and its own changes are in neither
+// patch, so it adds nothing.
 func (r Repo) since(ctx context.Context, in FilesInput, changed []string, prFiles map[string]*fileDiff) ([]byte, error) {
 	raw, err := r.diff(ctx, nil, in.LastMergeBase, in.LastReviewed)
 	if err != nil {
@@ -120,36 +123,43 @@ func (r Repo) since(ctx context.Context, in FilesInput, changed []string, prFile
 		return nil, err
 	}
 
-	var edited, added []string
-	for _, p := range changed {
-		if !slices.Contains(lastChanged, p) {
-			added = append(added, p)
-			continue
-		}
-		last, now := lastFiles[p], prFiles[p]
-		// A path the parser did not find is shown rather than guessed equal.
-		if last == nil || now == nil || !slices.Equal(last.changes, now.changes) {
-			edited = append(edited, p)
-		}
-	}
-
 	var out bytes.Buffer
-	for _, group := range []struct {
-		from  string
-		paths []string
-	}{{in.LastReviewed, edited}, {in.MergeBase, added}} {
-		if len(group.paths) == 0 {
-			continue
+	for _, p := range changed {
+		now := prFiles[p]
+		if now == nil {
+			return nil, fmt.Errorf("changed path %q is missing from the diff", p)
 		}
-		raw, err := r.diff(ctx, nil, group.from, in.Head, group.paths...)
-		if err != nil {
-			return nil, err
+		reviewed := map[string]int{} // hunk key -> times seen last review
+		if slices.Contains(lastChanged, p) {
+			last := lastFiles[p]
+			if last == nil {
+				return nil, fmt.Errorf("changed path %q is missing from the last reviewed diff", p)
+			}
+			for _, s := range last.sections {
+				for _, h := range s.hunks {
+					reviewed[h.key()]++
+				}
+			}
 		}
-		numbered, _, err := parseDiff(raw)
-		if err != nil {
-			return nil, err
+		for _, s := range now.sections {
+			var kept []*hunk
+			for _, h := range s.hunks {
+				if k := h.key(); reviewed[k] > 0 {
+					reviewed[k]--
+					continue
+				}
+				kept = append(kept, h)
+			}
+			// A path new to the PR keeps a section with no hunks, such as a
+			// new empty file.
+			if len(kept) == 0 && slices.Contains(lastChanged, p) {
+				continue
+			}
+			out.Write(s.header)
+			for _, h := range kept {
+				out.Write(h.text)
+			}
 		}
-		out.Write(numbered)
 	}
 	for _, p := range lastChanged {
 		if !slices.Contains(changed, p) {
@@ -199,14 +209,29 @@ func (r Repo) hasCommit(ctx context.Context, id string) bool {
 	return err == nil
 }
 
-// fileDiff is one path's part of a diff.
+// fileDiff is one path's part of a diff: one section, or two when the path
+// changed type (a file became a symlink).
 type fileDiff struct {
-	// changes are the +/- lines of its hunks, in order: the patch without
-	// line numbers or context, which a base merge leaves alone. A binary
-	// change is its new blob ID.
-	changes []string
-	hunks   [][2]int // new-file line ranges
+	sections []*section
+	ranges   [][2]int // new-file line ranges of its hunks
 }
+
+// section is one `diff --git` block of a diff, numbered.
+type section struct {
+	header []byte // lines from "diff --git" to the first hunk
+	hunks  []*hunk
+}
+
+// hunk is one "@@" block of a section, numbered, or the "Binary files …
+// differ" line of a binary change.
+type hunk struct {
+	text []byte
+	// changes are its +/- lines in order: the hunk without line numbers or
+	// context. A binary change is its new blob ID.
+	changes []string
+}
+
+func (h *hunk) key() string { return strings.Join(h.changes, "\n") }
 
 // parseDiff prefixes every line of a file's new version in diff with its
 // new-file line number, as "L<n> ", and splits the diff by path. Deleted
@@ -215,11 +240,17 @@ func parseDiff(diff []byte) ([]byte, map[string]*fileDiff, error) {
 	var out bytes.Buffer
 	out.Grow(len(diff) + len(diff)/4)
 	files := map[string]*fileDiff{}
-	var cur *fileDiff
-	var blob string // new blob ID from the current path's index line
-	inHunk, n := false, 0
+	var (
+		cur    *fileDiff
+		sec    *section
+		h      *hunk
+		blob   string // new blob ID from the section's index line
+		inHunk bool
+		n      int
+	)
 	for line := range bytes.Lines(diff) {
 		l := strings.TrimSuffix(string(line), "\n")
+		prefix := ""
 		switch {
 		case strings.HasPrefix(l, "diff --git "):
 			p, err := headerPath(l)
@@ -230,9 +261,11 @@ func parseDiff(diff []byte) ([]byte, map[string]*fileDiff, error) {
 				cur = &fileDiff{}
 				files[p] = cur
 			}
-			inHunk, blob = false, ""
+			sec = &section{}
+			cur.sections = append(cur.sections, sec)
+			h, blob, inHunk = nil, "", false
 		case strings.HasPrefix(l, "@@ "):
-			if cur == nil {
+			if sec == nil {
 				return nil, nil, fmt.Errorf("hunk before any file header: %q", l)
 			}
 			start, count, err := hunkNew(l)
@@ -240,31 +273,41 @@ func parseDiff(diff []byte) ([]byte, map[string]*fileDiff, error) {
 				return nil, nil, err
 			}
 			if count > 0 {
-				cur.hunks = append(cur.hunks, [2]int{start, start + count - 1})
+				cur.ranges = append(cur.ranges, [2]int{start, start + count - 1})
 			}
+			h = &hunk{}
+			sec.hunks = append(sec.hunks, h)
 			inHunk, n = true, start
 		case inHunk && (l == "" || l[0] == ' ' || l[0] == '+'):
 			if l != "" && l[0] == '+' {
-				cur.changes = append(cur.changes, l)
+				h.changes = append(h.changes, l)
 			}
-			fmt.Fprintf(&out, "L%d ", n)
+			prefix = "L" + strconv.Itoa(n) + " "
 			n++
 		case inHunk && l[0] == '-':
-			cur.changes = append(cur.changes, l)
+			h.changes = append(h.changes, l)
 		case inHunk && l[0] == '\\':
 			// "\ No newline at end of file" belongs to the line before.
-		case strings.HasPrefix(l, "index ") && cur != nil:
+		case strings.HasPrefix(l, "index ") && sec != nil:
 			inHunk = false
 			if _, ids, ok := strings.Cut(l, ".."); ok {
 				blob, _, _ = strings.Cut(ids, " ")
 			}
-		case strings.HasPrefix(l, "Binary files ") && cur != nil:
+		case strings.HasPrefix(l, "Binary files ") && sec != nil:
 			inHunk = false
-			cur.changes = append(cur.changes, "binary "+blob)
+			h = &hunk{changes: []string{"binary " + blob}}
+			sec.hunks = append(sec.hunks, h)
 		default:
 			inHunk = false
 		}
+		out.WriteString(prefix)
 		out.Write(line)
+		switch {
+		case h != nil:
+			h.text = append(append(h.text, prefix...), line...)
+		case sec != nil:
+			sec.header = append(append(sec.header, prefix...), line...)
+		}
 	}
 	return out.Bytes(), files, nil
 }

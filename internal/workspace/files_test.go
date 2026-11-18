@@ -162,7 +162,7 @@ type prScenario struct {
 
 func newPRScenario(t *testing.T) prScenario {
 	t.Helper()
-	s := prScenario{h: newHistory(t), f: lines("f", 40), g: lines("g", 10), x: lines("x", 40)}
+	s := prScenario{h: newHistory(t), f: lines("f", 40), g: lines("g", 20), x: lines("x", 40)}
 	s.base = s.h.commit("base", map[string][]byte{
 		"f.txt": text(s.f), "g.txt": text(s.g), "x.txt": text(s.x),
 	})
@@ -234,11 +234,11 @@ func TestSinceExcludesBaseMerge(t *testing.T) {
 func TestSinceIncludesOwnChange(t *testing.T) {
 	s := newPRScenario(t)
 	s.mergeMain(t)
-	s.g = with(s.g, 10, "pr-g10")
+	s.g = with(s.g, 15, "pr-g15")
 	head := s.h.commit("pr B", map[string][]byte{"g.txt": text(s.g)})
 
 	_, since := s.since(t, head)
-	for _, want := range []string{"diff --git a/g.txt b/g.txt", "-g10", "L10 +pr-g10"} {
+	for _, want := range []string{"diff --git a/g.txt b/g.txt", "-g15", "L15 +pr-g15"} {
 		if !hasLine(since, want) {
 			t.Errorf("since.txt has no line %q:\n%s", want, since)
 		}
@@ -273,7 +273,7 @@ func TestSinceIncludesNewPathInFull(t *testing.T) {
 
 func TestSinceMarksReverted(t *testing.T) {
 	s := newPRScenario(t)
-	head := s.h.commit("revert g", map[string][]byte{"g.txt": text(lines("g", 10))})
+	head := s.h.commit("revert g", map[string][]byte{"g.txt": text(lines("g", 20))})
 
 	_, since := s.since(t, head)
 	if since != "# reverted: g.txt\n" {
@@ -323,5 +323,97 @@ func TestWriteReviewFilesRejectsBadIDs(t *testing.T) {
 		if _, err := WriteReviewFiles(context.Background(), s.h.repo(), t.TempDir(), in); err == nil {
 			t.Errorf("%+v: no error", in)
 		}
+	}
+}
+
+// A base merge that changes a file the PR also edits adds none of its
+// hunks, and hunks already reviewed are not shown again.
+func TestSinceExcludesBaseMergeInEditedFile(t *testing.T) {
+	ctx := context.Background()
+	h := newHistory(t)
+	f := lines("f", 50)
+	base := h.commit("base", map[string][]byte{"f.txt": text(f)})
+	h.git("checkout", "-q", "-b", "pr")
+	pr := with(f, 3, "pr-f3")
+	a := h.commit("pr A", map[string][]byte{"f.txt": text(pr)})
+	pr = with(pr, 20, "pr-f20")
+	h.commit("pr B", map[string][]byte{"f.txt": text(pr)})
+	h.git("checkout", "-q", "main")
+	h.commit("main change", map[string][]byte{"f.txt": text(with(f, 40, "main-f40"))})
+	h.git("checkout", "-q", "pr")
+	h.git("merge", "-q", "--no-ff", "-m", "merge main", "main")
+	head := h.git("rev-parse", "HEAD")
+	mb, err := h.repo().MergeBase(ctx, "main", head)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	files, err := WriteReviewFiles(ctx, h.repo(), t.TempDir(), FilesInput{
+		MergeBase: mb, Head: head, LastReviewed: a, LastMergeBase: base,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	since := readFile(t, files.Since)
+	for _, want := range []string{
+		"diff --git a/f.txt b/f.txt", "--- a/f.txt", "+++ b/f.txt",
+		"@@ -17,7 +17,7 @@ f16", "L17  f17", "-f20", "L20 +pr-f20", "L23  f23",
+	} {
+		if !hasLine(since, want) {
+			t.Errorf("since.txt has no line %q:\n%s", want, since)
+		}
+	}
+	for _, not := range []string{"pr-f3", "f40", "main-f40"} {
+		if strings.Contains(since, not) {
+			t.Errorf("since.txt mentions %q:\n%s", not, since)
+		}
+	}
+	if n := strings.Count(since, "\n@@ "); n != 1 {
+		t.Errorf("since.txt has %d hunks, want 1:\n%s", n, since)
+	}
+	// The numbers are Head's.
+	if got := strings.Split(h.git("show", head+":f.txt"), "\n")[19]; got != "pr-f20" {
+		t.Fatalf("line 20 of f.txt at head = %q", got)
+	}
+}
+
+func TestNoNewlineAtEOF(t *testing.T) {
+	h := newHistory(t)
+	base := h.commit("base", map[string][]byte{"f.txt": []byte("a\nb\n")})
+	h.git("checkout", "-q", "-b", "pr")
+	head := h.commit("pr", map[string][]byte{"f.txt": []byte("a\nb\nc")})
+
+	files, err := WriteReviewFiles(context.Background(), h.repo(), t.TempDir(), FilesInput{MergeBase: base, Head: head})
+	if err != nil {
+		t.Fatal(err)
+	}
+	diff := readFile(t, files.Diff)
+	if !strings.HasSuffix(diff, "@@ -1,2 +1,3 @@\nL1  a\nL2  b\nL3 +c\n\\ No newline at end of file\n") {
+		t.Fatalf("diff.txt:\n%s", diff)
+	}
+	if !reflect.DeepEqual(files.Hunks, map[string][][2]int{"f.txt": {{1, 3}}}) {
+		t.Fatalf("Hunks = %v", files.Hunks)
+	}
+}
+
+func TestEditAtFirstLine(t *testing.T) {
+	h := newHistory(t)
+	f := lines("f", 10)
+	base := h.commit("base", map[string][]byte{"f.txt": text(f)})
+	h.git("checkout", "-q", "-b", "pr")
+	head := h.commit("pr", map[string][]byte{"f.txt": text(with(f, 1, "first"))})
+
+	files, err := WriteReviewFiles(context.Background(), h.repo(), t.TempDir(), FilesInput{MergeBase: base, Head: head})
+	if err != nil {
+		t.Fatal(err)
+	}
+	diff := readFile(t, files.Diff)
+	for _, want := range []string{"@@ -1,4 +1,4 @@", "-f1", "L1 +first", "L4  f4"} {
+		if !hasLine(diff, want) {
+			t.Errorf("diff.txt has no line %q:\n%s", want, diff)
+		}
+	}
+	if !reflect.DeepEqual(files.Hunks, map[string][][2]int{"f.txt": {{1, 4}}}) {
+		t.Fatalf("Hunks = %v", files.Hunks)
 	}
 }
