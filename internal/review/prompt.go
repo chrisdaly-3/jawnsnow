@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode"
 
 	"github.com/chrisdaly-3/jawnsnow/internal/github"
 	"github.com/chrisdaly-3/jawnsnow/internal/review/prompt"
@@ -38,12 +39,26 @@ func untrusted(s string) string {
 	}) + "\n</untrusted>"
 }
 
+// oneLine makes PR-derived text safe for a single header line: line breaks
+// and tabs become spaces and other control characters are dropped.
+func oneLine(s string) string {
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r == '\n' || r == '\r' || r == '\t':
+			return ' '
+		case unicode.IsControl(r):
+			return -1
+		}
+		return r
+	}, s)
+}
+
 // BuildPrompt returns the user message for one review pass.
 func BuildPrompt(in PromptInput) string {
 	var b strings.Builder
 
-	fmt.Fprintf(&b, "# Review %s#%d\n\n", in.Repo, in.Number)
-	fmt.Fprintf(&b, "Author: %s\nURL: %s\nPass: %s\n\n", in.Author, in.URL, in.Pass)
+	fmt.Fprintf(&b, "# Review %s#%d\n\n", oneLine(in.Repo), in.Number)
+	fmt.Fprintf(&b, "Author: %s\nURL: %s\nPass: %s\n\n", oneLine(in.Author), oneLine(in.URL), in.Pass)
 	fmt.Fprintf(&b, "Worktree (the PR at head): %s\n", in.Worktree)
 	fmt.Fprintf(&b, "Diff (line-numbered): %s\n", in.Files.Diff)
 	fmt.Fprintf(&b, "Commit log: %s\n", in.Files.Log)
@@ -113,7 +128,7 @@ func BuildPrompt(in PromptInput) string {
 			if f.ThreadID != "" {
 				posted = "posted · "
 			}
-			fmt.Fprintf(&b, "%d · %s:%d · %s · %s%s\n", f.ID, f.Path, f.Line, sev, posted, f.Body)
+			fmt.Fprintf(&b, "%d · %s:%d · %s · %s%s\n", f.ID, oneLine(f.Path), f.Line, sev, posted, oneLine(f.Body))
 		}
 		b.WriteString("\n")
 	}
@@ -122,16 +137,16 @@ func BuildPrompt(in PromptInput) string {
 	fmt.Fprintf(&b, "Title:\n%s\n\n", untrusted(in.Title))
 	fmt.Fprintf(&b, "Description:\n%s\n\n", untrusted(in.Context.Body))
 	for _, c := range in.Context.Comments {
-		fmt.Fprintf(&b, "Comment by %s:\n%s\n\n", c.Author, untrusted(c.Body))
+		fmt.Fprintf(&b, "Comment by %s:\n%s\n\n", oneLine(c.Author), untrusted(c.Body))
 	}
 	for _, t := range in.Context.Threads {
 		state := "open"
 		if t.Resolved {
 			state = "resolved"
 		}
-		fmt.Fprintf(&b, "Review thread %s on %s:%d (%s):\n", t.ID, t.Path, t.Line, state)
+		fmt.Fprintf(&b, "Review thread %s on %s (%s):\n", oneLine(t.ID), untrusted(fmt.Sprintf("%s:%d", t.Path, t.Line)), state)
 		for _, c := range t.Comments {
-			fmt.Fprintf(&b, "%s says:\n%s\n", c.Author, untrusted(c.Body))
+			fmt.Fprintf(&b, "%s says:\n%s\n", oneLine(c.Author), untrusted(c.Body))
 		}
 		b.WriteString("\n")
 	}
