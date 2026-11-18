@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/cli/go-gh/v2/pkg/browser"
@@ -49,6 +50,9 @@ const (
 	clockInterval = time.Second
 )
 
+// shared is the one spinner every spinning card and lane header shows.
+var shared = spinner.Dot
+
 // Deps is everything the root model needs from startup.
 type Deps struct {
 	Config  config.Config
@@ -65,6 +69,7 @@ type (
 	pollResultMsg poll.Result
 	reloadMsg     config.Reload
 	clockMsg      time.Time
+	spinTickMsg   struct{}
 
 	// pollTickMsg asks for the scheduled poll. Only the tick carrying the
 	// current pollGen polls; rescheduling makes older ticks stale.
@@ -127,6 +132,12 @@ type Model struct {
 	warnings     []string
 	notice       string
 
+	wall wallModel
+	// spinning is true while the spinner's tick loop runs; spinFrame is
+	// which frame of the shared spinner it shows.
+	spinning  bool
+	spinFrame int
+
 	view          View
 	focus         int
 	help          bool
@@ -148,7 +159,7 @@ func New(d Deps) Model {
 		cfg: d.Config, theme: d.Theme, client: d.Client, store: d.Store, viewer: d.Viewer,
 		banners: d.Banners, reloads: d.Reloads, now: now, tick: tea.Tick,
 		open: func(url string) error { return browser.New("", io.Discard, io.Discard).Browse(url) },
-		prs:  map[string]tracker.Tracked{}, dirty: map[string]bool{}, deleted: map[string]bool{},
+		prs:  map[string]tracker.Tracked{}, wall: newWall(), dirty: map[string]bool{}, deleted: map[string]bool{},
 		mode: mode, width: 80, height: 24,
 	}
 }
@@ -165,6 +176,38 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	next, cmd := m.update(msg)
+	next, spin := next.ensureSpinner()
+	if spin != nil {
+		cmd = tea.Batch(cmd, spin)
+	}
+	return next, cmd
+}
+
+// ensureSpinner starts the spinner's tick loop when something on the wall
+// is spinning and it isn't running.
+func (m Model) ensureSpinner() (Model, tea.Cmd) {
+	if m.spinning || !m.anySpinning() {
+		return m, nil
+	}
+	m.spinning = true
+	return m, m.spinTick()
+}
+
+func (m Model) spinTick() tea.Cmd {
+	return m.tick(shared.FPS, func(time.Time) tea.Msg { return spinTickMsg{} })
+}
+
+func (m Model) anySpinning() bool {
+	for _, t := range m.prs {
+		if t.Place == tracker.PlaceWall && t.Status.Spinning {
+			return true
+		}
+	}
+	return false
+}
+
+func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
@@ -195,6 +238,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.reload(config.Reload(msg))
 	case clockMsg:
 		return m, m.clockTick()
+	case spinTickMsg:
+		if !m.anySpinning() {
+			m.spinning = false
+			return m, nil
+		}
+		m.spinFrame++
+		return m, m.spinTick()
+	case wallTickMsg:
+		return m.wallUpdate(msg)
+	case tea.PasteMsg:
+		if m.view == ViewWall && m.wall.capturing() {
+			return m.wallUpdate(msg)
+		}
 	case tea.KeyPressMsg:
 		return m.handleKey(msg)
 	}
@@ -202,6 +258,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
+	// An open filter box or author picker takes every key, or typing "q"
+	// would quit. ctrl+c still quits.
+	if m.view == ViewWall && !m.help && m.wall.capturing() && msg.String() != "ctrl+c" {
+		return m.updateView(msg)
+	}
 	switch k := msg.String(); k {
 	case "q", "ctrl+c":
 		return m, tea.Quit
@@ -238,9 +299,37 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 }
 
 // updateView passes a key the root model doesn't use to the current view.
-// Tasks 11 and 12 route the Wall and Done views here and apply the action
-// each returns.
-func (m Model) updateView(tea.KeyPressMsg) (Model, tea.Cmd) { return m, nil }
+// Task 12 routes the Done view here too.
+func (m Model) updateView(msg tea.KeyPressMsg) (Model, tea.Cmd) {
+	if m.view == ViewWall {
+		return m.wallUpdate(msg)
+	}
+	return m, nil
+}
+
+// wallUpdate gives msg to the Wall and applies the action it returns.
+func (m Model) wallUpdate(msg tea.Msg) (Model, tea.Cmd) {
+	w, h := m.bodySize()
+	m.wall.setSize(w, h)
+	m.wall.now, m.wall.feeds = m.now(), m.feedNames()
+	wall, cmd, act := m.wall.update(msg, m.wallPRs())
+	m.wall = wall
+	m, actCmd := m.apply(act)
+	return m, tea.Batch(cmd, actCmd)
+}
+
+// wallPRs is every tracked PR; the Wall picks out the ones on it.
+func (m Model) wallPRs() []tracker.Tracked {
+	return slices.Collect(maps.Values(m.prs))
+}
+
+func (m Model) feedNames() []string {
+	names := make([]string, len(m.cfg.Feeds))
+	for i, f := range m.cfg.Feeds {
+		names[i] = f.Name
+	}
+	return names
+}
 
 // paneCount is the number of focusable panes in v. Every view has one pane
 // until plan 2 adds the drawer beside the Wall.
@@ -447,15 +536,24 @@ func (m Model) render() string {
 	return strings.Join(lines, "\n")
 }
 
+// bodySize is the room the view gets between the top line, banners and
+// footer.
+func (m Model) bodySize() (width, height int) {
+	return m.width, max(m.height-1-len(m.bannerLines(m.width))-1, 0)
+}
+
 // body renders the current view into width×height. Each view supplies its
-// own; the Wall and Done arrive in Tasks 11 and 12.
+// own; Done arrives in Task 12.
 func (m Model) body(width, height int) string {
 	if m.help {
 		return m.helpBody(width, height)
 	}
 	switch m.view {
 	case ViewWall:
-		return wallPlaceholder(m, width, height)
+		w := m.wall
+		w.now, w.feeds = m.now(), m.feedNames()
+		w.setSize(width, height)
+		return w.view(width, height, m.wallPRs(), m.theme, strings.TrimSpace(shared.Frames[m.spinFrame%len(shared.Frames)]))
 	case ViewDone:
 		return donePlaceholder(m, width, height)
 	case ViewAgent:

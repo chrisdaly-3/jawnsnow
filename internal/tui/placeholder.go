@@ -15,11 +15,6 @@ func placeholder(th theme.Theme, width, height int, text string) string {
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, th.Muted().Render(ansi.Truncate(text, max(width, 0), "…")))
 }
 
-// wallPlaceholder stands in for the Wall until Task 11.
-func wallPlaceholder(m Model, width, height int) string {
-	return placeholder(m.theme, width, height, fmt.Sprintf("%d on the wall", m.count(tracker.PlaceWall)))
-}
-
 // donePlaceholder stands in for the Done view until Task 12.
 func donePlaceholder(m Model, width, height int) string {
 	return placeholder(m.theme, width, height,

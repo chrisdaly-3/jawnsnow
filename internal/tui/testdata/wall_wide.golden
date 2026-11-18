@@ -1,0 +1,30 @@
+╭ CI ⣾ 2 ──────────────────────╮ ╭ Ready for you 2 ────────────╮ ╭ New changes ⣾ 2 ────────────╮ ╭ Waiting on author 1 ────────╮ ╭ Approved 1 ─────────────────╮
+│▌⣾ mono#85180                 │ │   mono#85211                │ │ ⣾ mono#85102                │ │   mono#85077                │ │   mono#85044                │
+│▌  feat(policies): fill Decis…│ │   fix(oidc): refresh the si…│ │   chore: bump driftlessaf   │ │   feat(sentinel): add popul…│ │   docs: explain the deploy …│
+│▌  alice · 2h · +120 −8       │ │   bob · 5h · +14 −2         │ │   carol · 1d · +300 −40     │ │   gina · 1d · +77 −12       │ │   me · 2d · +20 −0          │
+│▌   Waiting on CI             │ │    Ready for you            │ │    New changes              │ │    Waiting on author        │ │   │ Approved by you · needs…│
+│                              │ │                             │ │                             │ │                             │ │                             │
+│ ✗ mono#85190                 │ │   os#4012                   │ │   enforce#311               │ │                             │ │                             │
+│   fix(registry): retry on 50…│ │   bump openssl to 3.5.1     │ │   refactor: split the poller│ │                             │ │                             │
+│   dave · 3h · +9 −3          │ │   erin · 9h · +4 −4         │ │   frank · 2d · +52 −60      │ │                             │ │                             │
+│    CI failed                 │ │    Ready for you            │ │    New changes              │ │                             │ │                             │
+│                              │ │                             │ │                             │ │                             │ │                             │
+│                              │ │                             │ │                             │ │                             │ │                             │
+│                              │ │                             │ │                             │ │                             │ │                             │
+│                              │ │                             │ │                             │ │                             │ │                             │
+│                              │ │                             │ │                             │ │                             │ │                             │
+│                              │ │                             │ │                             │ │                             │ │                             │
+│                              │ │                             │ │                             │ │                             │ │                             │
+│                              │ │                             │ │                             │ │                             │ │                             │
+│                              │ │                             │ │                             │ │                             │ │                             │
+│                              │ │                             │ │                             │ │                             │ │                             │
+│                              │ │                             │ │                             │ │                             │ │                             │
+│                              │ │                             │ │                             │ │                             │ │                             │
+│                              │ │                             │ │                             │ │                             │ │                             │
+│                              │ │                             │ │                             │ │                             │ │                             │
+│                              │ │                             │ │                             │ │                             │ │                             │
+│                              │ │                             │ │                             │ │                             │ │                             │
+│                              │ │                             │ │                             │ │                             │ │                             │
+│                              │ │                             │ │                             │ │                             │ │                             │
+│                              │ │                             │ │                             │ │                             │ │                             │
+╰──────────────────────────────╯ ╰─────────────────────────────╯ ╰─────────────────────────────╯ ╰─────────────────────────────╯ ╰─────────────────────────────╯

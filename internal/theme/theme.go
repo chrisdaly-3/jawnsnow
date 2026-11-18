@@ -200,3 +200,6 @@ func (t Theme) fg(c color.Color) lipgloss.Style {
 	}
 	return lipgloss.NewStyle().Foreground(c)
 }
+
+// StatusFg styles text in the status's color, or plain with NO_COLOR.
+func (t Theme) StatusFg(status string) lipgloss.Style { return t.fg(t.statuses[status].color) }
