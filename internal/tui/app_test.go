@@ -900,6 +900,57 @@ func TestQuit(t *testing.T) {
 	}
 }
 
+func isQuit(t *testing.T, cmd tea.Cmd) bool {
+	t.Helper()
+	if cmd == nil {
+		return false
+	}
+	_, ok := cmd().(tea.QuitMsg)
+	return ok
+}
+
+func TestQuitSavesPendingChangesFirst(t *testing.T) {
+	h := newHarness(t, opts{}, wallPR("1"), wallPR("2"))
+	h.finishPoll(t)
+
+	m, save1 := h.m.apply(actionHide{ID: "1"}) // this save is in flight
+	m, save2 := m.apply(actionHide{ID: "2"})   // this one waits behind it
+	if save2 != nil {
+		t.Fatal("a second save started while one was running")
+	}
+	m, cmd := update(t, m, key("q"))
+	if isQuit(t, cmd) {
+		t.Fatal("q quit while a save was still running")
+	}
+	msgs, _ := runCmd(t, save1)
+	if len(msgs) != 1 {
+		t.Fatalf("the save produced %v, want one savedMsg", msgs)
+	}
+	m, cmd = update(t, m, msgs[0])
+	if !isQuit(t, cmd) {
+		t.Fatal("the quit did not go through once the save finished")
+	}
+	stored, err := h.store.LoadTracked(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"1", "2"} {
+		if p := stored[id]; p.Place != tracker.PlaceWaiting || p.WaitReason != tracker.WaitHidden {
+			t.Errorf("stored PR %s: place %q reason %q, want waiting/hidden", id, p.Place, p.WaitReason)
+		}
+	}
+	_ = m
+}
+
+func TestQuitWithNothingPendingQuitsAtOnce(t *testing.T) {
+	h := newHarness(t, opts{}, wallPR("1"))
+	h.finishPoll(t)
+	h.press(t, "?")
+	if _, cmd := update(t, h.m, key("q")); !isQuit(t, cmd) {
+		t.Error("q under the help overlay did not quit")
+	}
+}
+
 func TestTinyWindowDoesNotPanic(t *testing.T) {
 	h := newHarness(t, opts{}, wallPR("1"))
 	for _, size := range []tea.WindowSizeMsg{{Width: 0, Height: 0}, {Width: 10, Height: 2}, {Width: 30, Height: 5}} {

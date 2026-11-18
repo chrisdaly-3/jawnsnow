@@ -48,7 +48,9 @@ const (
 	// for good: only one poll runs at a time.
 	pollTimeout   = 2 * time.Minute
 	viewerTimeout = 15 * time.Second
-	clockInterval = time.Second
+	// finalSaveTimeout bounds the save that blocks quitting.
+	finalSaveTimeout = 5 * time.Second
+	clockInterval    = time.Second
 )
 
 // Deps is everything the root model needs from startup.
@@ -137,6 +139,8 @@ type Model struct {
 	saving  bool
 	dirty   map[string]bool
 	deleted map[string]bool
+	// quitting is set when q waits for the running save to land.
+	quitting bool
 
 	configBanner string
 	warnings     []string
@@ -254,6 +258,9 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 		if msg.err != nil {
 			m.notice = "could not save PRs: " + msg.err.Error()
 		}
+		if m.quitting {
+			return m.quit()
+		}
 		return m.flush()
 	case openedMsg:
 		if msg.err != nil {
@@ -293,7 +300,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	if m.help {
 		switch msg.String() {
 		case "q", "ctrl+c":
-			return m, tea.Quit
+			return m.quit()
 		case "?", "esc":
 			m.help = false
 		}
@@ -301,7 +308,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	}
 	switch k := msg.String(); k {
 	case "q", "ctrl+c":
-		return m, tea.Quit
+		return m.quit()
 	case "?":
 		m.help = true
 	case "esc":
@@ -549,6 +556,14 @@ func (m Model) flush() (Model, tea.Cmd) {
 	if m.saving || (len(m.dirty) == 0 && len(m.deleted) == 0) {
 		return m, nil
 	}
+	m, write := m.takePending()
+	m.saving = true
+	return m, func() tea.Msg { return savedMsg{err: write(context.Background())} }
+}
+
+// takePending clears the pending changes and returns the write that saves
+// them, built from copies so it can run off the update loop.
+func (m Model) takePending() (Model, func(context.Context) error) {
 	var save []tracker.Tracked
 	for _, id := range slices.Sorted(maps.Keys(m.dirty)) {
 		if t, ok := m.prs[id]; ok {
@@ -556,20 +571,37 @@ func (m Model) flush() (Model, tea.Cmd) {
 		}
 	}
 	del := slices.Sorted(maps.Keys(m.deleted))
-	m.dirty, m.deleted, m.saving = map[string]bool{}, map[string]bool{}, true
+	m.dirty, m.deleted = map[string]bool{}, map[string]bool{}
 	st := m.store
-	return m, func() tea.Msg {
-		ctx := context.Background()
+	return m, func(ctx context.Context) error {
 		if len(save) > 0 {
 			if err := st.SaveTracked(ctx, save); err != nil {
-				return savedMsg{err: err}
+				return err
 			}
 		}
 		if len(del) > 0 {
-			return savedMsg{err: st.DeleteTracked(ctx, del)}
+			return st.DeleteTracked(ctx, del)
 		}
-		return savedMsg{}
+		return nil
 	}
+}
+
+// quit saves what is pending before quitting, since nothing would deliver a
+// later save's result. If a save is running it waits for it, so the older
+// write can't land after the final one; a second q quits regardless.
+func (m Model) quit() (Model, tea.Cmd) {
+	if m.saving && !m.quitting {
+		m.quitting = true
+		return m, nil
+	}
+	if !m.readOnly && (len(m.dirty) > 0 || len(m.deleted) > 0) {
+		var write func(context.Context) error
+		m, write = m.takePending()
+		ctx, cancel := context.WithTimeout(context.Background(), finalSaveTimeout)
+		_ = write(ctx) // the screen is going away; there is nowhere to show an error
+		cancel()
+	}
+	return m, tea.Quit
 }
 
 // reload swaps in a good config and its theme. A bad one, or one whose theme
