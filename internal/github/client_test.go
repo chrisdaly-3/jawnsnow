@@ -258,18 +258,21 @@ func nullBatch(vars map[string]any) ([]byte, error) {
 	return b, &api.GraphQLError{Errors: errs}
 }
 
-func TestDetailsFailsWhenEveryPRIsUnreachable(t *testing.T) {
+// Whether a poll that reached nothing failed is the poll's decision, so a
+// call that skipped every PR still succeeds and reports each skip.
+func TestDetailsReportsEverySkipWhenNoPRIsReachable(t *testing.T) {
 	d := &fakeDoer{
 		respond: func(_ int, _ string, vars map[string]any) []byte { b, _ := nullBatch(vars); return b },
 		fail:    func(_ int, _ string, vars map[string]any) error { _, err := nullBatch(vars); return err },
 	}
-	snaps, _, rl, err := NewClient(d).Details(context.Background(), "me", manyIDs(12))
-	if err == nil || err.Error() != "all 12 PRs unreachable: FORBIDDEN" {
-		t.Fatalf("Details = %d snapshots, error %v; want the error naming FORBIDDEN", len(snaps), err)
+	snaps, skipped, rl, err := NewClient(d).Details(context.Background(), "me", manyIDs(12))
+	if err != nil {
+		t.Fatalf("Details error = %v, want the skips returned", err)
 	}
-	if IsRateLimited(err) {
-		t.Error("an unreachable PR reads as a rate limit")
+	if len(snaps) != 0 || len(skipped) != 12 {
+		t.Fatalf("Details = %d snapshots and %d skipped, want 0 and 12", len(snaps), len(skipped))
 	}
+	assertEq(t, skipped[11], SkippedPR{ID: "PR_011", Type: "FORBIDDEN", Message: "SAML enforcement"})
 	assertEq(t, rl.Cost, 2) // both batches ran
 }
 
@@ -320,7 +323,7 @@ func TestFingerprintsSkipsANodeWithANestedError(t *testing.T) {
 	}
 }
 
-func TestFingerprintsFailsWhenEveryPRIsUnreachable(t *testing.T) {
+func TestFingerprintsReportsEverySkipWhenNoPRIsReachable(t *testing.T) {
 	d := &fakeDoer{
 		respond: func(int, string, map[string]any) []byte {
 			return []byte(`{"nodes":[null,null],"rateLimit":{"remaining":1,"cost":1}}`)
@@ -332,10 +335,19 @@ func TestFingerprintsFailsWhenEveryPRIsUnreachable(t *testing.T) {
 			}}
 		},
 	}
-	_, _, _, err := NewClient(d).Fingerprints(context.Background(), []string{"PR_a", "PR_b"})
-	if err == nil || err.Error() != "all 2 PRs unreachable: FORBIDDEN, NOT_FOUND" {
-		t.Fatalf("Fingerprints error = %v, want one naming both error types", err)
+	fps, skipped, _, err := NewClient(d).Fingerprints(context.Background(), []string{"PR_a", "PR_b"})
+	if err != nil {
+		t.Fatalf("Fingerprints error = %v, want the skips returned", err)
 	}
+	want := []SkippedPR{{ID: "PR_a", Type: "FORBIDDEN"}, {ID: "PR_b", Type: "NOT_FOUND"}}
+	if len(fps) != 0 || !slices.Equal(skipped, want) {
+		t.Errorf("Fingerprints = %+v, skipped %+v; want none, and %+v", fps, skipped, want)
+	}
+}
+
+func TestSkippedTypes(t *testing.T) {
+	got := SkippedTypes([]SkippedPR{{Type: "NOT_FOUND"}, {Type: "FORBIDDEN"}, {Type: "NOT_FOUND"}, {}})
+	assertEq(t, got, "FORBIDDEN, NOT_FOUND, unknown error")
 }
 
 func TestFingerprintsFailsOnAnErrorWithNoNodeIndex(t *testing.T) {

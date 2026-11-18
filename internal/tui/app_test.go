@@ -87,13 +87,22 @@ func (f *fakeClient) Details(_ context.Context, _ string, ids []string) ([]githu
 	return out, nil, f.rate, nil
 }
 
-// graphQL stands in for GitHub under the real client: every search finds
-// nothing, and a nodes(ids:) lookup answers each PR in snaps with its
-// fingerprint, or, for the IDs in forbidden, with a null and a FORBIDDEN
-// error at its index, as GitHub does once an SSO session expires.
+// graphQL stands in for GitHub under the real client. Every search returns
+// the PRs in found. A nodes(ids:) lookup or a detail batch answers each PR
+// in snaps, or, for the IDs in forbidden, a null and a FORBIDDEN error at
+// its index or alias, as GitHub does once an SSO session expires.
 type graphQL struct {
 	snaps     map[string]github.Snapshot
+	found     []string
 	forbidden map[string]bool
+}
+
+func fingerprintJSON(s github.Snapshot) map[string]any {
+	return map[string]any{"id": s.ID, "updatedAt": s.UpdatedAt, "headRefOid": s.HeadOID}
+}
+
+func forbiddenAt(path ...any) api.GraphQLErrorItem {
+	return api.GraphQLErrorItem{Type: "FORBIDDEN", Message: "SAML enforcement", Path: path}
 }
 
 func (g *graphQL) DoWithContext(_ context.Context, query string, vars map[string]any, resp any) error {
@@ -101,19 +110,39 @@ func (g *graphQL) DoWithContext(_ context.Context, query string, vars map[string
 	var errs []api.GraphQLErrorItem
 	switch {
 	case vars["q"] != nil:
-		out["search"] = map[string]any{"pageInfo": map[string]any{"hasNextPage": false}, "nodes": []any{}}
+		nodes := []any{}
+		for _, id := range g.found {
+			nodes = append(nodes, fingerprintJSON(g.snaps[id]))
+		}
+		out["search"] = map[string]any{"pageInfo": map[string]any{"hasNextPage": false}, "nodes": nodes}
 	case vars["ids"] != nil:
 		var nodes []any
 		for i, id := range vars["ids"].([]string) {
 			if g.forbidden[id] {
 				nodes = append(nodes, nil)
-				errs = append(errs, api.GraphQLErrorItem{Type: "FORBIDDEN", Message: "SAML enforcement", Path: []any{"nodes", float64(i)}})
+				errs = append(errs, forbiddenAt("nodes", float64(i)))
+				continue
+			}
+			nodes = append(nodes, fingerprintJSON(g.snaps[id]))
+		}
+		out["nodes"] = nodes
+	case vars["login"] != nil:
+		for i := 0; ; i++ {
+			id, ok := vars[fmt.Sprintf("id%d", i)].(string)
+			if !ok {
+				break
+			}
+			alias := fmt.Sprintf("p%d", i)
+			if g.forbidden[id] {
+				out[alias] = nil
+				errs = append(errs, forbiddenAt(alias))
 				continue
 			}
 			s := g.snaps[id]
-			nodes = append(nodes, map[string]any{"id": s.ID, "updatedAt": s.UpdatedAt, "headRefOid": s.HeadOID})
+			pr := fingerprintJSON(s)
+			pr["title"], pr["state"], pr["repository"] = s.Title, s.State, map[string]any{"nameWithOwner": s.Repo}
+			out[alias] = pr
 		}
-		out["nodes"] = nodes
 	default:
 		return fmt.Errorf("graphQL: unexpected query %q", query)
 	}
@@ -419,7 +448,7 @@ func TestPollFailsWhenEveryPRIsUnreachable(t *testing.T) {
 	gql.forbidden = map[string]bool{"1": true, "2": true}
 	h.press(t, "R")
 	c := ansi.Strip(content(h.m))
-	if !strings.Contains(c, "poll failed: check tracked PRs: all 2 PRs unreachable") {
+	if !strings.Contains(c, "poll failed: all 2 PRs unreachable: FORBIDDEN") {
 		t.Errorf("View does not show the poll failing:\n%s", c)
 	}
 	if strings.Contains(c, "polled") {
@@ -427,6 +456,31 @@ func TestPollFailsWhenEveryPRIsUnreachable(t *testing.T) {
 	}
 	if len(h.m.prs) != 2 || !reflect.DeepEqual(h.m.prs["1"].PR, prs[0].PR) {
 		t.Errorf("PRs = %v, want both kept as they were", h.m.prs)
+	}
+}
+
+// A feed that reaches PRs makes the poll a success, so its results land
+// even when every watched PR it didn't return is unreachable.
+func TestPollSucceedsWhenOnlyWatchedPRsAreUnreachable(t *testing.T) {
+	prs := []tracker.Tracked{wallPR("1"), wallPR("2")}
+	gql := newGraphQL(prs...)
+	gql.snaps["3"] = snap("3")
+	gql.found = []string{"1", "3"}
+	gql.forbidden = map[string]bool{"2": true}
+	h := newHarness(t, opts{client: github.NewClient(gql)}, prs...)
+	h.finishPoll(t)
+	c := ansi.Strip(content(h.m))
+	if !strings.Contains(c, "polled 0s ago") || strings.Contains(c, "poll failed") {
+		t.Errorf("a poll whose feed reached PRs did not count as a success:\n%s", c)
+	}
+	if got := h.m.prs["3"].PR.Title; got != "PR 3" {
+		t.Errorf("PR 3 title = %q, want the feed's new PR applied", got)
+	}
+	if !strings.Contains(c, "1 PR unreachable (FORBIDDEN)") {
+		t.Errorf("View does not note the unreachable PR:\n%s", c)
+	}
+	if !reflect.DeepEqual(h.m.prs["2"].PR, prs[1].PR) {
+		t.Errorf("PR 2 = %+v, want its last snapshot kept", h.m.prs["2"].PR)
 	}
 }
 

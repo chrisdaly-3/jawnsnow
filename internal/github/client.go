@@ -29,11 +29,12 @@ type Client interface {
 	Search(ctx context.Context, query string) ([]Fingerprint, RateLimit, error)
 	// Fingerprints looks PRs up by node ID, 100 to a query. A PR GitHub
 	// answers with an error, such as one that no longer resolves, is left
-	// out and returned as skipped.
+	// out and returned as skipped, even when that is every PR: whether that
+	// fails the poll is the poll's decision.
 	Fingerprints(ctx context.Context, ids []string) ([]Fingerprint, []SkippedPR, RateLimit, error)
 	// Details fetches full Snapshots in batches of aliases, a few batches at
 	// a time, in the order of ids. A PR GitHub answers with an error is left
-	// out and returned as skipped.
+	// out and returned as skipped, as with Fingerprints.
 	Details(ctx context.Context, viewer string, ids []string) ([]Snapshot, []SkippedPR, RateLimit, error)
 }
 
@@ -206,9 +207,6 @@ func (c *client) Fingerprints(ctx context.Context, ids []string) ([]Fingerprint,
 			}
 		}
 	}
-	if err := allUnreachable(ids, skipped); err != nil {
-		return nil, nil, total, err
-	}
 	return fps, skipped, total, nil
 }
 
@@ -264,30 +262,10 @@ func (c *client) Details(ctx context.Context, viewer string, ids []string) ([]Sn
 		skipped = append(skipped, r.skipped...)
 		total.add(r.rl)
 	}
-	if err := cmp.Or(rateErr, firstErr, allUnreachable(ids, skipped)); err != nil {
+	if err := cmp.Or(rateErr, firstErr); err != nil {
 		return nil, nil, total, err
 	}
 	return snaps, skipped, total, nil
-}
-
-// allUnreachable is an error when every requested PR was skipped: with
-// nothing fetched, the call would otherwise pass for one where nothing
-// changed.
-func allUnreachable(ids []string, skipped []SkippedPR) error {
-	requested := map[string]bool{}
-	for _, id := range ids {
-		requested[id] = true
-	}
-	for _, s := range skipped {
-		delete(requested, s.ID)
-	}
-	if len(ids) == 0 || len(requested) > 0 {
-		return nil
-	}
-	if len(ids) == 1 {
-		return fmt.Errorf("PR unreachable: %s", SkippedTypes(skipped))
-	}
-	return fmt.Errorf("all %d PRs unreachable: %s", len(ids), SkippedTypes(skipped))
 }
 
 // SkippedTypes lists the GraphQL error types in skipped, sorted and without

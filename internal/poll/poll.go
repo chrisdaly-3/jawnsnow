@@ -45,8 +45,10 @@ type Result struct {
 // fingerprint moved since Known, or that are in DetailIDs: a full fetch
 // costs far more than the fingerprint. A feed whose search fails is skipped
 // and reported in FeedErrs, so one bad query doesn't stop the others. A rate
-// limit, or a failed lookup or detail fetch, ends the poll, and so does
-// every feed failing when there is nothing else to check.
+// limit, or a failed lookup or detail fetch, ends the poll. A PR GitHub
+// answers with an error is left out and listed in Unreachable; the poll
+// still succeeds unless it reached no PR at all, or every feed failed with
+// nothing else to check.
 func Fetch(ctx context.Context, c github.Client, req Request) (res Result) {
 	res.Found = map[string][]string{}
 	unreachable := map[string]github.SkippedPR{}
@@ -55,7 +57,12 @@ func Fetch(ctx context.Context, c github.Client, req Request) (res Result) {
 			res.Unreachable = append(res.Unreachable, unreachable[id])
 		}
 	}()
-	note := func(skipped []github.SkippedPR) {
+	// asked counts the PRs the lookup and detail calls asked for, and
+	// missed the ones they skipped.
+	var asked, missed int
+	note := func(requested int, skipped []github.SkippedPR) {
+		asked += requested
+		missed += len(skipped)
 		for _, s := range skipped {
 			if _, ok := unreachable[s.ID]; !ok {
 				unreachable[s.ID] = s
@@ -103,7 +110,7 @@ func Fetch(ctx context.Context, c github.Client, req Request) (res Result) {
 			res.Err = fmt.Errorf("check tracked PRs: %w", err)
 			return res
 		}
-		note(skipped)
+		note(len(lookup), skipped)
 		for _, fp := range fps {
 			fresh[fp.ID] = fp
 		}
@@ -117,18 +124,30 @@ func Fetch(ctx context.Context, c github.Client, req Request) (res Result) {
 	}
 	slices.Sort(ids)
 	ids = slices.Compact(ids)
-	if len(ids) == 0 {
-		return res
+	if len(ids) > 0 {
+		snaps, skipped, rl, err := c.Details(ctx, req.Viewer, ids)
+		res.observe(rl)
+		if err != nil {
+			res.Err = fmt.Errorf("fetch PR detail: %w", err)
+			return res
+		}
+		note(len(ids), skipped)
+		res.Snapshots = snaps
 	}
-	snaps, skipped, rl, err := c.Details(ctx, req.Viewer, ids)
-	res.observe(rl)
-	if err != nil {
-		res.Err = fmt.Errorf("fetch PR detail: %w", err)
-		return res
+	if len(res.Found) == 0 && asked > 0 && missed == asked {
+		// No feed returned a PR and every lookup was refused, as when an
+		// SSO session expires: this poll reached nothing.
+		res.Err = allUnreachable(slices.Collect(maps.Values(unreachable)))
 	}
-	note(skipped)
-	res.Snapshots = snaps
 	return res
+}
+
+// allUnreachable is the error for a poll that reached no PR.
+func allUnreachable(skipped []github.SkippedPR) error {
+	if len(skipped) == 1 {
+		return fmt.Errorf("PR unreachable: %s", github.SkippedTypes(skipped))
+	}
+	return fmt.Errorf("all %d PRs unreachable: %s", len(skipped), github.SkippedTypes(skipped))
 }
 
 func (r *Result) observe(rl github.RateLimit) {
