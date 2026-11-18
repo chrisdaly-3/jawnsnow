@@ -269,6 +269,10 @@ type harness struct {
 	// pollCmd is the first poll, held back so a test can act while it is
 	// in flight.
 	pollCmd tea.Cmd
+	// reviewer is the fake Reviewer when opts.reviews is set. runs are the
+	// review commands the model started, held until runReviews runs them.
+	reviewer *fakeReviewer
+	runs     []tea.Cmd
 	// initMsgs are the messages Init produced other than the load.
 	initMsgs []tea.Msg
 }
@@ -286,6 +290,13 @@ type opts struct {
 	// looks it up.
 	noViewer   bool
 	viewerErrs []error
+	// reviews gives the model a fake Reviewer; reviewsOff is the reason
+	// reviews are unavailable without one.
+	reviews    bool
+	reviewsOff string
+	// auto starts in auto mode; config edits the default config.
+	auto   bool
+	config func(*config.Config)
 }
 
 // newHarness builds a model over a real store seeded with prs, runs Init and
@@ -310,9 +321,20 @@ func newHarness(t *testing.T, o opts, prs ...tracker.Tracked) *harness {
 	for _, p := range prs {
 		h.client.snaps[p.PR.ID] = p.PR
 	}
+	cfg := config.Defaults()
+	if o.auto {
+		cfg.Mode.Default = modeAuto
+	}
+	if o.config != nil {
+		o.config(&cfg)
+	}
 	d := Deps{
-		Config: config.Defaults(), Theme: th, Store: st, Viewer: "me",
-		Reloads: o.reloads, Now: h.clock.Now,
+		Config: cfg, Theme: th, Store: st, Viewer: "me",
+		Reloads: o.reloads, Now: h.clock.Now, ReviewsOff: o.reviewsOff,
+	}
+	if o.reviews {
+		h.reviewer = &fakeReviewer{store: st, clock: h.clock}
+		d.Reviewer = h.reviewer
 	}
 	if !o.noClient {
 		d.Client = h.client
@@ -326,6 +348,7 @@ func newHarness(t *testing.T, o opts, prs ...tracker.Tracked) *harness {
 	m := New(d)
 	m.tick = fakeTick
 	m.open = func(url string) error { h.opened = append(h.opened, url); return nil }
+	m.launch = func(c tea.Cmd) tea.Cmd { h.runs = append(h.runs, c); return nil }
 	m, _ = update(t, m, tea.WindowSizeMsg{Width: 160, Height: 30})
 
 	msgs, _ := runCmd(t, m.Init())
@@ -1123,7 +1146,7 @@ func TestBannersShowUnderTopLine(t *testing.T) {
 }
 
 func TestModeToggle(t *testing.T) {
-	h := newHarness(t, opts{}, wallPR("1"))
+	h := newHarness(t, opts{reviews: true}, wallPR("1"))
 	h.press(t, "m")
 	if !strings.Contains(content(h.m), "◉ auto") {
 		t.Errorf("after m the mode is not auto:\n%s", content(h.m))

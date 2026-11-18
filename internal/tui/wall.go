@@ -67,9 +67,10 @@ type wallModel struct {
 	pick    []string
 	pickIdx int
 
-	w, h  int
-	now   time.Time
-	feeds []string // feed names, for the empty state
+	w, h   int
+	now    time.Time
+	feeds  []string          // feed names, for the empty state
+	badges map[string]string // each PR's Claude badge, by ID
 }
 
 func newWall() wallModel {
@@ -243,6 +244,14 @@ func (m wallModel) key(msg tea.KeyPressMsg, prs []tracker.Tracked) (wallModel, t
 	case "o":
 		if t, ok := m.selected(lanes); ok {
 			return m, nil, actionOpen{URL: t.PR.URL}
+		}
+	case "space":
+		if t, ok := m.selected(lanes); ok {
+			return m, nil, actionReview{ID: t.PR.ID}
+		}
+	case "c":
+		if t, ok := m.selected(lanes); ok {
+			return m, nil, actionPickModel{ID: t.PR.ID}
 		}
 	case "/":
 		m.typing = true
@@ -611,7 +620,7 @@ func (m wallModel) laneBox(cards []tracker.Tracked, lane, w, h int, focused bool
 
 	var content []string
 	for r := first; r < len(cards); r++ {
-		content = append(content, renderCard(cards[r], innerW, focused && r == row, th, m.now, frame)...)
+		content = append(content, badgedCard(cards[r], innerW, focused && r == row, th, m.now, frame, m.badges[cards[r].PR.ID])...)
 		content = append(content, "")
 	}
 	out := []string{top}
@@ -650,7 +659,8 @@ func (m wallModel) narrowView(lanes [laneCount][]tracker.Tracked, width, height 
 			lines = append(lines, narrowHeading(it.lane, lanes[it.lane], width, th, frame))
 			continue
 		}
-		lines = append(lines, renderCard(lanes[it.lane][it.row], width, it.lane == lane && it.row == row, th, m.now, frame)...)
+		t := lanes[it.lane][it.row]
+		lines = append(lines, badgedCard(t, width, it.lane == lane && it.row == row, th, m.now, frame, m.badges[t.PR.ID])...)
 		lines = append(lines, "")
 	}
 	off := m.pos
@@ -671,6 +681,13 @@ func narrowHeading(lane int, cards []tracker.Tracked, width int, th theme.Theme,
 // renderCard draws one PR as cardLines lines, each exactly width cells
 // wide: the repo and number, the title, who and when, and the status chip.
 func renderCard(t tracker.Tracked, width int, selected bool, th theme.Theme, now time.Time, frame int) []string {
+	return badgedCard(t, width, selected, th, now, frame, "")
+}
+
+// badgedCard is renderCard with a Claude badge after the status chip. When
+// both don't fit, the badge takes the chip's place: the lane already
+// groups by status, and the badge is what changes.
+func badgedCard(t tracker.Tracked, width int, selected bool, th theme.Theme, now time.Time, frame int, badge string) []string {
 	st := string(t.Status.Status)
 	marker := " "
 	if selected {
@@ -695,12 +712,22 @@ func renderCard(t tracker.Tracked, width int, selected bool, th theme.Theme, now
 		marker + glyph + " " + th.Accent().Render(ansi.Truncate(ref, textW, "…")),
 		marker + "  " + ansi.Truncate(clean(pr.Title), textW, "…"),
 		marker + "  " + ansi.Truncate(meta, textW, "…"),
-		marker + "  " + ansi.Truncate(th.ChipLine(st), textW, "…"),
+		marker + "  " + ansi.Truncate(chipAndBadge(th.ChipLine(st), badge, textW), textW, "…"),
 	}
 	for i := range lines {
 		lines[i] = padTo(lines[i], width)
 	}
 	return lines
+}
+
+func chipAndBadge(chip, badge string, width int) string {
+	switch {
+	case badge == "":
+		return chip
+	case lipgloss.Width(chip)+2+lipgloss.Width(badge) <= width:
+		return chip + "  " + badge
+	}
+	return badge
 }
 
 // spinGlyph is the frame of the card's own status spinner, or "" when the

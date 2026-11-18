@@ -31,6 +31,8 @@ var keyMap = []keySection{
 		{"j k", "previous or next card"},
 		{"x", "hide"},
 		{"o", "open in the browser"},
+		{"space", "review with Claude now"},
+		{"c", "review with a model and effort you pick"},
 		{"/", "filter"},
 		{"a", "filter by author"},
 		{"esc", "clear the filters"},
@@ -52,7 +54,7 @@ func allKeys() []keyHint {
 
 // footerKeys are the short hints for each view, before the global ones.
 var footerKeys = map[View][]keyHint{
-	ViewWall: {{"h/l", "lane"}, {"j/k", "card"}, {"x", "hide"}, {"o", "open"}, {"/", "filter"}, {"a", "author"}},
+	ViewWall: {{"h/l", "lane"}, {"j/k", "card"}, {"space", "review"}, {"x", "hide"}, {"o", "open"}, {"/", "filter"}, {"a", "author"}},
 	ViewDone: {{"j/k", "row"}, {"x", "unhide"}, {"o", "open"}},
 }
 

@@ -19,6 +19,7 @@ import (
 	"github.com/chrisdaly-3/jawnsnow/internal/config"
 	"github.com/chrisdaly-3/jawnsnow/internal/github"
 	"github.com/chrisdaly-3/jawnsnow/internal/poll"
+	"github.com/chrisdaly-3/jawnsnow/internal/review"
 	"github.com/chrisdaly-3/jawnsnow/internal/status"
 	"github.com/chrisdaly-3/jawnsnow/internal/store"
 	"github.com/chrisdaly-3/jawnsnow/internal/theme"
@@ -67,6 +68,10 @@ type Deps struct {
 	ConfigBanner string
 	Reloads      <-chan config.Reload
 	Now          func() time.Time
+	// Reviewer runs Claude reviews. It is nil when reviews are unavailable,
+	// for the reason in ReviewsOff.
+	Reviewer   Reviewer
+	ReviewsOff string
 }
 
 type (
@@ -98,12 +103,18 @@ type (
 	actionHide   struct{ ID string }
 	actionOpen   struct{ URL string }
 	actionUnhide struct{ ID string }
+	// actionReview forces a review; actionPickModel opens the model picker
+	// for one.
+	actionReview    struct{ ID string }
+	actionPickModel struct{ ID string }
 )
 
-func (actionNone) isAction()   {}
-func (actionHide) isAction()   {}
-func (actionOpen) isAction()   {}
-func (actionUnhide) isAction() {}
+func (actionNone) isAction()      {}
+func (actionHide) isAction()      {}
+func (actionOpen) isAction()      {}
+func (actionUnhide) isAction()    {}
+func (actionReview) isAction()    {}
+func (actionPickModel) isAction() {}
 
 // Model is the root Bubble Tea model.
 type Model struct {
@@ -117,6 +128,12 @@ type Model struct {
 	now     func() time.Time
 	tick    func(time.Duration, func(time.Time) tea.Msg) tea.Cmd
 	open    func(url string) error
+	// launch wraps each review's command; tests hold them back with it.
+	launch func(tea.Cmd) tea.Cmd
+
+	reviews reviewsModel
+	// session is the Agent view's model picks for this session.
+	session review.SessionTiers
 
 	prs map[string]tracker.Tracked
 	// loaded is set once the stored PRs arrive; no poll starts before, or
@@ -175,27 +192,28 @@ func New(d Deps) Model {
 		now = time.Now
 	}
 	mode := modeWatcher
-	if d.Config.Mode.Default == modeAuto {
+	if d.Config.Mode.Default == modeAuto && d.Reviewer != nil {
 		mode = modeAuto
 	}
 	return Model{
 		cfg: d.Config, theme: d.Theme, client: d.Client, store: d.Store, viewer: d.Viewer,
 		banners: d.Banners, configBanner: d.ConfigBanner, reloads: d.Reloads, now: now, tick: tea.Tick,
-		open: func(url string) error { return browser.New("", io.Discard, io.Discard).Browse(url) },
-		prs:  map[string]tracker.Tracked{}, wall: newWall(), done: newDone(), dirty: map[string]bool{}, deleted: map[string]bool{},
+		open:   func(url string) error { return browser.New("", io.Discard, io.Discard).Browse(url) },
+		launch: func(c tea.Cmd) tea.Cmd { return c }, reviews: newReviews(d.Reviewer, d.ReviewsOff),
+		prs: map[string]tracker.Tracked{}, wall: newWall(), done: newDone(), dirty: map[string]bool{}, deleted: map[string]bool{},
 		mode: mode, width: 80, height: 24,
 	}
 }
 
 // Init loads the stored PRs, whose arrival starts the first poll, and starts
-// the clock and the config listener.
+// the clock, the review timers and the config listener.
 func (m Model) Init() tea.Cmd {
 	st := m.store
 	load := func() tea.Msg {
 		prs, err := st.LoadTracked(context.Background())
 		return loadedMsg{prs: prs, err: err}
 	}
-	return tea.Batch(load, m.clockTick(), m.listenReloads())
+	return tea.Batch(load, m.clockTick(), m.reviewTicks(), m.listenReloads())
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -208,7 +226,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // ensureSpinner starts the spinner's tick loop when something on the wall
-// is spinning and it isn't running.
+// is spinning or a review runs, and it isn't running.
 func (m Model) ensureSpinner() (Model, tea.Cmd) {
 	if m.spinning || m.spinInterval() == 0 {
 		return m, nil
@@ -222,10 +240,11 @@ func (m Model) spinTick() tea.Cmd {
 }
 
 // spinInterval is the tick period: the fastest spinner among the wall PRs
-// that are spinning. It is 0 when none has a spinner to animate.
+// that are spinning and the running reviews' badges. It is 0 when there is
+// nothing to animate.
 func (m Model) spinInterval() time.Duration {
-	var fastest time.Duration
-	for _, t := range m.prs {
+	fastest := m.reviewSpinInterval()
+	for _, t := range m.displayPRs() {
 		if t.Place != tracker.PlaceWall || !t.Status.Spinning {
 			continue
 		}
@@ -237,6 +256,9 @@ func (m Model) spinInterval() time.Duration {
 }
 
 func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
+	if next, cmd, ok := m.updateReviews(msg); ok {
+		return next, cmd
+	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
@@ -298,6 +320,10 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 }
 
 func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
+	// A review question or the model picker takes every key but ctrl+c.
+	if m.reviews.capturing() && msg.String() != "ctrl+c" {
+		return m.reviewKey(msg)
+	}
 	// An open filter box or author picker takes every key, or typing "q"
 	// would quit. ctrl+c still quits.
 	if m.view == ViewWall && !m.help && m.wall.capturing() && msg.String() != "ctrl+c" {
@@ -306,9 +332,9 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	// The help overlay hides the view, so only the keys that close it or
 	// quit do anything.
 	if m.help {
-		switch msg.String() {
+		switch k := msg.String(); k {
 		case "q", "ctrl+c":
-			return m.quit()
+			return m.quitKey(k)
 		case "?", "esc":
 			m.help = false
 		}
@@ -316,7 +342,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	}
 	switch k := msg.String(); k {
 	case "q", "ctrl+c":
-		return m.quit()
+		return m.quitKey(k)
 	case "?":
 		m.help = true
 	case "esc":
@@ -335,11 +361,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	case "R":
 		return m.startPoll()
 	case "m":
-		if m.mode == modeWatcher {
-			m.mode = modeAuto
-		} else {
-			m.mode = modeWatcher
-		}
+		return m.toggleMode()
 	default:
 		return m.updateView(msg)
 	}
@@ -420,6 +442,10 @@ func (m Model) apply(a action) (Model, tea.Cmd) {
 		}
 		open, url := m.open, a.URL
 		return m, func() tea.Msg { return openedMsg{err: open(url)} }
+	case actionReview:
+		return m.forceReview(a.ID, nil, false)
+	case actionPickModel:
+		return m.openPicker(a.ID), nil
 	}
 	return m, nil
 }
@@ -429,10 +455,13 @@ func (m Model) updatePR(id string, change func(tracker.Tracked, time.Time) track
 	if !ok {
 		return m, nil
 	}
+	prev := m.prs
 	m.prs = maps.Clone(m.prs)
 	m.prs[id] = change(t, m.now())
 	m = m.markSave(id)
-	return m.flush()
+	m, release := m.placesChanged(prev)
+	m, save := m.flush()
+	return m, tea.Batch(save, release)
 }
 
 // startPoll starts a poll unless one is in flight, the stored PRs haven't
@@ -493,7 +522,7 @@ func (m Model) lookUpViewer() (Model, tea.Cmd) {
 func (m Model) finishPoll(res poll.Result) (Model, tea.Cmd) {
 	m.polling = false
 	m.quota.Observe(res.Rate)
-	var save tea.Cmd
+	var save, release, load tea.Cmd
 	m.failNote = ""
 	switch {
 	case github.IsRateLimited(res.Err):
@@ -514,6 +543,7 @@ func (m Model) finishPoll(res poll.Result) (Model, tea.Cmd) {
 		if m.pollIdle {
 			m.lastIdlePoll = m.pollStarted
 		}
+		prev := m.prs
 		next, removed := tracker.Apply(m.prs, tracker.PollInput{
 			Found: res.Found, Snapshots: res.Snapshots, Viewer: m.viewer, Now: now,
 		}, m.cfg)
@@ -522,13 +552,15 @@ func (m Model) finishPoll(res poll.Result) (Model, tea.Cmd) {
 		m = m.markSave(slices.Collect(maps.Keys(next))...)
 		m = m.markDelete(removed...)
 		m, save = m.flush()
+		m, release = m.placesChanged(prev)
+		m, load = m.loadReviewInputs()
 	}
 	wait, reason := m.quota.Next(m.cfg.GitHub.PollInterval.Duration, m.now())
 	m.rateNote = reason
 	m.pollGen++
 	gen := m.pollGen
 	next := m.tick(wait, func(time.Time) tea.Msg { return pollTickMsg{gen: gen} })
-	return m, tea.Batch(save, next)
+	return m, tea.Batch(save, release, load, next)
 }
 
 // feedNote is the banner for searches a poll skipped: each error names its
@@ -748,15 +780,18 @@ func (m Model) body(width, height int) string {
 	if m.help {
 		return m.helpBody(width, height)
 	}
+	if m.reviews.picker != nil {
+		return m.pickerBody(width, height)
+	}
 	switch m.view {
 	case ViewWall:
 		w := m.wall
-		w.now, w.feeds = m.now(), m.feedNames()
+		w.now, w.feeds, w.badges = m.now(), m.feedNames(), m.reviewBadges(m.spinFrame)
 		w.setSize(width, height)
-		return w.view(width, height, m.wallPRs(), m.theme, m.spinFrame)
+		return w.view(width, height, m.displayPRs(), m.theme, m.spinFrame)
 	case ViewDone:
 		d := m.done
-		d.now, d.focus = m.now(), m.focus
+		d.now, d.focus, d.verdicts = m.now(), m.focus, m.reviewVerdicts()
 		d.setSize(width, height)
 		return d.view(width, height, m.wallPRs(), m.theme)
 	case ViewAgent:

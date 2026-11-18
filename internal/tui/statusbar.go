@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"fmt"
 	"math"
 	"strconv"
 	"strings"
@@ -23,7 +22,7 @@ func (m Model) topLine(width int) string {
 	left := " " + th.Accent().Render("❄ jawnSnow") + "   " +
 		th.Accent().Render("◉ "+m.mode) + sep +
 		m.pollStatus() + sep +
-		th.Muted().Render(fmt.Sprintf("$0.00 / $%s today", money(m.cfg.Review.Budget.DailyUSD))) + sep +
+		m.spendLine() + sep +
 		th.Muted().Render(m.ghRemaining())
 	tabs := m.tabs()
 	gap := width - lipgloss.Width(left) - lipgloss.Width(tabs) - 1
@@ -93,6 +92,9 @@ func (m Model) bannerLines(width int) []string {
 }
 
 func (m Model) footer(width int) string {
+	if p := m.reviewPrompt(); p != "" {
+		return ansi.Truncate(" "+p, max(width, 0), "…")
+	}
 	hints := footerHints(m.view)
 	parts := make([]string, len(hints))
 	for i, k := range hints {

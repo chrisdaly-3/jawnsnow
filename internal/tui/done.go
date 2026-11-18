@@ -42,6 +42,9 @@ type doneModel struct {
 	w, h int
 	now  time.Time
 	loc  *time.Location // the zone dates are shown in
+	// verdicts is each waiting PR's latest Claude verdict, by ID. The root
+	// model copies it in before each view.
+	verdicts map[string]string
 }
 
 func newDone() doneModel { return doneModel{w: 120, h: 30, loc: time.Local} }
@@ -192,12 +195,13 @@ func (m doneModel) columns(pane, width int) []table.Column {
 	}
 }
 
-// cells is one row. The last column is blank until plans 2 and 3 fill it.
+// cells is one row. The merged table's last column is blank until plan 3
+// fills it.
 func (m doneModel) cells(pane int, t tracker.Tracked, th theme.Theme) table.Row {
 	pr := clean(t.PR.Repo+"#"+strconv.Itoa(t.PR.Number)) + " " + clean(t.PR.Title)
 	author := clean(t.PR.Author)
 	if pane == paneWaiting {
-		return table.Row{pr, author, string(t.WaitReason), sinceAge(t.WaitingSince, m.now), ""}
+		return table.Row{pr, author, string(t.WaitReason), sinceAge(t.WaitingSince, m.now), m.verdicts[t.PR.ID]}
 	}
 	return table.Row{pr, author, th.ChipLine(string(t.Status.Status)), doneDate(t.DoneAt, m.loc), ""}
 }
