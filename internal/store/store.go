@@ -22,6 +22,32 @@ var migrations = []string{
 		updated_at TEXT,
 		data TEXT
 	)`,
+	`CREATE TABLE reviews (
+		id TEXT PRIMARY KEY,
+		pr_id TEXT,
+		started_at TEXT,
+		mode TEXT,
+		outcome TEXT,
+		data TEXT
+	)`,
+	`CREATE TABLE findings (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		review_id TEXT,
+		data TEXT
+	)`,
+	`CREATE TABLE cost_ledger (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		at TEXT,
+		review_id TEXT,
+		pr_id TEXT,
+		cost_usd REAL,
+		data TEXT
+	)`,
+	`CREATE TABLE worktree_slots (
+		path TEXT PRIMARY KEY,
+		repo TEXT,
+		data TEXT
+	)`,
 }
 
 type Store struct {
