@@ -29,7 +29,7 @@ type Client interface {
 	Fingerprints(ctx context.Context, ids []string) ([]Fingerprint, RateLimit, error)
 	// Details fetches full Snapshots in batches of aliases, a few batches at
 	// a time, in the order of ids. A PR that no longer resolves is left out.
-	Details(ctx context.Context, ids []string) ([]Snapshot, RateLimit, error)
+	Details(ctx context.Context, viewer string, ids []string) ([]Snapshot, RateLimit, error)
 }
 
 // Doer is the slice of go-gh's GraphQLClient the client uses.
@@ -163,7 +163,7 @@ func (c *client) Fingerprints(ctx context.Context, ids []string) ([]Fingerprint,
 	return fps, total, nil
 }
 
-func (c *client) Details(ctx context.Context, ids []string) ([]Snapshot, RateLimit, error) {
+func (c *client) Details(ctx context.Context, viewer string, ids []string) ([]Snapshot, RateLimit, error) {
 	var batches [][]string
 	for start := 0; start < len(ids); start += detailBatch {
 		batches = append(batches, ids[start:min(start+detailBatch, len(ids))])
@@ -188,7 +188,7 @@ func (c *client) Details(ctx context.Context, ids []string) ([]Snapshot, RateLim
 			if ctx.Err() != nil {
 				return // another batch failed
 			}
-			snaps, rl, err := c.fetchBatch(ctx, batch)
+			snaps, rl, err := c.fetchBatch(ctx, viewer, batch)
 			results[i] = result{snaps, rl}
 			if err != nil {
 				// The first error is the cause; the rest are its cancellation.
@@ -213,10 +213,11 @@ func (c *client) Details(ctx context.Context, ids []string) ([]Snapshot, RateLim
 
 // fetchBatch fetches one batch of aliases, then any further pages of each
 // PR's check contexts.
-func (c *client) fetchBatch(ctx context.Context, batch []string) ([]Snapshot, RateLimit, error) {
+func (c *client) fetchBatch(ctx context.Context, viewer string, batch []string) ([]Snapshot, RateLimit, error) {
 	var snaps []Snapshot
 	var total RateLimit
-	vars := make(map[string]any, len(batch))
+	vars := make(map[string]any, len(batch)+1)
+	vars["login"] = viewer
 	aliases := make(map[string]bool, len(batch))
 	for i, id := range batch {
 		vars[fmt.Sprintf("id%d", i)] = id

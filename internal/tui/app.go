@@ -416,7 +416,7 @@ func (m Model) startPoll() (Model, tea.Cmd) {
 	}
 	slices.Sort(watch)
 	slices.Sort(force)
-	req := poll.Request{Feeds: slices.Clone(m.cfg.Feeds), Known: known, Watch: watch, DetailIDs: force, Now: now}
+	req := poll.Request{Viewer: m.viewer, Feeds: slices.Clone(m.cfg.Feeds), Known: known, Watch: watch, DetailIDs: force, Now: now}
 	client := m.client
 	m.polling, m.pollStarted, m.pollIdle = true, now, idleDue
 	return m, func() tea.Msg {

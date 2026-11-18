@@ -30,7 +30,8 @@ func TestDetailQueryAliasesEachPR(t *testing.T) {
 	for _, want := range []string{
 		"p0: node(id: $id0)", "p1: node(id: $id1)",
 		"isRequired(pullRequestId: $id0)", "isRequired(pullRequestId: $id1)",
-		"rateLimit", "$id0: ID!", "$id1: ID!",
+		"rateLimit", "$id0: ID!", "$id1: ID!", "$login: String!",
+		"reviews(last:50)", "mine: reviews(last: 10, author: $login)",
 	} {
 		if !strings.Contains(q, want) {
 			t.Errorf("DetailQuery(2) missing %q", want)

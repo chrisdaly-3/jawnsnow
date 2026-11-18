@@ -36,7 +36,7 @@ func (fakeClient) Search(context.Context, string) ([]github.Fingerprint, github.
 func (fakeClient) Fingerprints(context.Context, []string) ([]github.Fingerprint, github.RateLimit, error) {
 	return nil, github.RateLimit{}, nil
 }
-func (fakeClient) Details(context.Context, []string) ([]github.Snapshot, github.RateLimit, error) {
+func (fakeClient) Details(context.Context, string, []string) ([]github.Snapshot, github.RateLimit, error) {
 	return nil, github.RateLimit{}, nil
 }
 

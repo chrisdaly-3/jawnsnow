@@ -62,7 +62,7 @@ func (f *fakeClient) Fingerprints(_ context.Context, ids []string) ([]github.Fin
 	return out, f.rate, nil
 }
 
-func (f *fakeClient) Details(_ context.Context, ids []string) ([]github.Snapshot, github.RateLimit, error) {
+func (f *fakeClient) Details(_ context.Context, _ string, ids []string) ([]github.Snapshot, github.RateLimit, error) {
 	f.detail = append(f.detail, slices.Clone(ids))
 	var out []github.Snapshot
 	for _, id := range ids {

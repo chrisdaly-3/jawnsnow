@@ -154,6 +154,32 @@
      "createdAt": "2026-11-17T09:30:00Z"
     }
    ]
+  },
+  "mine": {
+   "nodes": [
+    {
+     "author": {
+      "login": "me"
+     },
+     "state": "APPROVED",
+     "body": "",
+     "submittedAt": "2026-11-16T09:00:00Z",
+     "commit": {
+      "oid": "c2"
+     }
+    },
+    {
+     "author": {
+      "login": "alice"
+     },
+     "state": "COMMENTED",
+     "body": "hmm",
+     "submittedAt": "2026-11-17T10:00:00Z",
+     "commit": {
+      "oid": "c1"
+     }
+    }
+   ]
   }
  },
  "p1": {
@@ -211,6 +237,9 @@
    "nodes": []
   },
   "comments": {
+   "nodes": []
+  },
+  "mine": {
    "nodes": []
   }
  },

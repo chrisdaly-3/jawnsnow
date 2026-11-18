@@ -35,13 +35,19 @@ const checkContextNodes = `pageInfo{hasNextPage endCursor} nodes{__typename ` +
 	`... on CheckRun{name status conclusion isRequired(pullRequestId: %[1]s)} ` +
 	`... on StatusContext{context state isRequired(pullRequestId: %[1]s)}}`
 
+const reviewNodes = `nodes{author{login} state body submittedAt commit{oid}}`
+
 // Each alias inlines its own ID variable because isRequired takes the pull
-// request ID, which rules out a shared fragment. %[1]d is the alias index.
+// request ID, which rules out a shared fragment. %[1]s is that variable.
+// Thread replies and bot comments are reviews too, so on a busy PR the
+// viewer's own review can fall outside the last 50; "mine" fetches it by
+// author.
 const prSelection = `id number title url state isDraft updatedAt mergedAt closedAt additions deletions baseRefName headRefOid reviewDecision
     author{login} repository{nameWithOwner} labels(first:20){nodes{name}}
     head: commits(last:1){nodes{commit{oid committedDate statusCheckRollup{state contexts(first:100){` + checkContextNodes + `}}}}}
     commits(last:100){nodes{commit{oid parents(first:2){nodes{oid}}}}}
-    reviews(last:50){nodes{author{login} state body submittedAt commit{oid}}}
+    reviews(last:50){` + reviewNodes + `}
+    mine: reviews(last: 10, author: $login){` + reviewNodes + `}
     comments(last:20){nodes{author{login} createdAt}}`
 
 // checksPageQuery fetches the next page of check contexts for one pull request.
@@ -71,14 +77,13 @@ func FeedQuery(f config.Feed, now time.Time) string {
 }
 
 // DetailQuery builds a query that fetches n pull requests as aliases p0..p{n-1},
-// taking their node IDs from variables $id0..$id{n-1}.
+// taking their node IDs from variables $id0..$id{n-1} and the viewer's login
+// from $login.
 func DetailQuery(n int) string {
 	var decl, body strings.Builder
+	decl.WriteString("$login: String!")
 	for i := range n {
-		if i > 0 {
-			decl.WriteString(", ")
-		}
-		fmt.Fprintf(&decl, "$id%d: ID!", i)
+		fmt.Fprintf(&decl, ", $id%d: ID!", i)
 		fmt.Fprintf(&body, "  p%d: node(id: $id%d) { ... on PullRequest {\n    %s\n  } }\n",
 			i, i, fmt.Sprintf(prSelection, fmt.Sprintf("$id%d", i)))
 	}

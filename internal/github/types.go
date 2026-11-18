@@ -34,6 +34,13 @@ type Review struct {
 	SubmittedAt                    time.Time
 }
 
+// same reports whether r and o are one review, fetched twice. The query
+// doesn't ask for review IDs, so every field must match.
+func (r Review) same(o Review) bool {
+	return r.Author == o.Author && r.State == o.State && r.Body == o.Body &&
+		r.CommitOID == o.CommitOID && r.SubmittedAt.Equal(o.SubmittedAt)
+}
+
 type Comment struct {
 	Author string
 	At     time.Time

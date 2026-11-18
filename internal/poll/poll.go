@@ -13,7 +13,9 @@ import (
 // Request is one poll. Known is the fingerprint of every tracked PR's last
 // snapshot. Watch are the tracked PRs due a check whether or not a feed
 // returns them. DetailIDs get full detail whatever their fingerprint says.
+// Viewer is the gh user, whose own reviews detail always includes.
 type Request struct {
+	Viewer    string
 	Feeds     []config.Feed
 	Known     map[string]github.Fingerprint
 	Watch     []string
@@ -94,7 +96,7 @@ func Fetch(ctx context.Context, c github.Client, req Request) Result {
 	if len(ids) == 0 {
 		return res
 	}
-	snaps, rl, err := c.Details(ctx, ids)
+	snaps, rl, err := c.Details(ctx, req.Viewer, ids)
 	res.observe(rl)
 	if err != nil {
 		res.Err = fmt.Errorf("fetch PR detail: %w", err)

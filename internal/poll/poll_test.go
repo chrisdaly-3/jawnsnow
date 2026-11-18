@@ -30,6 +30,7 @@ type fakeClient struct {
 
 	fpCalls     [][]string
 	detailCalls [][]string
+	viewers     []string
 }
 
 func (f *fakeClient) Viewer(context.Context) (string, error) { return "me", nil }
@@ -73,8 +74,9 @@ func (f *fakeClient) Fingerprints(_ context.Context, ids []string) ([]github.Fin
 	return out, github.RateLimit{}, nil
 }
 
-func (f *fakeClient) Details(_ context.Context, ids []string) ([]github.Snapshot, github.RateLimit, error) {
+func (f *fakeClient) Details(_ context.Context, viewer string, ids []string) ([]github.Snapshot, github.RateLimit, error) {
 	f.detailCalls = append(f.detailCalls, slices.Clone(ids))
+	f.viewers = append(f.viewers, viewer)
 	if f.detailErr != nil {
 		return nil, github.RateLimit{}, f.detailErr
 	}
@@ -96,9 +98,12 @@ func TestFetchUnionsFeedsAndDetails(t *testing.T) {
 		feedA.Query: {"1", "2"},
 		feedB.Query: {"2", "3"},
 	}}
-	res := Fetch(context.Background(), c, Request{Feeds: []config.Feed{feedA, feedB}, DetailIDs: []string{"4"}, Now: now})
+	res := Fetch(context.Background(), c, Request{Viewer: "me", Feeds: []config.Feed{feedA, feedB}, DetailIDs: []string{"4"}, Now: now})
 	if res.Err != nil {
 		t.Fatalf("Err = %v", res.Err)
+	}
+	if !reflect.DeepEqual(c.viewers, []string{"me"}) {
+		t.Errorf("Details viewers = %v, want [me]", c.viewers)
 	}
 	wantFound := map[string][]string{"1": {"A"}, "2": {"A", "B"}, "3": {"B"}}
 	if !reflect.DeepEqual(res.Found, wantFound) {

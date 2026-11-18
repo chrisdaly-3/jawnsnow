@@ -75,7 +75,7 @@ func TestDetailPaginatesChecks(t *testing.T) {
 		}
 		return fixture(t, "detail_checks_page2.json")
 	}}
-	snaps, _, err := NewClient(d).Details(context.Background(), []string{"PR_p0", "PR_p1"})
+	snaps, _, err := NewClient(d).Details(context.Background(), "me", []string{"PR_p0", "PR_p1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,13 +117,16 @@ func TestDetailsBatchesOf10InOrder(t *testing.T) {
 	// The middle batch reports the lowest remaining budget.
 	rem := func(id0 string) int { return map[string]int{"PR_000": 4000, "PR_010": 3900, "PR_020": 3950}[id0] }
 	d := &fakeDoer{respond: func(_ int, _ string, vars map[string]any) []byte { return echoBatch(vars, rem) }}
-	snaps, rl, err := NewClient(d).Details(context.Background(), ids)
+	snaps, rl, err := NewClient(d).Details(context.Background(), "me", ids)
 	if err != nil {
 		t.Fatal(err)
 	}
 	sizes := map[string]int{}
 	for _, c := range d.calls {
-		sizes[c.vars["id0"].(string)] = len(c.vars)
+		sizes[c.vars["id0"].(string)] = len(c.vars) - 1 // all but $login
+		if c.vars["login"] != "me" {
+			t.Errorf("$login = %v, want the viewer", c.vars["login"])
+		}
 	}
 	if want := map[string]int{"PR_000": 10, "PR_010": 10, "PR_020": 5}; !maps.Equal(sizes, want) {
 		t.Errorf("batch sizes by first ID = %v, want %v", sizes, want)
@@ -170,7 +173,7 @@ func TestDetailsRunsAtMostThreeBatchesAtOnce(t *testing.T) {
 	g := &gatedDoer{limit: 3, full: make(chan struct{}), release: make(chan struct{})}
 	done := make(chan error, 1)
 	go func() {
-		_, _, err := NewClient(g).Details(context.Background(), manyIDs(70))
+		_, _, err := NewClient(g).Details(context.Background(), "me", manyIDs(70))
 		done <- err
 	}()
 	select {
@@ -194,7 +197,7 @@ func TestDetailsSkipsUnreachablePRs(t *testing.T) {
 		respond: func(int, string, map[string]any) []byte { return fixture(t, "detail_unreachable.json") },
 		fail:    func(int, string, map[string]any) error { return gqlErr("NOT_FOUND", "p1") },
 	}
-	snaps, rl, err := NewClient(d).Details(context.Background(), []string{"PR_p1", "PR_gone", "ISSUE_1"})
+	snaps, rl, err := NewClient(d).Details(context.Background(), "me", []string{"PR_p1", "PR_gone", "ISSUE_1"})
 	if err != nil {
 		t.Fatalf("Details error = %v, want the reachable PR", err)
 	}
@@ -217,7 +220,7 @@ func TestDetailsFailsOnOtherGraphQLErrors(t *testing.T) {
 				respond: func(int, string, map[string]any) []byte { return fixture(t, "detail_unreachable.json") },
 				fail:    func(int, string, map[string]any) error { return e },
 			}
-			_, _, err := NewClient(d).Details(context.Background(), []string{"PR_p1", "PR_gone", "ISSUE_1"})
+			_, _, err := NewClient(d).Details(context.Background(), "me", []string{"PR_p1", "PR_gone", "ISSUE_1"})
 			var got *api.GraphQLError
 			if !errors.As(err, &got) || got != e {
 				t.Fatalf("Details error = %v, want the GraphQL error", err)
@@ -241,7 +244,7 @@ func TestDetailsFailsWhenChecksPageFails(t *testing.T) {
 			return nil
 		},
 	}
-	if _, _, err := NewClient(d).Details(context.Background(), []string{"PR_p0", "PR_p1"}); err == nil {
+	if _, _, err := NewClient(d).Details(context.Background(), "me", []string{"PR_p0", "PR_p1"}); err == nil {
 		t.Fatal("Details succeeded although a checks page failed")
 	}
 }

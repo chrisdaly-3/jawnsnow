@@ -33,12 +33,15 @@ func TestParseDetail(t *testing.T) {
 	assertEq(t, len(snap.Checks), 2)
 	assertEq(t, snap.Checks[0], Check{"ci/build", CheckPending, true})
 	assertEq(t, snap.Checks[1], Check{"lint", CheckSuccess, false})
-	assertEq(t, len(snap.Reviews), 3)
-	assertEq(t, snap.Reviews[1].CommitOID, "c2")
-	assertEq(t, snap.Reviews[1].Author, "bob")
+	// The viewer's own review arrives only in "mine"; the other "mine" entry
+	// repeats alice's and is dropped. Reviews run oldest to newest.
+	assertEq(t, len(snap.Reviews), 4)
+	assertEq(t, snap.Reviews[0].Author, "me")
+	assertEq(t, snap.Reviews[2].CommitOID, "c2")
+	assertEq(t, snap.Reviews[2].Author, "bob")
 	// A deleted user and a missing commit parse to empty strings.
-	assertEq(t, snap.Reviews[2].Author, "")
-	assertEq(t, snap.Reviews[2].CommitOID, "")
+	assertEq(t, snap.Reviews[3].Author, "")
+	assertEq(t, snap.Reviews[3].CommitOID, "")
 	assertEq(t, len(snap.Comments), 2)
 	assertEq(t, snap.Comments[1].Author, "")
 	assertEq(t, len(snap.Commits), 3)

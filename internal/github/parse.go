@@ -2,6 +2,7 @@ package github
 
 import (
 	"encoding/json"
+	"slices"
 	"time"
 )
 
@@ -43,6 +44,30 @@ type rollupCommit struct {
 			Contexts contextsPage `json:"contexts"`
 		} `json:"statusCheckRollup"`
 	} `json:"commit"`
+}
+
+type reviewsPage struct {
+	Nodes []struct {
+		Author      *loginNode `json:"author"`
+		State       string     `json:"state"`
+		Body        string     `json:"body"`
+		SubmittedAt time.Time  `json:"submittedAt"`
+		Commit      *struct {
+			OID string `json:"oid"`
+		} `json:"commit"`
+	} `json:"nodes"`
+}
+
+func (p reviewsPage) reviews() []Review {
+	var out []Review
+	for _, r := range p.Nodes {
+		rev := Review{Author: login(r.Author), State: r.State, Body: r.Body, SubmittedAt: r.SubmittedAt}
+		if r.Commit != nil {
+			rev.CommitOID = r.Commit.OID
+		}
+		out = append(out, rev)
+	}
+	return out
 }
 
 type prNode struct {
@@ -93,17 +118,8 @@ type prNode struct {
 			} `json:"commit"`
 		} `json:"nodes"`
 	} `json:"commits"`
-	Reviews struct {
-		Nodes []struct {
-			Author      *loginNode `json:"author"`
-			State       string     `json:"state"`
-			Body        string     `json:"body"`
-			SubmittedAt time.Time  `json:"submittedAt"`
-			Commit      *struct {
-				OID string `json:"oid"`
-			} `json:"commit"`
-		} `json:"nodes"`
-	} `json:"reviews"`
+	Reviews  reviewsPage `json:"reviews"`
+	Mine     reviewsPage `json:"mine"`
 	Comments struct {
 		Nodes []struct {
 			Author    *loginNode `json:"author"`
@@ -142,13 +158,14 @@ func parsePRPage(raw json.RawMessage) (Snapshot, pageInfo, error) {
 		}
 		s.Commits = append(s.Commits, commit)
 	}
-	for _, r := range n.Reviews.Nodes {
-		rev := Review{Author: login(r.Author), State: r.State, Body: r.Body, SubmittedAt: r.SubmittedAt}
-		if r.Commit != nil {
-			rev.CommitOID = r.Commit.OID
+	// The viewer's reviews usually appear in both lists.
+	s.Reviews = n.Reviews.reviews()
+	for _, r := range n.Mine.reviews() {
+		if !slices.ContainsFunc(s.Reviews, r.same) {
+			s.Reviews = append(s.Reviews, r)
 		}
-		s.Reviews = append(s.Reviews, rev)
 	}
+	slices.SortStableFunc(s.Reviews, func(a, b Review) int { return a.SubmittedAt.Compare(b.SubmittedAt) })
 	for _, c := range n.Comments.Nodes {
 		s.Comments = append(s.Comments, Comment{Author: login(c.Author), At: c.CreatedAt})
 	}
