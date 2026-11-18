@@ -504,3 +504,23 @@ func TestSpinTickUsesFastestSpinner(t *testing.T) {
 		t.Errorf("interval = %v, want spinner.Line.FPS %v", got, spinner.Line.FPS)
 	}
 }
+
+// On first launch every head is seen at once, so the age comes from the
+// head commit's time when GitHub gave one.
+func TestCardAgeUsesHeadCommitTime(t *testing.T) {
+	for _, c := range []struct {
+		name                         string
+		committed, headSeen, firstAt time.Time
+		want                         string
+	}{
+		{"commit time", t0.Add(-3 * time.Hour), t0, t0, "3h"},
+		{"no commit time", time.Time{}, t0.Add(-20 * time.Minute), t0.Add(-time.Hour), "20m"},
+		{"only first seen", time.Time{}, time.Time{}, t0.Add(-50 * time.Hour), "2d"},
+		{"nothing", time.Time{}, time.Time{}, time.Time{}, "–"},
+	} {
+		tr := tracker.Tracked{PR: github.Snapshot{HeadCommittedAt: c.committed}, HeadSeenAt: c.headSeen, FirstSeen: c.firstAt}
+		if got := cardAge(tr, t0); got != c.want {
+			t.Errorf("%s: cardAge = %q, want %q", c.name, got, c.want)
+		}
+	}
+}

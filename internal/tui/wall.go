@@ -740,9 +740,13 @@ func repoShort(repo string) string {
 	return name
 }
 
-// cardAge is how long ago the PR's current head was first seen.
+// cardAge is the age of the PR's current head: its commit time, or when snow
+// first saw it if GitHub gave no commit time.
 func cardAge(t tracker.Tracked, now time.Time) string {
-	since := t.HeadSeenAt
+	since := t.PR.HeadCommittedAt
+	if since.IsZero() {
+		since = t.HeadSeenAt
+	}
 	if since.IsZero() {
 		since = t.FirstSeen
 	}
