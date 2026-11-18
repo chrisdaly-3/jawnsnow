@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -148,7 +149,7 @@ func TestRefusesNewerSchema(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "newer than this snow") {
 		t.Fatalf("Open error = %v, want newer-than-this-snow", err)
 	}
-	if want := "database schema v99 is newer than this snow (v1); upgrade snow"; err.Error() != want {
+	if want := fmt.Sprintf("database schema v99 is newer than this snow (v%d); upgrade snow", len(migrations)); err.Error() != want {
 		t.Errorf("error = %q, want %q", err, want)
 	}
 }
