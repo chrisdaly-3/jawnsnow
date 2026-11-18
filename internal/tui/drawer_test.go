@@ -132,7 +132,7 @@ func TestDrawerPassNavigation(t *testing.T) {
 	d, c := openDrawer(t, 160, 40, newest, mid, oldest)
 	header := func() string { return ansi.Strip(renderDrawer(d, c, 40)) }
 
-	if !strings.Contains(header(), "claude-sonnet-5-5") {
+	if !strings.Contains(header(), "claude-sonnet-5-5") || !strings.Contains(header(), "pass 3/3") {
 		t.Fatalf("opens on the newest pass:\n%s", header())
 	}
 	d, _, _ = d.update(key("<"), c)
@@ -141,13 +141,13 @@ func TestDrawerPassNavigation(t *testing.T) {
 	}
 	d, _, _ = d.update(key("<"), c)
 	d, _, _ = d.update(key("<"), c) // stays on the oldest
-	if !strings.Contains(header(), "claude-fable-5-2") || !strings.Contains(header(), "pass 3/3") {
+	if !strings.Contains(header(), "claude-fable-5-2") || !strings.Contains(header(), "pass 1/3") {
 		t.Errorf("< twice should show the oldest pass:\n%s", header())
 	}
 	d, _, _ = d.update(key(">"), c)
 	d, _, _ = d.update(key(">"), c)
 	d, _, _ = d.update(key(">"), c) // stays on the newest
-	if !strings.Contains(header(), "claude-sonnet-5-5") || !strings.Contains(header(), "pass 1/3") {
+	if !strings.Contains(header(), "claude-sonnet-5-5") || !strings.Contains(header(), "pass 3/3") {
 		t.Errorf("> should come back to the newest:\n%s", header())
 	}
 }
@@ -494,4 +494,63 @@ func basicColorSeqs(s string) []string {
 		}
 	}
 	return bad
+}
+
+func reviewAt(id, model string, ago time.Duration) store.Review {
+	r := drawerReview()
+	r.ID, r.Model, r.StartedAt = id, model, t0.Add(-ago)
+	return r
+}
+
+func TestDrawerFollowsNewReviewOnNewestPass(t *testing.T) {
+	d, c := openDrawer(t, 160, 40, reviewAt("r1", "claude-opus-5-5", time.Hour))
+	d.sel, d.scroll = 2, 5
+	d, _, _ = d.update(drawerLoadedMsg{PRID: "a", Seq: 1, Reviews: []store.Review{reviewAt("r2", "claude-sonnet-5-5", 0), reviewAt("r1", "claude-opus-5-5", time.Hour)}}, c)
+	if d.current().ID != "r2" || d.sel != 0 || d.scroll != 0 {
+		t.Errorf("on the newest pass: showing %s sel %d scroll %d, want r2 0 0", d.current().ID, d.sel, d.scroll)
+	}
+}
+
+func TestDrawerKeepsOlderPassWhenPinned(t *testing.T) {
+	d, c := openDrawer(t, 160, 40, reviewAt("r2", "claude-sonnet-5-5", 0), reviewAt("r1", "claude-opus-5-5", time.Hour))
+	d, _, _ = d.update(key("<"), c)
+	d, _, _ = d.update(drawerLoadedMsg{PRID: "a", Seq: 1, Reviews: []store.Review{reviewAt("r3", "claude-haiku-5-5", 0), reviewAt("r2", "claude-sonnet-5-5", time.Minute), reviewAt("r1", "claude-opus-5-5", time.Hour)}}, c)
+	if d.current().ID != "r1" || d.pass != 2 {
+		t.Errorf("on an older pass: showing %s at %d, want r1 at 2", d.current().ID, d.pass)
+	}
+}
+
+func TestDrawerDropsOutOfOrderLoads(t *testing.T) {
+	d, c := openDrawer(t, 160, 40)
+	d, _, _ = d.update(drawerLoadedMsg{PRID: "a", Seq: 2, Reviews: []store.Review{reviewAt("new", "m", 0)}}, c)
+	d, _, _ = d.update(drawerLoadedMsg{PRID: "a", Seq: 1, Reviews: []store.Review{reviewAt("old", "m", time.Hour)}}, c)
+	if d.current() == nil || d.current().ID != "new" {
+		t.Errorf("a stale load replaced a newer one: %+v", d.current())
+	}
+}
+
+func TestDrawerSeqIncrementsPerLoad(t *testing.T) {
+	h := drawerHarness(t, opts{})
+	h.press(t, "enter")
+	first := h.m.drawer.issued
+	h.m, _ = settle(t, h.m, key("enter"))
+	if first < 1 || h.m.drawer.issued <= first {
+		t.Errorf("issued %d then %d, want it to grow with each load", first, h.m.drawer.issued)
+	}
+}
+
+func TestDrawerShowsNoHyperlinks(t *testing.T) {
+	r := drawerReview()
+	r.Findings[0].Body = "See [the docs](https://evil.example/phish) and <https://x.example>."
+	d, c := openDrawer(t, 160, 40, r)
+	d, _, _ = d.update(key("n"), c)
+	d, _, _ = d.update(key("n"), c)
+	d, _, _ = d.update(key("n"), c)
+	raw := renderDrawer(d, c, 40)
+	if strings.Contains(raw, "\x1b]8;") {
+		t.Errorf("an OSC 8 hyperlink reaches the screen: %q", raw)
+	}
+	if plain := ansi.Strip(raw); !strings.Contains(plain, "the docs") || !strings.Contains(plain, "https://evil.example/phish") {
+		t.Errorf("the link's text and URL should both show:\n%s", plain)
+	}
 }

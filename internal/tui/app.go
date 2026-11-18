@@ -428,13 +428,15 @@ func (m Model) drawerCtx() drawerCtx {
 }
 
 // loadDrawer reads a PR's reviews in a command.
-func (m Model) loadDrawer(id string) tea.Cmd {
+func (m Model) loadDrawer(id string) (Model, tea.Cmd) {
 	st := m.store
-	return func() tea.Msg {
+	m.drawer.issued++
+	seq := m.drawer.issued
+	return m, func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), inputsTimeout)
 		defer cancel()
 		rs, err := st.Reviews(ctx, id)
-		return drawerLoadedMsg{PRID: id, Reviews: rs, Err: err}
+		return drawerLoadedMsg{PRID: id, Seq: seq, Reviews: rs, Err: err}
 	}
 }
 
@@ -529,7 +531,8 @@ func (m Model) apply(a action) (Model, tea.Cmd) {
 	case actionOpenDrawer:
 		var cmd tea.Cmd
 		m.drawer, cmd = m.drawer.show(a.ID, m.width)
-		return m, tea.Batch(cmd, m.loadDrawer(a.ID))
+		m, load := m.loadDrawer(a.ID)
+		return m, tea.Batch(cmd, load)
 	case actionCopy:
 		return m, tea.SetClipboard(a.Text)
 	}

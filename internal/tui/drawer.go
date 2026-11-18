@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"image/color"
 	"math"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -32,6 +33,7 @@ type drawerTickMsg struct{}
 // drawerLoadedMsg carries a PR's stored reviews, newest first.
 type drawerLoadedMsg struct {
 	PRID    string
+	Seq     int // which load request this answers; see drawerModel.issued
 	Reviews []store.Review
 	Err     error
 }
@@ -70,6 +72,9 @@ type drawerModel struct {
 
 	understanding, assumptions bool
 	flash                      string // a note for the bottom line, until the next key
+	// issued counts load requests; applied is the newest one whose answer
+	// was taken, so a slow older read can't replace a newer one.
+	issued, applied int
 
 	md *markdownCache
 }
@@ -156,15 +161,23 @@ func (m drawerModel) update(msg tea.Msg, c drawerCtx) (drawerModel, tea.Cmd, act
 // loadedReviews takes a PR's reviews. The pass on screen stays on screen if
 // it is still there, so a new review arriving doesn't move you.
 func (m drawerModel) loadedReviews(msg drawerLoadedMsg) drawerModel {
-	if msg.PRID != m.prID || msg.Err != nil {
+	if msg.PRID != m.prID || msg.Err != nil || msg.Seq < m.applied {
 		return m
 	}
+	m.applied = msg.Seq
 	var shown string
 	if r := m.current(); r != nil {
 		shown = r.ID
 	}
+	// On the newest pass you follow the newest review, so a review you
+	// just asked for appears. On an older pass you stay on that review.
+	following := m.pass == 0 || !m.loaded
 	m.reviews, m.loaded = msg.Reviews, true
-	m.pass = max(slices.IndexFunc(m.reviews, func(r store.Review) bool { return r.ID == shown }), 0)
+	if following {
+		m.pass = 0
+	} else {
+		m.pass = max(slices.IndexFunc(m.reviews, func(r store.Review) bool { return r.ID == shown }), 0)
+	}
 	if r := m.current(); r == nil || r.ID != shown {
 		m.sel, m.scroll = 0, 0
 	}
@@ -364,7 +377,7 @@ func (m drawerModel) layout(c drawerCtx) (lines []string, anchors []int) {
 		meta = append(meta, ago(c.Now.Sub(r.StartedAt))+" ago")
 	}
 	if len(m.reviews) > 1 {
-		meta = append(meta, fmt.Sprintf("pass %d/%d", m.pass+1, len(m.reviews)))
+		meta = append(meta, fmt.Sprintf("pass %d/%d", len(m.reviews)-m.pass, len(m.reviews)))
 	}
 	meta = slices.DeleteFunc(meta, func(s string) bool { return s == "" })
 	for _, l := range wrap(strings.Join(meta, " · ")) {
@@ -600,12 +613,19 @@ func (c *markdownCache) renderUncached(src string, key mdKey) []string {
 	if err != nil {
 		return plain()
 	}
+	// Glamour writes a link as an OSC 8 hyperlink around its URL, and has no
+	// option to turn that off. Claude controls the text and the URL, so the
+	// terminal must not get a clickable link; the URL stays visible as text.
+	out = osc8.ReplaceAllString(out, "")
 	lines := strings.Split(strings.Trim(out, "\n"), "\n")
 	for i, l := range lines {
 		lines[i] = strings.TrimRight(l, " ")
 	}
 	return lines
 }
+
+// osc8 matches the start and end of an OSC 8 hyperlink.
+var osc8 = regexp.MustCompile("\x1b\\]8;[^\x07\x1b]*(\x07|\x1b\\\\)")
 
 // glamourStyle is the markdown style: glamour's ASCII style with the
 // theme's colors on top. Glamour's own dark and light styles are not used:
