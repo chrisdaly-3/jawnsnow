@@ -141,6 +141,32 @@ func TestApprovedByYouIsOutlined(t *testing.T) {
 	}
 }
 
+func TestChipLineIsOneLine(t *testing.T) {
+	th := mustNew(t, config.ThemeConfig{})
+	if got, want := th.ChipLine("CI_WAITING"), th.Chip("CI_WAITING"); got != want {
+		t.Errorf("filled ChipLine = %q, want the chip %q", got, want)
+	}
+	chip := th.ChipLine("APPROVED_BY_YOU")
+	if strings.Contains(chip, "\n") || strings.ContainsAny(chip, "│╭╰") {
+		t.Errorf("outlined ChipLine = %q, want one line without the box", chip)
+	}
+	if strings.Contains(chip, "48;5;") || !strings.Contains(chip, "38;5;41") {
+		t.Errorf("outlined ChipLine = %q, want color 41 text and no background", chip)
+	}
+	if got := ansi.Strip(chip); got != "[Approved by you · needs more]" {
+		t.Errorf("outlined ChipLine text = %q, want the label in brackets", got)
+	}
+
+	t.Setenv("NO_COLOR", "1")
+	plain := mustNew(t, config.ThemeConfig{})
+	if got := plain.ChipLine("APPROVED_BY_YOU"); got != "[Approved by you · needs more]" {
+		t.Errorf("NO_COLOR outlined ChipLine = %q", got)
+	}
+	if got := plain.ChipLine("nope"); got != "" {
+		t.Errorf("ChipLine of an unknown status = %q, want empty", got)
+	}
+}
+
 func TestSpinner(t *testing.T) {
 	th := mustNew(t, config.ThemeConfig{})
 	if _, ok := th.Spinner("CI_WAITING"); !ok {

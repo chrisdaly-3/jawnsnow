@@ -524,3 +524,16 @@ func TestCardAgeUsesHeadCommitTime(t *testing.T) {
 		}
 	}
 }
+
+func TestOutlinedChipIsOneLineOnACard(t *testing.T) {
+	out := ansi.Strip(renderWall(t, testWall(90, 12), 90, 12, wallPRs()[7:]))
+	var chip string
+	for _, l := range strings.Split(out, "\n") {
+		if strings.Contains(l, "Approved by you") {
+			chip = l
+		}
+	}
+	if !strings.Contains(chip, "[Approved by you · needs more]") || strings.Contains(chip, "│") {
+		t.Errorf("chip line = %q, want the whole label in brackets and no box:\n%s", chip, out)
+	}
+}

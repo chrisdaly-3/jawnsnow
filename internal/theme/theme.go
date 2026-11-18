@@ -164,6 +164,21 @@ func (t Theme) Chip(status string) string {
 	return lipgloss.NewStyle().Foreground(d.fg).Background(d.color).Render(text)
 }
 
+// ChipLine is Chip on one line, for places with one row for it, like a
+// card. An outlined status shows its label in brackets in its color, which
+// keeps it apart from the filled chips and matches their width.
+func (t Theme) ChipLine(status string) string {
+	d, ok := t.statuses[status]
+	if !ok || !d.outlined {
+		return t.Chip(status)
+	}
+	text := "[" + d.label + "]"
+	if t.noColor {
+		return text
+	}
+	return lipgloss.NewStyle().Foreground(d.color).Render(text)
+}
+
 // Label returns the status's display text.
 func (t Theme) Label(status string) string { return t.statuses[status].label }
 

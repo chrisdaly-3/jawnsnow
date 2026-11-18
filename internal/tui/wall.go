@@ -695,7 +695,7 @@ func renderCard(t tracker.Tracked, width int, selected bool, th theme.Theme, now
 		marker + glyph + " " + th.Accent().Render(ansi.Truncate(ref, textW, "…")),
 		marker + "  " + ansi.Truncate(clean(pr.Title), textW, "…"),
 		marker + "  " + ansi.Truncate(meta, textW, "…"),
-		marker + "  " + ansi.Truncate(chipLine(th, st), textW, "…"),
+		marker + "  " + ansi.Truncate(th.ChipLine(st), textW, "…"),
 	}
 	for i := range lines {
 		lines[i] = padTo(lines[i], width)
@@ -714,13 +714,6 @@ func spinGlyph(th theme.Theme, t tracker.Tracked, frame int) string {
 		return ""
 	}
 	return strings.TrimSpace(sp.Frames[frame%len(sp.Frames)])
-}
-
-// chipLine is the status chip on one line. An outlined chip is three lines
-// tall; its middle line holds the label.
-func chipLine(th theme.Theme, st string) string {
-	lines := strings.Split(th.Chip(st), "\n")
-	return lines[len(lines)/2]
 }
 
 // padTo cuts or pads s to exactly w cells.

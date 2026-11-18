@@ -198,7 +198,7 @@ func (m doneModel) cells(pane int, t tracker.Tracked, th theme.Theme) table.Row 
 	if pane == paneWaiting {
 		return table.Row{pr, author, string(t.WaitReason), sinceAge(t.WaitingSince, m.now), ""}
 	}
-	return table.Row{pr, author, chipLine(th, string(t.Status.Status)), doneDate(t.DoneAt), ""}
+	return table.Row{pr, author, th.ChipLine(string(t.Status.Status)), doneDate(t.DoneAt), ""}
 }
 
 func doneDate(at time.Time) string {
