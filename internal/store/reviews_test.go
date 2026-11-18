@@ -279,3 +279,30 @@ func TestMigratesV1Database(t *testing.T) {
 		}
 	}
 }
+
+func TestReviewIDsOf(t *testing.T) {
+	s, _ := openTemp(t)
+	ctx := context.Background()
+	a := sampleReview("r1", "pr1", t0, 0)
+	b := sampleReview("r2", "pr1", t0.Add(time.Hour), 0)
+	otherNumber := sampleReview("r3", "pr2", t0, 0)
+	otherNumber.Number = 70
+	otherRepo := sampleReview("r4", "pr3", t0, 0)
+	otherRepo.Repo = "acme/gadgets"
+	for _, r := range []Review{a, b, otherNumber, otherRepo} {
+		if err := s.SaveReview(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := s.ReviewIDsOf(ctx, "acme/widgets", 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, []string{"r1", "r2"}) {
+		t.Errorf("ids = %v, want [r1 r2]", got)
+	}
+	none, err := s.ReviewIDsOf(ctx, "acme/widgets", 8)
+	if err != nil || len(none) != 0 {
+		t.Errorf("ids for unreviewed PR = %v, %v", none, err)
+	}
+}

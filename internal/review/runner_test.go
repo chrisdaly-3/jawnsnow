@@ -19,7 +19,8 @@ import (
 
 // TestHelperProcess is the fake claude: the test binary re-executed. It
 // ignores the claude flags, requires a non-empty prompt on stdin, and replays
-// the fixture named by GO_FIXTURE.
+// the fixture named by GO_FIXTURE. With GO_CALL_DIR set it records each call
+// there and replays that call's numbered fixture instead (see recordCall).
 func TestHelperProcess(t *testing.T) {
 	if os.Getenv("GO_WANT_HELPER_PROCESS") != "1" {
 		return
@@ -38,12 +39,16 @@ func TestHelperProcess(t *testing.T) {
 		time.Sleep(30 * time.Second)
 		os.Exit(0)
 	}
-	data, err := os.ReadFile(os.Getenv("GO_FIXTURE"))
+	fixture := os.Getenv("GO_FIXTURE")
+	if dir := os.Getenv("GO_CALL_DIR"); dir != "" {
+		fixture = recordCall(dir, string(in))
+	}
+	data, err := os.ReadFile(fixture)
 	if err != nil {
 		os.Stderr.WriteString(err.Error())
 		os.Exit(4)
 	}
-	os.Stdout.Write(data)
+	os.Stdout.Write(fillPlaceholders(data))
 	if os.Getenv("GO_EXIT_CODE") == "1" {
 		os.Exit(1)
 	}

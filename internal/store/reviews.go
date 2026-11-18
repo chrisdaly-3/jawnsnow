@@ -103,6 +103,28 @@ func (s *Store) Reviews(ctx context.Context, prID string) ([]Review, error) {
 	return s.queryReviews(ctx, `SELECT data FROM reviews WHERE pr_id = ? ORDER BY started_at DESC, id`, prID)
 }
 
+// ReviewIDsOf returns the IDs of every review of PR number in repo, sorted.
+// It looks the PR up by repo and number because a PR that has stopped
+// being tracked may have no stored node ID left to look it up by.
+func (s *Store) ReviewIDsOf(ctx context.Context, repo string, number int) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id FROM reviews
+		WHERE json_extract(data, '$.Repo') = ? AND json_extract(data, '$.Number') = ?
+		ORDER BY id`, repo, number)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 // LatestCompleted returns prID's newest review whose outcome is complete or
 // incomplete; failed runs are skipped.
 func (s *Store) LatestCompleted(ctx context.Context, prID string) (Review, bool, error) {
