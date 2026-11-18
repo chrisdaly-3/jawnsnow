@@ -156,6 +156,17 @@ func TestUsageNamesSnow(t *testing.T) {
 	}
 }
 
+func TestUsageExplainsBareSnowAndHelp(t *testing.T) {
+	var out, errb bytes.Buffer
+	Run([]string{"help"}, &out, &errb)
+	s := out.String()
+	for _, want := range []string{"With no command, snow starts the interface", "  help ", "  config default ", "  version "} {
+		if !strings.Contains(s, want) {
+			t.Errorf("usage missing %q:\n%s", want, s)
+		}
+	}
+}
+
 func TestCLIConfigDefault(t *testing.T) {
 	var out, errb bytes.Buffer
 	if code := Run([]string{"config", "default"}, &out, &errb); code != 0 {

@@ -19,7 +19,15 @@ import (
 	"github.com/chrisdaly-3/jawnsnow/internal/tui"
 )
 
-const usage = "usage: snow <command>\n\ncommands:\n  config default  print the commented default config\n  version         print the version\n"
+const usage = `usage: snow [command]
+
+With no command, snow starts the interface.
+
+commands:
+  config default  print the commented default config
+  version         print the version
+  help            print this help
+`
 
 // Run executes the snow command with args (excluding the program name) and
 // returns the process exit code.
