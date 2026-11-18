@@ -22,6 +22,9 @@ import (
 // slot held for number. An invalid directory is skipped and reported after
 // everything else has been done.
 func (p *Pool) ReleasePR(ctx context.Context, number int, reviewDirs []string) error {
+	if err := validateSlotsDir(p.dir); err != nil {
+		return err
+	}
 	var errs []error
 	if err := deleteRefs(ctx, p.repo, func(n int) bool { return n == number }); err != nil {
 		errs = append(errs, err)
@@ -60,6 +63,9 @@ func (p *Pool) ReleasePR(ctx context.Context, number int, reviewDirs []string) e
 
 // PruneIdle removes the worktrees of free slots unused for longer than idle.
 func (p *Pool) PruneIdle(ctx context.Context, idle time.Duration) error {
+	if err := validateSlotsDir(p.dir); err != nil {
+		return err
+	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	slots, err := p.st.Slots(ctx, p.repo.Name)
@@ -90,8 +96,12 @@ func (p *Pool) PruneIdle(ctx context.Context, idle time.Duration) error {
 // directories only under slotsDir, and refs only under refs/jawnsnow/<N>/
 // for an N not in tracked.
 func Sweep(ctx context.Context, r Repo, slotsDir string, tracked map[int]bool, st SlotStore) error {
+	if err := validateSlotsDir(slotsDir); err != nil {
+		return err
+	}
 	slotsDir = filepath.Clean(slotsDir)
 	var errs []error
+	failed := map[string]bool{} // directories whose worktree git refused to remove
 
 	slots, err := st.Slots(ctx, r.Name)
 	if err != nil {
@@ -136,6 +146,9 @@ func Sweep(ctx context.Context, r Repo, slotsDir string, tracked map[int]bool, s
 		}
 		if !owned {
 			if err := removeWorktree(ctx, r, path); err != nil {
+				// Deleting the directory anyway would leave a stale
+				// registration behind.
+				failed[resolve(path)] = true
 				errs = append(errs, err)
 			}
 		}
@@ -148,7 +161,7 @@ func Sweep(ctx context.Context, r Repo, slotsDir string, tracked map[int]bool, s
 	}
 	for _, e := range entries {
 		path := filepath.Join(slotsDir, e.Name())
-		if known[path] || !strictlyInside(slotsDir, path) {
+		if known[path] || failed[resolve(path)] || !strictlyInside(slotsDir, path) {
 			continue
 		}
 		if err := os.RemoveAll(path); err != nil {
@@ -160,6 +173,21 @@ func Sweep(ctx context.Context, r Repo, slotsDir string, tracked map[int]bool, s
 		errs = append(errs, err)
 	}
 	return errors.Join(errs...)
+}
+
+// validateSlotsDir refuses a slots directory that could make cleanup
+// delete something that is not a jawnSnow worktree pool: it must be absolute,
+// not the root or the home directory, and sit directly under a directory
+// named "worktrees" (<data>/worktrees/<owner>__<name>).
+func validateSlotsDir(dir string) error {
+	c := filepath.Clean(dir)
+	if !filepath.IsAbs(dir) || c == string(filepath.Separator) || filepath.Base(filepath.Dir(c)) != "worktrees" {
+		return fmt.Errorf("unsafe slots directory %q", dir)
+	}
+	if home, err := os.UserHomeDir(); err == nil && samePath(c, home) {
+		return fmt.Errorf("unsafe slots directory %q", dir)
+	}
+	return nil
 }
 
 // deleteRefs deletes refs/jawnsnow/<N>/* for every N that match accepts.

@@ -300,3 +300,48 @@ func TestCleanupNeverTouchesUserState(t *testing.T) {
 	}
 	f.assertUserStateIntact(t, heads)
 }
+
+func TestSweepRejectsUnsafeSlotsDir(t *testing.T) {
+	ctx := context.Background()
+	f := newCleanupFixture(t, 1)
+	home := realPath(t, t.TempDir())
+	t.Setenv("HOME", home)
+	cwd := realPath(t, t.TempDir())
+	t.Chdir(cwd)
+	sentinels := []string{filepath.Join(cwd, "sentinel"), filepath.Join(home, "sentinel")}
+	for _, p := range sentinels {
+		write(t, p, "keep")
+	}
+	for _, dir := range []string{"", ".", "/", home, filepath.Join(f.data, "elsewhere", "o__n")} {
+		if err := Sweep(ctx, f.r, dir, nil, f.st); err == nil {
+			t.Errorf("Sweep(%q) succeeded", dir)
+		}
+	}
+	for _, p := range sentinels {
+		if _, err := os.Stat(p); err != nil {
+			t.Errorf("sentinel %s gone: %v", p, err)
+		}
+	}
+	p := NewPool(f.r, cwd, 1, f.st, time.Now)
+	if p.PruneIdle(ctx, 0) == nil || p.ReleasePR(ctx, 7, nil) == nil {
+		t.Error("pool over an unsafe dir did not refuse")
+	}
+}
+
+func TestSweepKeepsDirWhenRemoveFails(t *testing.T) {
+	ctx := context.Background()
+	f := newCleanupFixture(t, 1)
+	stray := filepath.Join(f.slots, "stray")
+	git(t, f.s.clone, "worktree", "add", "--detach", stray)
+	git(t, f.s.clone, "worktree", "lock", stray)
+	err := Sweep(ctx, f.r, f.slots, nil, f.st)
+	if err == nil {
+		t.Fatal("Sweep hid the failed removal")
+	}
+	if _, err := os.Stat(stray); err != nil {
+		t.Fatalf("directory removed although git kept the registration: %v", err)
+	}
+	if !strings.Contains(worktreeList(t, f.s.clone), stray) {
+		t.Fatal("registration vanished")
+	}
+}
