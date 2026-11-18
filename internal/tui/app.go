@@ -47,6 +47,7 @@ const (
 	// pollTimeout bounds one poll, so a hung request can't block polling
 	// for good: only one poll runs at a time.
 	pollTimeout   = 2 * time.Minute
+	viewerTimeout = 15 * time.Second
 	clockInterval = time.Second
 )
 
@@ -56,7 +57,7 @@ type Deps struct {
 	Theme   theme.Theme
 	Client  github.Client // nil when gh isn't logged in; then snow never polls
 	Store   *store.Store  // required
-	Viewer  string
+	Viewer  string        // the gh user; when empty the model looks it up
 	Banners []string
 	Reloads <-chan config.Reload
 	Now     func() time.Time
@@ -77,6 +78,10 @@ type (
 	}
 	savedMsg  struct{ err error }
 	openedMsg struct{ err error }
+	viewerMsg struct {
+		login string
+		err   error
+	}
 )
 
 // An action is what a view asks the root model to do to a PR.
@@ -235,6 +240,12 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 		}
 	case pollResultMsg:
 		return m.finishPoll(poll.Result(msg))
+	case viewerMsg:
+		if msg.err != nil {
+			return m.finishPoll(poll.Result{Err: fmt.Errorf("look up the gh user: %w", msg.err)})
+		}
+		m.polling, m.viewer = false, msg.login
+		return m.startPoll()
 	case savedMsg:
 		m.saving = false
 		if msg.err != nil {
@@ -405,6 +416,9 @@ func (m Model) startPoll() (Model, tea.Cmd) {
 	if m.client == nil || m.polling || !m.loaded {
 		return m, nil
 	}
+	if m.viewer == "" {
+		return m.lookUpViewer()
+	}
 	now := m.now()
 	idleDue := m.lastIdlePoll.IsZero() || now.Sub(m.lastIdlePoll) >= m.cfg.GitHub.IdlePollInterval.Duration
 	known := make(map[string]github.Fingerprint, len(m.prs))
@@ -430,6 +444,19 @@ func (m Model) startPoll() (Model, tea.Cmd) {
 		ctx, cancel := context.WithTimeout(context.Background(), pollTimeout)
 		defer cancel()
 		return pollResultMsg(poll.Fetch(ctx, client, req))
+	}
+}
+
+// lookUpViewer asks GitHub who the gh user is. Statuses depend on it, so
+// polls wait for it; a failure is retried on the next poll tick.
+func (m Model) lookUpViewer() (Model, tea.Cmd) {
+	client := m.client
+	m.polling = true
+	return m, func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), viewerTimeout)
+		defer cancel()
+		login, err := client.Viewer(ctx)
+		return viewerMsg{login: login, err: err}
 	}
 }
 

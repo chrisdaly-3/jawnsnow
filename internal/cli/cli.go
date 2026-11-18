@@ -2,7 +2,6 @@
 package cli
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -116,24 +115,16 @@ func buildDeps(getenv func(string) string, newClient func() (github.Client, erro
 		_ = st.Close()
 	}
 
+	// The TUI looks up the gh user itself, so a failed lookup is retried
+	// rather than turning polling off for the session.
 	client, err := newClient()
 	switch {
 	case err != nil:
 		banners = append(banners, fmt.Sprintf("gh client: %v; polling is off", err))
-		client = nil
 	case client == nil:
 		banners = append(banners, `gh is not logged in — run "gh auth login"; polling is off`)
-	}
-	if client != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		viewer, err := client.Viewer(ctx)
-		cancel()
-		if err != nil {
-			banners = append(banners, fmt.Sprintf("gh viewer lookup failed: %v; polling is off", err))
-		} else {
-			deps.Client = client
-			deps.Viewer = viewer
-		}
+	default:
+		deps.Client = client
 	}
 
 	// A missing config directory is the first-run case the banner above

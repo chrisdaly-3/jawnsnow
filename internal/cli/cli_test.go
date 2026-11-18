@@ -27,9 +27,15 @@ func noClient() (github.Client, error) { return nil, nil }
 type fakeClient struct {
 	viewer string
 	err    error
+	calls  *int
 }
 
-func (f fakeClient) Viewer(context.Context) (string, error) { return f.viewer, f.err }
+func (f fakeClient) Viewer(context.Context) (string, error) {
+	if f.calls != nil {
+		*f.calls++
+	}
+	return f.viewer, f.err
+}
 func (fakeClient) Search(context.Context, string) ([]github.Fingerprint, github.RateLimit, error) {
 	return nil, github.RateLimit{}, nil
 }
@@ -81,7 +87,7 @@ func TestStartupMissingConfigUsesDefaults(t *testing.T) {
 	}
 }
 
-func TestStartupWithConfigWatchesAndFindsViewer(t *testing.T) {
+func TestStartupWithConfigWatches(t *testing.T) {
 	home := isolate(t)
 	writeConfig(t, home, "")
 	deps, cleanup, err := buildDeps(os.Getenv, func() (github.Client, error) { return fakeClient{viewer: "octo"}, nil })
@@ -89,25 +95,31 @@ func TestStartupWithConfigWatchesAndFindsViewer(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer cleanup()
-	if deps.Viewer != "octo" || deps.Client == nil || deps.Reloads == nil {
-		t.Fatalf("viewer=%q client=%v reloads=%v", deps.Viewer, deps.Client, deps.Reloads)
+	if deps.Client == nil || deps.Reloads == nil {
+		t.Fatalf("client=%v reloads=%v", deps.Client, deps.Reloads)
 	}
 	if hasBanner(deps.Banners, "No config at") {
 		t.Fatalf("unexpected banners %q", deps.Banners)
 	}
 }
 
-func TestStartupViewerErrorTurnsPollingOff(t *testing.T) {
+// The TUI looks the viewer up itself and retries, so a network blip at
+// launch neither blocks the first frame nor turns polling off.
+func TestStartupLeavesTheViewerLookupToTheTUI(t *testing.T) {
 	isolate(t)
+	var calls int
 	deps, cleanup, err := buildDeps(os.Getenv, func() (github.Client, error) {
-		return fakeClient{err: context.DeadlineExceeded}, nil
+		return fakeClient{err: context.DeadlineExceeded, calls: &calls}, nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer cleanup()
-	if deps.Client != nil || !hasBanner(deps.Banners, "polling is off") {
-		t.Fatalf("client=%v banners=%q", deps.Client, deps.Banners)
+	if calls != 0 {
+		t.Errorf("startup called Viewer %d times", calls)
+	}
+	if deps.Client == nil || hasBanner(deps.Banners, "polling is off") {
+		t.Fatalf("client=%v banners=%q, want the client kept", deps.Client, deps.Banners)
 	}
 }
 

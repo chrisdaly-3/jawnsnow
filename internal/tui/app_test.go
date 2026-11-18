@@ -35,9 +35,21 @@ type fakeClient struct {
 	polls   int
 	checked [][]string
 	detail  [][]string
+
+	viewerErrs  []error
+	viewerCalls int
 }
 
-func (f *fakeClient) Viewer(context.Context) (string, error) { return "me", nil }
+// Viewer fails with each of viewerErrs in turn, then answers "me".
+func (f *fakeClient) Viewer(context.Context) (string, error) {
+	f.viewerCalls++
+	if len(f.viewerErrs) > 0 {
+		err := f.viewerErrs[0]
+		f.viewerErrs = f.viewerErrs[1:]
+		return "", err
+	}
+	return "me", nil
+}
 
 func (f *fakeClient) Search(context.Context, string) ([]github.Fingerprint, github.RateLimit, error) {
 	f.polls++
@@ -183,6 +195,10 @@ type opts struct {
 	loadErr error
 	// noLoad holds the load back, as if the store were still reading.
 	noLoad bool
+	// noViewer starts without the gh user, as snow does, so the model
+	// looks it up.
+	noViewer   bool
+	viewerErrs []error
 }
 
 // newHarness builds a model over a real store seeded with prs, runs Init and
@@ -203,7 +219,7 @@ func newHarness(t *testing.T, o opts, prs ...tracker.Tracked) *harness {
 		t.Fatalf("theme.New: %v", err)
 	}
 
-	h := &harness{store: st, clock: &testClock{now: t0}, client: &fakeClient{snaps: map[string]github.Snapshot{}}}
+	h := &harness{store: st, clock: &testClock{now: t0}, client: &fakeClient{snaps: map[string]github.Snapshot{}, viewerErrs: o.viewerErrs}}
 	for _, p := range prs {
 		h.client.snaps[p.PR.ID] = p.PR
 	}
@@ -213,6 +229,9 @@ func newHarness(t *testing.T, o opts, prs ...tracker.Tracked) *harness {
 	}
 	if !o.noClient {
 		d.Client = h.client
+	}
+	if o.noViewer {
+		d.Viewer = ""
 	}
 	m := New(d)
 	m.tick = fakeTick
@@ -359,6 +378,46 @@ func TestLoadErrorTurnsSavingOff(t *testing.T) {
 		t.Error("a hide started a save although saving is off")
 	}
 	h.m = m
+}
+
+func TestViewerLookupRetriesUntilItWorks(t *testing.T) {
+	h := newHarness(t, opts{noViewer: true, viewerErrs: []error{errors.New("dial tcp: no route to host")}}, wallPR("1"))
+	ticks := h.finishPoll(t)
+	if h.client.viewerCalls != 1 || h.client.polls != 0 {
+		t.Fatalf("viewer calls %d, searches %d; want one failed lookup and no poll", h.client.viewerCalls, h.client.polls)
+	}
+	if c := ansi.Strip(content(h.m)); !strings.Contains(c, "no route to host") {
+		t.Errorf("View does not show the failed lookup:\n%s", c)
+	}
+	if got := pollTicks(ticks); !reflect.DeepEqual(got, []time.Duration{3 * time.Minute}) {
+		t.Errorf("retry ticks = %v, want [3m0s]", got)
+	}
+
+	h.m, _ = settle(t, h.m, pollTickMsg{gen: h.m.pollGen})
+	if h.client.viewerCalls != 2 || h.client.polls != 1 || h.m.viewer != "me" {
+		t.Errorf("after the retry: viewer calls %d, searches %d, viewer %q; want 2, 1, me", h.client.viewerCalls, h.client.polls, h.m.viewer)
+	}
+	if strings.Contains(content(h.m), "no route to host") {
+		t.Errorf("the lookup error outlived a good poll:\n%s", content(h.m))
+	}
+	h.press(t, "R")
+	if h.client.viewerCalls != 2 {
+		t.Errorf("a known viewer was looked up again (%d calls)", h.client.viewerCalls)
+	}
+}
+
+func TestUIDrawsBeforeTheViewerIsKnown(t *testing.T) {
+	h := newHarness(t, opts{noViewer: true}, wallPR("1"))
+	if h.client.viewerCalls != 0 {
+		t.Fatalf("the model called Viewer %d times while handling messages; it must only return a command", h.client.viewerCalls)
+	}
+	if h.pollCmd == nil {
+		t.Fatal("no viewer lookup started after the load")
+	}
+	c := ansi.Strip(content(h.m))
+	if !strings.Contains(c, "❄ jawnSnow") || !strings.Contains(c, "polling…") {
+		t.Errorf("View before the lookup returns:\n%s", c)
+	}
 }
 
 func TestNoPollBeforeTheLoad(t *testing.T) {
