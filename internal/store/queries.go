@@ -142,6 +142,9 @@ func (s *Store) ReviewLog(ctx context.Context, f LogFilter) ([]LogEntry, error) 
 type PRStat struct {
 	Reviews int
 	CostUSD float64
+	// Known is how many of the PR's ledger rows reported a cost, a real $0
+	// included.
+	Known int
 	// Unknown is how many of the PR's ledger rows ended with no reported
 	// cost; CostUSD leaves them out.
 	Unknown int
@@ -173,6 +176,7 @@ func (s *Store) PRReviewStats(ctx context.Context) (map[string]PRStat, error) {
 
 	rows, err = s.db.QueryContext(ctx, `SELECT pr_id,
 			COALESCE(SUM(CASE WHEN COALESCE(json_extract(data, '$.CostUnknown'), 0) = 0 THEN cost_usd END), 0),
+			COALESCE(SUM(COALESCE(json_extract(data, '$.CostUnknown'), 0) = 0), 0),
 			COALESCE(SUM(COALESCE(json_extract(data, '$.CostUnknown'), 0) != 0), 0)
 		FROM cost_ledger GROUP BY pr_id`)
 	if err != nil {
@@ -182,12 +186,12 @@ func (s *Store) PRReviewStats(ctx context.Context) (map[string]PRStat, error) {
 	for rows.Next() {
 		var id string
 		var cost float64
-		var unknown int
-		if err := rows.Scan(&id, &cost, &unknown); err != nil {
+		var known, unknown int
+		if err := rows.Scan(&id, &cost, &known, &unknown); err != nil {
 			return nil, err
 		}
 		st := out[id]
-		st.CostUSD, st.Unknown = cost, unknown
+		st.CostUSD, st.Known, st.Unknown = cost, known, unknown
 		out[id] = st
 	}
 	return out, rows.Err()

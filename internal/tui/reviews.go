@@ -242,7 +242,10 @@ func (m Model) updateReviews(msg tea.Msg) (_ Model, _ tea.Cmd, ok bool) {
 			cmd = tea.Batch(cmd, load)
 		}
 		if m.reviews.quitting {
-			return m, cmd, true // finishReview is winding down to a quit
+			// finishReview is winding down to a quit, and its command must
+			// stay the bare quit command: batching the stats and log
+			// reloads with it broke TestQuitCancelsRunningReviews.
+			return m, cmd, true
 		}
 		var stats, reload tea.Cmd
 		m, stats = m.loadDoneStats()

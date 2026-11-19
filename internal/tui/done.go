@@ -26,7 +26,7 @@ const (
 	colAuthor = 14
 	colStatus = 10
 	colWhen   = 8
-	colClaude = 34
+	colClaude = 26
 	cellPad   = 2 // the table's cell style pads each side by one
 )
 
@@ -89,7 +89,8 @@ func (m Model) updateDoneStats(msg tea.Msg) (_ Model, ok bool) {
 }
 
 // reviewCostText is the merged table's review cell: the count, then the
-// spend, or a note where a run's cost was never reported. A PR with no
+// spend, with "?" where a run's cost was never reported: "$X+?" when some
+// runs reported and some didn't, "?" alone when none did. A PR with no
 // reviews has a blank cell.
 func reviewCostText(st store.PRStat) string {
 	if st.Reviews == 0 {
@@ -102,10 +103,10 @@ func reviewCostText(st store.PRStat) string {
 	switch {
 	case st.Unknown == 0:
 		return text + " · " + dollars(st.CostUSD)
-	case st.CostUSD > 0:
-		return text + " · " + dollars(st.CostUSD) + " · cost unknown"
+	case st.Known > 0:
+		return text + " · " + dollars(st.CostUSD) + "+?"
 	default:
-		return text + " · cost unknown"
+		return text + " · ?"
 	}
 }
 

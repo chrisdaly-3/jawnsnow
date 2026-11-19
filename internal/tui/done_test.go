@@ -81,6 +81,7 @@ func TestDoneGolden(t *testing.T) {
 	d.stats = map[string]store.PRStat{
 		"m1": {Reviews: 2, CostUSD: 1.75},
 		"c1": {Reviews: 1, Unknown: 1},
+		"m2": {Reviews: 2, CostUSD: 0.5, Known: 1, Unknown: 1},
 	}
 	golden(t, "done.golden", renderDone(t, d, 120, 20, donePRs()))
 }
@@ -262,9 +263,10 @@ func TestReviewCostText(t *testing.T) {
 		{"cost with no reviews", store.PRStat{CostUSD: 3}, ""},
 		{"one review", store.PRStat{Reviews: 1, CostUSD: 0.5}, "1 review · $0.50"},
 		{"several", store.PRStat{Reviews: 3, CostUSD: 12.345}, "3 reviews · $12.35"},
-		{"some unknown", store.PRStat{Reviews: 2, CostUSD: 1, Unknown: 1}, "2 reviews · $1.00 · cost unknown"},
-		{"all unknown", store.PRStat{Reviews: 2, Unknown: 2}, "2 reviews · cost unknown"},
-		{"one unknown", store.PRStat{Reviews: 1, Unknown: 1}, "1 review · cost unknown"},
+		{"some unknown", store.PRStat{Reviews: 2, CostUSD: 1, Known: 1, Unknown: 1}, "2 reviews · $1.00+?"},
+		{"known $0 and unknown", store.PRStat{Reviews: 2, Known: 1, Unknown: 1}, "2 reviews · $0.00+?"},
+		{"all unknown", store.PRStat{Reviews: 2, Unknown: 2}, "2 reviews · ?"},
+		{"one unknown", store.PRStat{Reviews: 1, Unknown: 1}, "1 review · ?"},
 	} {
 		if got := reviewCostText(tc.st); got != tc.want {
 			t.Errorf("%s: got %q, want %q", tc.name, got, tc.want)
@@ -272,7 +274,7 @@ func TestReviewCostText(t *testing.T) {
 	}
 }
 
-// costHarnessDone seeds reviews and ledger rows for the Done fixture's PRs.
+// doneCostHarness seeds reviews and ledger rows for the Done fixture's PRs.
 func doneCostHarness(t *testing.T) *harness {
 	t.Helper()
 	useUTC(t)
@@ -313,8 +315,8 @@ func TestDoneShowsReviewCost(t *testing.T) {
 	for _, want := range []string{
 		"2 reviews · $1.75",
 		"1 review · $0.40",
-		"1 review · cost unknown",
-		"1 review · $1.00 · cost unknown",
+		"1 review · ?",
+		"1 review · $1.00+?",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("Done view lacks %q:\n%s", want, out)

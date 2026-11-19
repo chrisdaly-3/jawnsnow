@@ -198,6 +198,7 @@ func TestPRReviewStats(t *testing.T) {
 		sampleReview("r2", "pr1", t0.Add(time.Hour), 0),
 		sampleReview("r3", "pr2", t0, 0),
 		sampleReview("r4", "pr3", t0, 0), // reviewed, no ledger rows
+		sampleReview("r5", "pr5", t0, 0),
 	} {
 		if err := s.SaveReview(ctx, r); err != nil {
 			t.Fatal(err)
@@ -208,6 +209,8 @@ func TestPRReviewStats(t *testing.T) {
 	addCost(t, s, CostRow{At: t0, ReviewID: "r2", PRID: "pr1", CostUSD: 2})
 	addCost(t, s, CostRow{At: t0, ReviewID: "r2", PRID: "pr1", CostUSD: 99, CostUnknown: true})
 	addCost(t, s, CostRow{At: t0, ReviewID: "r3", PRID: "pr2", CostUSD: 3})
+	addCost(t, s, CostRow{At: t0, ReviewID: "r5", PRID: "pr5", CostUSD: 0}) // a real $0 run
+	addCost(t, s, CostRow{At: t0, ReviewID: "r5", PRID: "pr5", CostUnknown: true})
 	addCost(t, s, CostRow{At: t0, ReviewID: "gone", PRID: "pr4", CostUSD: 4}) // cost, no review row
 
 	got, err := s.PRReviewStats(ctx)
@@ -215,10 +218,11 @@ func TestPRReviewStats(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string]PRStat{
-		"pr1": {Reviews: 2, CostUSD: 4, Unknown: 1},
-		"pr2": {Reviews: 1, CostUSD: 3},
+		"pr1": {Reviews: 2, CostUSD: 4, Known: 3, Unknown: 1},
+		"pr2": {Reviews: 1, CostUSD: 3, Known: 1},
+		"pr5": {Reviews: 1, CostUSD: 0, Known: 1, Unknown: 1},
 		"pr3": {Reviews: 1, CostUSD: 0},
-		"pr4": {Reviews: 0, CostUSD: 4},
+		"pr4": {Reviews: 0, CostUSD: 4, Known: 1},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("got %v, want %v", got, want)
