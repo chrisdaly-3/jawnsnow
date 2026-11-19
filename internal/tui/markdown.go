@@ -44,6 +44,13 @@ type mdText struct {
 	src string
 }
 
+// The cache's bounds. A full cache is cleared rather than evicted from:
+// the drawer and the preview re-render what they show on the next frame.
+const (
+	mdTextMax      = 512
+	mdRenderersMax = 16
+)
+
 func newMarkdownCache() *markdownCache {
 	return &markdownCache{renderers: map[mdKey]*glamour.TermRenderer{}, text: map[mdText][]string{}}
 }
@@ -57,6 +64,9 @@ func (c *markdownCache) render(src string, width int, th theme.Theme) []string {
 		return lines
 	}
 	lines := c.renderUncached(src, key)
+	if len(c.text) >= mdTextMax {
+		clear(c.text)
+	}
 	c.text[mdText{key, src}] = lines
 	return lines
 }
@@ -69,6 +79,9 @@ func (c *markdownCache) renderUncached(src string, key mdKey) []string {
 		r, err = glamour.NewTermRenderer(glamour.WithStyles(glamourStyle(key)), glamour.WithWordWrap(key.width))
 		if err != nil {
 			return plain()
+		}
+		if len(c.renderers) >= mdRenderersMax {
+			clear(c.renderers)
 		}
 		c.renderers[key] = r
 	}

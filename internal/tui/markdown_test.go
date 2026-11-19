@@ -297,3 +297,25 @@ func TestSafeANSIKeepsOnlyPaletteSGR(t *testing.T) {
 	}
 	checkOnlyPaletteSGR(t, "safeANSI", strings.ReplaceAll(got, ":", ";"))
 }
+
+// The cache is bounded: a long session of distinct bodies and widths
+// can't grow it without limit.
+func TestMarkdownCacheIsBounded(t *testing.T) {
+	c := newMarkdownCache()
+	th := mdTheme(t, "dark", false)
+	for i := range 600 {
+		c.render(fmt.Sprintf("body %d", i), 40, th)
+	}
+	if n := len(c.text); n > mdTextMax || n == 0 {
+		t.Errorf("%d rendered texts cached, want 1-%d", n, mdTextMax)
+	}
+	for w := range 20 {
+		c.render("x", 20+w, th)
+	}
+	if n := len(c.renderers); n > mdRenderersMax || n == 0 {
+		t.Errorf("%d renderers cached, want 1-%d", n, mdRenderersMax)
+	}
+	if got := c.render("body 599", 40, th); len(got) == 0 || !strings.Contains(ansi.Strip(got[0]), "body 599") {
+		t.Errorf("render after clearing = %q", got)
+	}
+}
