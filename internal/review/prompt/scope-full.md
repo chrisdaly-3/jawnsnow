@@ -1,6 +1,6 @@
 ## Scope: the whole codebase (required)
 
-Every step below is required. dispatch records each file you open and will not approve a review that skipped one.
+Every step below is required. Each file you open is recorded, and a review that skipped one is sent back.
 
 1. Read the PR diff file.
 2. Open every changed code file in full at head with Read, not only its hunks; reading its section of the diff does not count. Read every other file in the same package too, so you know the whole component, not just the lines that changed. For config, data, and lock files the diff is enough; open them when the surrounding lines matter.

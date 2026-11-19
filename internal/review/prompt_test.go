@@ -23,13 +23,24 @@ func TestPromptFilesKeepDispatchTextExceptListedEdits(t *testing.T) {
 
 	// Every line of ours must appear in Dispatch's text, in order, unless it
 	// belongs to a listed edit: the opening, step 7, or the replacement text.
+	// The field descriptions that said what dispatch checks.
+	isFieldLine := func(line string) bool {
+		for _, f := range []string{"`understanding`:", "`assumptions`:", "`examined`:", "`verdict`:"} {
+			if strings.HasPrefix(line, f) {
+				return true
+			}
+		}
+		return false
+	}
 	allowedNew := func(line string) bool {
 		return strings.HasPrefix(line, "You review one GitHub pull request") ||
-			strings.HasPrefix(line, "7. ")
+			strings.HasPrefix(line, "7. ") ||
+			isFieldLine(line)
 	}
 	allowedGone := func(line string) bool {
 		return strings.HasPrefix(line, "You review one GitHub pull request") ||
 			strings.HasPrefix(line, "7. ") ||
+			isFieldLine(line) ||
 			strings.HasPrefix(line, "8. ") ||
 			strings.HasPrefix(line, "`ci`:")
 	}
@@ -54,7 +65,7 @@ func TestPromptFilesKeepDispatchTextExceptListedEdits(t *testing.T) {
 			t.Fatalf("unlisted change at our line %d / Dispatch line %d:\nours:     %q\nDispatch: %q", i+1, j+1, o, d)
 		}
 	}
-	if !strings.HasPrefix(ours[0], "You review one GitHub pull request and return JSON matching the provided schema. jawnSnow shows what you return to Chris, who may post some of it as their own review after reading it. You cannot post anything.") {
+	if !strings.HasPrefix(ours[0], "You review one GitHub pull request and return JSON matching the provided schema. A person reads what you return and may post some of it as their own review. You cannot post anything.") {
 		t.Errorf("opening not replaced: %q", ours[0])
 	}
 	for _, gone := range []string{"agreed_threads", "`ci`", "other reviewers"} {
@@ -250,3 +261,21 @@ func TestContinuationPromptListsGaps(t *testing.T) {
 }
 
 func lineStart(p string, pos int) int { return strings.LastIndex(p[:pos], "\n") + 1 }
+
+// A person reads the review and may post it as their own, so the reviewer's
+// instructions carry no tool or person name. CLAUDE.md is the file name the
+// scope asks it to read.
+func TestPromptNamesNoToolOrPerson(t *testing.T) {
+	for _, scope := range []string{"full", "pr-only"} {
+		for _, pass := range []PassKind{PassFull, PassIncremental} {
+			in := testInput()
+			in.Scope, in.Pass = scope, pass
+			text := strings.ToLower(strings.ReplaceAll(BuildPrompt(in), "CLAUDE.md", ""))
+			for _, word := range []string{"dispatch", "jawnsnow", "chris", "claude"} {
+				if strings.Contains(text, word) {
+					t.Errorf("scope %s, pass %v: prompt contains %q", scope, pass, word)
+				}
+			}
+		}
+	}
+}
