@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/chrisdaly-3/jawnsnow/internal/config"
@@ -40,8 +41,13 @@ func Git(ctx context.Context, dir string, args ...string) ([]byte, error) {
 	full := append([]string{"-C", dir, "-c", "core.hooksPath=/dev/null", "-c", "submodule.recurse=false"}, args...)
 	cmd := exec.CommandContext(ctx, "git", full...)
 	cmd.Env = buildEnv(os.Environ(), sshCommandConfigured(ctx, dir))
-	// A killed git can leave a child (ssh, git-remote-https) holding the
-	// pipes; WaitDelay stops Run waiting on it forever.
+	// A cancel asks git to stop with SIGTERM, which it handles by removing
+	// its lock files. The default, SIGKILL, can't be caught: a checkout
+	// killed that way leaves index.lock behind.
+	cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
+	// A git that ignores SIGTERM is killed after WaitDelay, and a killed git
+	// can leave a child (ssh, git-remote-https) holding the pipes; WaitDelay
+	// stops Run waiting on it forever.
 	cmd.WaitDelay = 5 * time.Second
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/chrisdaly-3/jawnsnow/internal/config"
 )
@@ -242,5 +243,49 @@ func TestRemoteForRequiresGitHubHost(t *testing.T) {
 	git(t, s.clone, "remote", "remove", "upstream")
 	if got, _ := r.RemoteFor(ctx); got != "" {
 		t.Fatalf("gitlab-only: RemoteFor = %q", got)
+	}
+}
+
+// A cancelled Git asks git to stop with SIGTERM, which git handles by
+// removing its lock files. SIGKILL can't be caught, so a checkout killed
+// that way leaves index.lock behind.
+func TestGitCancelSendsSIGTERM(t *testing.T) {
+	bin := t.TempDir()
+	started, termed := filepath.Join(bin, "started"), filepath.Join(bin, "termed")
+	// The stand-in answers any other call (the ssh-command lookup) at once,
+	// and holds a checkout until it is signalled.
+	script := `#!/bin/sh
+case " $* " in
+*" checkout "*) ;;
+*) exit 1 ;;
+esac
+trap 'echo > "` + termed + `"; exit 143' TERM
+echo > "` + started + `"
+while :; do sleep 0.05; done
+`
+	if err := os.WriteFile(filepath.Join(bin, "git"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { _, err := Git(ctx, t.TempDir(), "checkout", "--detach", "--force", "x"); done <- err }()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, err := os.Stat(started); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the stand-in git never started")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	if err := <-done; err == nil {
+		t.Fatal("a cancelled checkout returned no error")
+	}
+	if _, err := os.Stat(termed); err != nil {
+		t.Errorf("git was not sent SIGTERM: %v", err)
 	}
 }

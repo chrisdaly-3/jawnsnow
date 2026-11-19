@@ -275,3 +275,38 @@ func TestPoolCleansDir(t *testing.T) {
 	}
 	release()
 }
+
+// A git killed mid-checkout leaves index.lock in the slot's git directory.
+// The next Acquire of that slot clears it rather than failing on it for
+// every review after.
+func TestPoolClearsStaleIndexLock(t *testing.T) {
+	ctx := context.Background()
+	s, r, p, _, _ := newPoolFixture(t, 1)
+	head1, _, err := r.FetchPR(ctx, 7, "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path, release, err := p.Acquire(ctx, 7, head1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	release()
+	lock := filepath.Join(git(t, path, "rev-parse", "--absolute-git-dir"), "index.lock")
+	write(t, lock, "")
+
+	head2 := s.addPRCommit(t, 8, "c.txt")
+	if _, _, err := r.FetchPR(ctx, 8, "main"); err != nil {
+		t.Fatal(err)
+	}
+	path2, release2, err := p.Acquire(ctx, 8, head2)
+	if err != nil {
+		t.Fatalf("Acquire over a stale index.lock: %v", err)
+	}
+	defer release2()
+	if got := git(t, path2, "rev-parse", "HEAD"); got != head2 {
+		t.Errorf("slot at %s, want %s", got, head2)
+	}
+	if _, err := os.Stat(lock); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("index.lock still there: %v", err)
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -136,8 +137,28 @@ func (p *Pool) checkout(ctx context.Context, path, head string) error {
 		}
 		return p.addWorktree(ctx, path, head)
 	}
+	if err := clearIndexLock(ctx, path); err != nil {
+		return err
+	}
 	_, err := Git(ctx, path, "checkout", "--detach", "--force", head)
 	return err
+}
+
+// clearIndexLock removes the index.lock a git killed mid-checkout left in
+// the worktree's git directory; every later checkout would fail on it.
+// The caller holds p.mu and the slot is not held, so no git of jawnSnow's
+// is running there, and the instance lock rules out a second snow: any
+// lock is stale.
+func clearIndexLock(ctx context.Context, path string) error {
+	out, err := Git(ctx, path, "rev-parse", "--absolute-git-dir")
+	if err != nil {
+		return err
+	}
+	err = os.Remove(filepath.Join(strings.TrimSpace(string(out)), "index.lock"))
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
 }
 
 // addWorktree creates the worktree at path. --force lets git reuse a
