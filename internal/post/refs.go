@@ -53,3 +53,7 @@ func controlRef(ref string) bool {
 func stripped(r rune) bool {
 	return r != '\n' && r != '\t' && (unicode.IsControl(r) || invisible(r))
 }
+
+// IsInvisible reports zero-width and bidi format characters, which can
+// hide or reorder text without being visible.
+func IsInvisible(r rune) bool { return invisible(r) }

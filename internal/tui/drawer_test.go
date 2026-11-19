@@ -691,3 +691,14 @@ func TestDrawerNeutralisesSemicolonlessRefs(t *testing.T) {
 		}
 	}
 }
+
+func TestDrawerNeverDecodesSplitReferences(t *testing.T) {
+	rv := drawerReview()
+	rv.Findings = []store.Finding{{ID: 1, Path: "a.go", Line: 3, Body: splitRefProbes[0] + "\n\n" + splitRLOProbes[0]}}
+	d, c := openDrawer(t, 160, 40, rv)
+	out := renderDrawer(d, c, 40)
+	checkNoDecodedControls(t, "drawer", out)
+	if plain := strings.Join(strings.Fields(ansi.Strip(out)), " "); !strings.Contains(plain, "This PR is garbage") {
+		t.Errorf("the sentence is not visible:\n%s", plain)
+	}
+}

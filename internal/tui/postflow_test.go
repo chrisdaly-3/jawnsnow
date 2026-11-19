@@ -1002,3 +1002,12 @@ func TestPreviewNeutralisesSemicolonlessRefs(t *testing.T) {
 		t.Errorf("the sentence is not in the preview:\n%s", got)
 	}
 }
+
+func TestPreviewNeverDecodesSplitReferences(t *testing.T) {
+	h := newPostHarness(t, markdownReview(splitRefProbes[0]+"\n\n"+splitRLOProbes[0]), opts{})
+	h.press(t, "P", "enter")
+	checkNoDecodedControls(t, "preview", h.m.postBody(160, 56))
+	if got := modalText(h.m); !strings.Contains(got, "This PR is garbage") {
+		t.Errorf("the sentence is not in the preview:\n%s", got)
+	}
+}

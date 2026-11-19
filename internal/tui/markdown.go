@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image/color"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -86,8 +87,11 @@ func (c *markdownCache) renderUncached(src string, key mdKey) []string {
 		c.renderers[key] = r
 	}
 	// Markdown decodes character references, so "&#27;" would reach the
-	// terminal as a raw ESC, even inside a code span.
-	out, err := r.Render(post.ReplaceControlRefs(src))
+	// terminal as a raw ESC. Glamour decodes again, with
+	// html.UnescapeString, from text it joins across inline markup, so a
+	// reference split by emphasis re-forms where no scan of the source can
+	// see it. Rendering with every "&" hidden decodes nothing by any route.
+	out, err := r.Render(hideAmpersands(post.ReplaceControlRefs(src)))
 	if err != nil {
 		return plain()
 	}
@@ -96,7 +100,7 @@ func (c *markdownCache) renderUncached(src string, key mdKey) []string {
 	// terminal must not get a clickable link; the URL stays visible as text.
 	// safeANSI drops it along with anything else glamour should not have
 	// passed through.
-	out = safeANSI(out)
+	out = strings.ReplaceAll(safeANSI(out), string(ampPlaceholder), "&")
 	lines := strings.Split(strings.Trim(out, "\n"), "\n")
 	for i, l := range lines {
 		lines[i] = strings.TrimRight(l, " ")
@@ -104,12 +108,36 @@ func (c *markdownCache) renderUncached(src string, key mdKey) []string {
 	return lines
 }
 
+// ampPlaceholder stands in for "&" while glamour renders, so it sees no
+// character reference to decode. U+E026 is in the private use area, one
+// cell wide like "&", and no markdown syntax; a literal one in the source
+// becomes U+FFFD first, so only a hidden "&" maps back.
+const ampPlaceholder = '\ue026'
+
+// hideAmpersands replaces every "&" outside code blocks with
+// ampPlaceholder. Code blocks are shown as written, with no decoding, and
+// their highlighter would mark the placeholder as an error.
+func hideAmpersands(src string) string {
+	src = strings.ReplaceAll(src, string(ampPlaceholder), "\ufffd")
+	code := post.CodeBlockLines(src)
+	var b strings.Builder
+	for i := range len(src) {
+		if src[i] == '&' && !slices.ContainsFunc(code, func(r [2]int) bool { return i >= r[0] && i < r[1] }) {
+			b.WriteRune(ampPlaceholder)
+			continue
+		}
+		b.WriteByte(src[i])
+	}
+	return b.String()
+}
+
 // safeANSI keeps only the escapes glamour itself writes: SGR sequences
 // whose colors are xterm indices in 16-255 and whose other parameters are
 // bold, italic, underline, strikethrough or their resets. Every other
-// escape, OSC included, and every other control character but newline and
-// tab is dropped, so text that got through as an escape can't conceal,
-// recolor or move anything.
+// escape, OSC included, every other control character but newline and
+// tab, and every bidi or invisible format character is dropped, so text
+// that got through as an escape can't conceal, recolor, reorder or move
+// anything.
 func safeANSI(s string) string {
 	var b strings.Builder
 	for i := 0; i < len(s); {
@@ -144,7 +172,7 @@ func safeANSI(s string) string {
 			i = j
 		default:
 			r, size := utf8.DecodeRuneInString(s[i:])
-			if r == '\n' || r == '\t' || !unicode.IsControl(r) {
+			if r == '\n' || r == '\t' || !unicode.IsControl(r) && !post.IsInvisible(r) {
 				b.WriteString(s[i : i+size])
 			}
 			i += size

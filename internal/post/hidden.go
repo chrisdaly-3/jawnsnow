@@ -148,3 +148,27 @@ func encodedControl(src []byte, literal []text.Segment) bool {
 	}
 	return false
 }
+
+// CodeBlockLines returns the byte ranges of md's fenced and indented code
+// lines, which a renderer shows as written.
+func CodeBlockLines(md string) [][2]int {
+	src := []byte(md)
+	root := parserFor.Parse(text.NewReader(src))
+	var out [][2]int
+	_ = ast.Walk(root, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+		if !entering {
+			return ast.WalkContinue, nil
+		}
+		switch n.(type) {
+		case *ast.FencedCodeBlock, *ast.CodeBlock:
+			lines := n.Lines()
+			for i := range lines.Len() {
+				seg := lines.At(i)
+				out = append(out, [2]int{seg.Start, seg.Stop})
+			}
+			return ast.WalkSkipChildren, nil
+		}
+		return ast.WalkContinue, nil
+	})
+	return out
+}

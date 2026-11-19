@@ -15,6 +15,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/chrisdaly-3/jawnsnow/internal/config"
+	"github.com/chrisdaly-3/jawnsnow/internal/post"
 	"github.com/chrisdaly-3/jawnsnow/internal/theme"
 )
 
@@ -317,5 +318,84 @@ func TestMarkdownCacheIsBounded(t *testing.T) {
 	}
 	if got := c.render("body 599", 40, th); len(got) == 0 || !strings.Contains(ansi.Strip(got[0]), "body 599") {
 		t.Errorf("render after clearing = %q", got)
+	}
+}
+
+// Glamour decodes strikethrough from the text of its children joined, so a
+// reference split by inline markup re-forms after any source-level scan.
+// These are the re-review's probes.
+var splitRefProbes = []string{
+	"~~&#*27*[38;5;16;48;5;16mThis PR is garbage&#*27*[0m~~",
+	"~~&#x*1b*[38;5;16;48;5;16mThis PR is garbage&#x*1b*[0m~~",
+	"~~&#`27`[38;5;16;48;5;16mThis PR is garbage&#`27`[0m~~",
+	"~~&#_27_[38;5;16;48;5;16mThis PR is garbage&#_27_[0m~~",
+	"~~&#[27](x)[38;5;16;48;5;16mThis PR is garbage&#[27](x)[0m~~",
+	"~~&*#27*[38;5;16;48;5;16mThis PR is garbage&*#27*[0m~~",
+	"~~*&*#27[38;5;16;48;5;16mThis PR is garbage*&*#27[0m~~",
+	"~~&#4294967*323*[38;5;16;48;5;16mThis PR is garbage&#4294967*323*[0m~~",
+}
+
+var splitRLOProbes = []string{
+	"~~&#*8238*;evil~~", "~~&#82*38*;x~~", "~~&#82`38`;x~~", "~~&#82[38](u);x~~", "~~&#x20*2e*;x~~",
+}
+
+// checkNoDecodedControls fails on a raw ESC outside the renderer's own
+// SGR, a C1 control, or a bidi or invisible format character.
+func checkNoDecodedControls(t *testing.T, name, out string) {
+	t.Helper()
+	checkOnlyPaletteSGR(t, name, out)
+	if strings.Contains(out, "\x1b[38;5;16;48;5;16m") {
+		t.Errorf("%s: the encoded black-on-black SGR reached the output", name)
+	}
+	for _, r := range ansi.Strip(out) {
+		if (r >= 0x80 && r <= 0x9f) || post.IsInvisible(r) || (r < 0x20 && r != '\n' && r != '\t') {
+			t.Errorf("%s: %U in the output", name, r)
+		}
+	}
+}
+
+func TestRenderNeverDecodesReferences(t *testing.T) {
+	for _, style := range []string{"dark", "light"} {
+		th := mdTheme(t, style, false)
+		for _, src := range splitRefProbes {
+			out := strings.Join(newMarkdownCache().render(src, 100, th), "\n")
+			checkNoDecodedControls(t, style+" "+src, out)
+			if plain := ansi.Strip(out); !strings.Contains(plain, "This PR is garbage") {
+				t.Errorf("%s %s: the sentence is not visible: %q", style, src, plain)
+			}
+		}
+		for _, src := range splitRLOProbes {
+			checkNoDecodedControls(t, style+" "+src, strings.Join(newMarkdownCache().render(src, 100, th), "\n"))
+		}
+	}
+}
+
+// With references left undecoded, an "&" still reads as one, and a code
+// block keeps its own highlighting of it.
+func TestRenderKeepsAmpersands(t *testing.T) {
+	th := mdTheme(t, "dark", false)
+	c := newMarkdownCache()
+	plain := ansi.Strip(strings.Join(c.render("AT&T, &amp; and R&D in `a&b` and ~~x&y~~", 80, th), "\n"))
+	for _, want := range []string{"AT&T,", "&amp; and", "R&D", "a&b", "x&y"} {
+		if !strings.Contains(plain, want) {
+			t.Errorf("no %q in %q", want, plain)
+		}
+	}
+	code := strings.Join(c.render("```go\nif a && b {}\n```", 80, th), "\n")
+	if !strings.Contains(ansi.Strip(code), "if a && b {}") {
+		t.Errorf("the code block lost its &&: %q", ansi.Strip(code))
+	}
+	if strings.Contains(code, "48;5;") {
+		t.Errorf("&& is highlighted as an error in the code block: %q", code)
+	}
+	// The placeholder can't be smuggled in to become an "&".
+	if got := ansi.Strip(strings.Join(c.render("x\ue026y", 80, th), "\n")); !strings.Contains(got, "x\ufffdy") {
+		t.Errorf("a literal placeholder rendered as %q, want U+FFFD", got)
+	}
+}
+
+func TestSafeANSIDropsInvisibles(t *testing.T) {
+	if got := safeANSI("a\u202eb\u200bc\u2066d\ufeffe\u2060f\u200fg"); got != "abcdefg" {
+		t.Errorf("safeANSI = %q", got)
 	}
 }
