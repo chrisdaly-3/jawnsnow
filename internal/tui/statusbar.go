@@ -121,6 +121,8 @@ func (m Model) footer(width int) string {
 		view, global = m.post.hints(), nil
 	case m.view == ViewCost && m.cost.typing:
 		view, global = costRangeKeys, nil
+	case m.view == ViewReviews && m.reviewLog.typing:
+		view, global = reviewLogInputKeys, nil
 	case m.view == ViewCost && m.cost.picking:
 		view, global = costPickerKeys, nil
 	}

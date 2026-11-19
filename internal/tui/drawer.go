@@ -74,6 +74,9 @@ type drawerModel struct {
 	// was taken, so a slow older read can't replace a newer one.
 	issued, applied int
 
+	// wantReview is the review ID to select once the PR's reviews load.
+	wantReview string
+
 	md *markdownCache
 }
 
@@ -109,8 +112,35 @@ func (m drawerModel) show(prID string, termW int) (drawerModel, tea.Cmd) {
 		m.reviews, m.posted, m.loaded, m.pass, m.sel, m.scroll = nil, nil, false, 0, 0, 0
 		m.understanding, m.assumptions = false, false
 	}
+	m.wantReview = ""
 	m.open, m.prID, m.target = true, prID, drawerTarget(termW)
 	return m.startSlide()
+}
+
+// showReview opens the drawer on prID at the pass with reviewID. The PR's
+// reviews load asynchronously, so an ID not on screen yet is remembered and
+// selected when they arrive; if it isn't among them the default pass stays.
+func (m drawerModel) showReview(prID, reviewID string, termW int) (drawerModel, tea.Cmd) {
+	m, cmd := m.show(prID, termW)
+	m.wantReview = reviewID
+	if m.loaded {
+		m = m.selectWanted(false)
+	}
+	return m, cmd
+}
+
+// selectWanted moves to the pass of wantReview. The want is dropped once
+// found, or when final says no later load will bring it.
+func (m drawerModel) selectWanted(final bool) drawerModel {
+	if i := slices.IndexFunc(m.reviews, func(r store.Review) bool { return r.ID == m.wantReview }); i >= 0 {
+		if i != m.pass {
+			m.pass, m.sel, m.scroll = i, 0, 0
+		}
+		m.wantReview = ""
+	} else if final {
+		m.wantReview = ""
+	}
+	return m
 }
 
 // hide slides the drawer out.
@@ -178,6 +208,9 @@ func (m drawerModel) loadedReviews(msg drawerLoadedMsg) drawerModel {
 	}
 	if r := m.current(); r == nil || r.ID != shown {
 		m.sel, m.scroll = 0, 0
+	}
+	if m.wantReview != "" {
+		m = m.selectWanted(true)
 	}
 	return m
 }

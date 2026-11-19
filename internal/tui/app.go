@@ -125,6 +125,8 @@ type (
 	actionPickModel struct{ ID string }
 	// actionOpenDrawer opens the review drawer on a PR.
 	actionOpenDrawer struct{ ID string }
+	// actionOpenReview opens the drawer on a PR at one of its reviews.
+	actionOpenReview struct{ PRID, ReviewID string }
 	// actionCopy puts Text on the clipboard.
 	actionCopy struct{ Text string }
 	// actionPost opens the post flow on one of the drawer's reviews.
@@ -138,6 +140,7 @@ func (actionUnhide) isAction()     {}
 func (actionReview) isAction()     {}
 func (actionPickModel) isAction()  {}
 func (actionOpenDrawer) isAction() {}
+func (actionOpenReview) isAction() {}
 func (actionCopy) isAction()       {}
 func (actionPost) isAction()       {}
 
@@ -172,6 +175,8 @@ type Model struct {
 	claude  review.ClaudeInfo
 	agent   agentModel
 	cost    costModel
+	// reviewLog is the Reviews view.
+	reviewLog reviewLogModel
 	// pendingReviewsFilter is the PR filter the Cost view's top-PR list
 	// hands to the Reviews view, which applies it.
 	pendingReviewsFilter reviewsFilter
@@ -253,7 +258,7 @@ func New(d Deps) Model {
 		open:   func(url string) error { return browser.New("", io.Discard, io.Discard).Browse(url) },
 		launch: func(c tea.Cmd) tea.Cmd { return c }, reviews: newReviews(d.Reviewer, d.ReviewsOff),
 		execProcess: tea.ExecProcess, poster: d.Poster, postOff: d.PostOff, dataDir: dataDir,
-		prs: map[string]tracker.Tracked{}, wall: newWall(), done: newDone(), cost: newCost(), drawer: newDrawer(), dirty: map[string]bool{}, deleted: map[string]bool{},
+		prs: map[string]tracker.Tracked{}, wall: newWall(), done: newDone(), cost: newCost(), reviewLog: newReviewLog(), drawer: newDrawer(), dirty: map[string]bool{}, deleted: map[string]bool{},
 		mode: mode, width: 80, height: 24,
 	}
 }
@@ -318,6 +323,9 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 		return next, cmd
 	}
 	if next, cmd, ok := m.updateCost(msg); ok {
+		return next, cmd
+	}
+	if next, cmd, ok := m.updateReviewLog(msg); ok {
 		return next, cmd
 	}
 	switch msg := msg.(type) {
@@ -414,6 +422,9 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	if m.view == ViewCost && !m.help && m.cost.capturing() && msg.String() != "ctrl+c" {
 		return m.updateView(msg)
 	}
+	if m.view == ViewReviews && !m.help && m.reviewLog.typing && msg.String() != "ctrl+c" {
+		return m.updateView(msg)
+	}
 	// The help overlay hides the view, so only the keys that close it or
 	// quit do anything.
 	if m.help {
@@ -472,6 +483,11 @@ func (m Model) updateView(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			return m.drawerUpdate(msg)
 		}
 		return m.doneUpdate(msg)
+	case ViewReviews:
+		if m.drawerHere() && m.focus == m.drawerPane() {
+			return m.drawerUpdate(msg)
+		}
+		return m.reviewLogKey(msg)
 	case ViewAgent:
 		return m.agentKey(msg)
 	case ViewCost:
@@ -600,7 +616,7 @@ func (m Model) drawerWidthIn(v View) int {
 
 // paneCount is the number of focusable panes in the current view: the Done
 // view's two tables, the Cost view's filter bar, chart and top PRs, the
-// Wall, the drawer while it is open in the Wall or Done, and one for every
+// Wall, the drawer while it is open in the Wall, Done or Reviews, and one for every
 // other view.
 func (m Model) paneCount() int {
 	n := 1
@@ -610,7 +626,7 @@ func (m Model) paneCount() int {
 	case ViewCost:
 		n = costPanes
 	}
-	if m.drawerHere() && (m.view == ViewDone || m.view == ViewWall) {
+	if m.drawerHere() && (m.view == ViewDone || m.view == ViewWall || m.view == ViewReviews) {
 		n++
 	}
 	return n
@@ -625,8 +641,11 @@ func (m Model) switchView(v View) Model {
 // rows again.
 func (m Model) showView(v View) (Model, tea.Cmd) {
 	m = m.switchView(v)
-	if v == ViewCost {
+	switch v {
+	case ViewCost:
 		return m.enterCost()
+	case ViewReviews:
+		return m.enterReviews()
 	}
 	return m, nil
 }
@@ -653,6 +672,16 @@ func (m Model) apply(a action) (Model, tea.Cmd) {
 		m.drawerView = m.view
 		m.drawer, cmd = m.drawer.show(a.ID, m.width)
 		m, load := m.loadDrawer(a.ID)
+		return m, tea.Batch(cmd, load)
+	case actionOpenReview:
+		if _, ok := m.prs[a.PRID]; !ok {
+			m.notice = "that PR is no longer tracked"
+			return m, nil
+		}
+		var cmd tea.Cmd
+		m.drawerView = m.view
+		m.drawer, cmd = m.drawer.showReview(a.PRID, a.ReviewID, m.width)
+		m, load := m.loadDrawer(a.PRID)
 		return m, tea.Batch(cmd, load)
 	case actionCopy:
 		return m, tea.SetClipboard(a.Text)
@@ -1030,9 +1059,15 @@ func (m Model) body(width, height int) string {
 		return m.agentBody(width, height)
 	case ViewCost:
 		return m.costBody(width, height)
-	default:
-		return placeholder(m.theme, width, height, "Coming in plan 3")
+	case ViewReviews:
+		dw := min(m.drawerWidthIn(ViewReviews), max(width-1, 0))
+		logView := m.reviewLogBody(width-dw, height)
+		if dw == 0 {
+			return logView
+		}
+		return m.withDrawer(logView, width-dw, dw, height)
 	}
+	return ""
 }
 
 // fit cuts or pads s to exactly height lines of at most width cells.

@@ -321,8 +321,9 @@ func TestCostViewTopPROpensReviews(t *testing.T) {
 	if h.m.view != ViewReviews {
 		t.Errorf("enter switched to %v, want Reviews", h.m.view)
 	}
-	if want := (reviewsFilter{PRID: "PR_b", Label: "acme/gadgets#7"}); h.m.pendingReviewsFilter != want {
-		t.Errorf("pending Reviews filter = %+v, want %+v", h.m.pendingReviewsFilter, want)
+	// The Reviews view takes the pending filter as its PR chip.
+	if h.m.reviewLog.prID != "PR_b" || h.m.reviewLog.label != "acme/gadgets#7" {
+		t.Errorf("Reviews PR filter = %q %q, want PR_b acme/gadgets#7", h.m.reviewLog.prID, h.m.reviewLog.label)
 	}
 }
 

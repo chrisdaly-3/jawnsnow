@@ -78,6 +78,13 @@ var keyMap = []keySection{
 		{"enter", "show the PR in the Reviews view"},
 		{"tab", "filters, chart or top PRs"},
 	}},
+	{"Reviews", []keyHint{
+		{"j k", "previous or next review"},
+		{"/", "filter by repo, number, title or author"},
+		{"o", "cycle the outcome: all, complete, incomplete, failed"},
+		{"enter", "open the review drawer at that pass"},
+		{"esc", "clear the filters"},
+	}},
 	{"Done", []keyHint{
 		{"j k", "previous or next row"},
 		{"x", "unhide"},
@@ -96,10 +103,11 @@ func allKeys() []keyHint {
 
 // footerKeys are the short hints for each view, before the global ones.
 var footerKeys = map[View][]keyHint{
-	ViewWall:  {{"h/l", "lane"}, {"j/k", "card"}, {"space", "review"}, {"x", "hide"}, {"o", "open"}, {"/", "filter"}, {"a", "author"}},
-	ViewAgent: {{"j/k", "tier"}, {"enter", "pick"}, {"x", "clear"}, {"e", "edit config"}},
-	ViewDone:  {{"j/k", "row"}, {"x", "unhide"}, {"o", "open"}},
-	ViewCost:  {{"r", "range"}, {"f", "filter"}, {"g", "group"}, {"b", "bucket"}, {"t", "total"}, {"enter", "reviews"}},
+	ViewWall:    {{"h/l", "lane"}, {"j/k", "card"}, {"space", "review"}, {"x", "hide"}, {"o", "open"}, {"/", "filter"}, {"a", "author"}},
+	ViewAgent:   {{"j/k", "tier"}, {"enter", "pick"}, {"x", "clear"}, {"e", "edit config"}},
+	ViewDone:    {{"j/k", "row"}, {"x", "unhide"}, {"o", "open"}},
+	ViewReviews: {{"/", "filter"}, {"o", "outcome"}, {"enter", "open"}, {"esc", "clear"}},
+	ViewCost:    {{"r", "range"}, {"f", "filter"}, {"g", "group"}, {"b", "bucket"}, {"t", "total"}, {"enter", "reviews"}},
 }
 
 // The post flow's footer, by stage. m's hint names the view it switches to.
@@ -128,6 +136,9 @@ var (
 	costRangeKeys  = []keyHint{{"enter", "apply"}, {"esc", "cancel"}}
 	costPickerKeys = []keyHint{{"h/l", "dimension"}, {"j/k", "value"}, {"space", "toggle"}, {"esc", "close"}}
 )
+
+// The Reviews view's footer while its filter input has the keys.
+var reviewLogInputKeys = []keyHint{{"enter", "apply"}, {"esc", "cancel"}}
 
 func hintParts(hints []keyHint) []string {
 	parts := make([]string, len(hints))

@@ -983,8 +983,8 @@ func TestViewCycling(t *testing.T) {
 	if h.m.view != ViewReviews {
 		t.Errorf("after 3 view = %v, want Reviews", h.m.view)
 	}
-	if !strings.Contains(content(h.m), "Coming in plan 3") {
-		t.Errorf("Reviews placeholder missing:\n%s", content(h.m))
+	if !strings.Contains(content(h.m), "No Claude reviews yet") {
+		t.Errorf("Reviews empty state missing:\n%s", content(h.m))
 	}
 	h.press(t, "1", "[")
 	if h.m.view != ViewAgent {
