@@ -34,13 +34,21 @@ type Session struct {
 }
 
 // BuildArgs returns the claude flags. The reviewer is always read-only:
-// Read, Grep and Glob, no shell, no network, and no user settings.
+// Read, Grep and Glob, no shell, no network, and no settings files.
+//
+// claude runs with its working directory in the PR's checkout, so every
+// settings source it reads from the project is under the PR author's
+// control: "local" alone loads .claude/settings.local.json (hooks, env, MCP
+// servers) and CLAUDE.local.md from the PR. An empty --setting-sources
+// value, passed as its own argument, loads none of them, and
+// --strict-mcp-config ignores any .mcp.json. --bare would also do it but
+// breaks auth.
 func BuildArgs(s Session) []string {
 	args := []string{
 		"-p", "--output-format", "stream-json", "--verbose",
 		"--tools", "Read,Grep,Glob",
 		"--permission-mode", "dontAsk",
-		"--setting-sources", "local",
+		"--setting-sources", "", "--strict-mcp-config",
 		"--max-turns", strconv.Itoa(s.MaxTurns),
 		"--max-budget-usd", strconv.FormatFloat(s.MaxBudgetUSD, 'f', -1, 64),
 		"--json-schema", s.Schema,

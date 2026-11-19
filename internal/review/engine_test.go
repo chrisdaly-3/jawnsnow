@@ -410,6 +410,11 @@ func TestEngineFullPassSaved(t *testing.T) {
 		c.flag("--max-budget-usd") != "15" || c.flag("--json-schema") != prompt.Schema() {
 		t.Errorf("args = %q", c.Args)
 	}
+	// The empty --setting-sources value must reach claude as its own argument.
+	if i := slices.Index(c.Args, "--setting-sources"); i < 0 || i+1 >= len(c.Args) || c.Args[i+1] != "" ||
+		!slices.Contains(c.Args, "--strict-mcp-config") {
+		t.Errorf("claude did not get --setting-sources \"\" and --strict-mcp-config: %q", c.Args)
+	}
 	if !strings.HasPrefix(c.Stdin, prompt.Reviewer()) || !strings.Contains(c.Stdin, "PR body here") ||
 		strings.Contains(c.Stdin, "Diff since your last review") {
 		t.Errorf("prompt does not start with reviewer.md, lacks the PR body, or has since.txt:\n%s", c.Stdin)

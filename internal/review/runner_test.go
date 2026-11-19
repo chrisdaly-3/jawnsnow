@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -91,7 +92,7 @@ func TestBuildArgsExact(t *testing.T) {
 	want := []string{
 		"-p", "--output-format", "stream-json", "--verbose",
 		"--tools", "Read,Grep,Glob", "--permission-mode", "dontAsk",
-		"--setting-sources", "local",
+		"--setting-sources", "", "--strict-mcp-config",
 		"--max-turns", "100", "--max-budget-usd", "15",
 		"--json-schema", `{"type":"object"}`,
 		"--model", "claude-opus-5-5", "--effort", "high",
@@ -113,6 +114,27 @@ func TestBuildArgsExact(t *testing.T) {
 	}
 	if !contains(got, "--resume") {
 		t.Errorf("Resume missing --resume: %q", got)
+	}
+}
+
+// The reviewer runs with its working directory in the PR's checkout, so any
+// settings source claude reads from the project would let the PR add hooks,
+// env, MCP servers or instructions.
+func TestBuildArgsNeverLoadsProjectSettings(t *testing.T) {
+	for _, resume := range []bool{false, true} {
+		got := BuildArgs(Session{SessionID: "abc", Resume: resume, AddDirs: []string{"/d"}})
+		for _, a := range got {
+			if a == "local" || a == "project" {
+				t.Errorf("resume=%v: args load a project settings source %q: %q", resume, a, got)
+			}
+		}
+		i := slices.Index(got, "--setting-sources")
+		if i < 0 || i+1 >= len(got) || got[i+1] != "" {
+			t.Errorf("resume=%v: --setting-sources not followed by an empty argument: %q", resume, got)
+		}
+		if !slices.Contains(got, "--strict-mcp-config") {
+			t.Errorf("resume=%v: --strict-mcp-config missing: %q", resume, got)
+		}
 	}
 }
 
