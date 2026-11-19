@@ -282,6 +282,9 @@ func TestBuildDepsNoClaude(t *testing.T) {
 	if deps.ReviewsOff != "claude not found on PATH" || deps.Reviewer != nil {
 		t.Fatalf("off=%q reviewer=%v", deps.ReviewsOff, deps.Reviewer)
 	}
+	if !hasBanner(deps.Banners, "reviews off: claude not found on PATH") || hasBanner(deps.Banners, "auto mode") {
+		t.Errorf("banners = %q, want \"reviews off: claude not found on PATH\"", deps.Banners)
+	}
 	// Never the zero value, which the TUI reads as "detection didn't run".
 	if deps.Claude.Err != "claude not found on PATH" {
 		t.Fatalf("Claude = %+v", deps.Claude)
@@ -362,6 +365,9 @@ func TestAutoDefaultFallsBackWithoutClaude(t *testing.T) {
 	// mode because there is no reviewer.
 	if deps.Config.Mode.Default != "auto" || deps.Reviewer != nil || deps.ReviewsOff == "" {
 		t.Fatalf("mode=%q reviewer=%v off=%q", deps.Config.Mode.Default, deps.Reviewer, deps.ReviewsOff)
+	}
+	if !hasBanner(deps.Banners, "auto mode unavailable — reviews off: claude not found on PATH") {
+		t.Errorf("banners = %q, want the auto fallback banner", deps.Banners)
 	}
 }
 

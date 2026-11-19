@@ -186,6 +186,14 @@ func buildDeps(getenv func(string) string, newClient func() (github.Client, erro
 			DataDir: dataDir, Claude: deps.Claude.Path, Viewer: viewerOf(deps.Client),
 		}
 	}
+	switch {
+	case deps.ReviewsOff == "":
+	case cfg.Mode.Default == "auto":
+		// The TUI starts in watcher mode instead.
+		banners = append(banners, "auto mode unavailable — reviews off: "+deps.ReviewsOff)
+	default:
+		banners = append(banners, "reviews off: "+deps.ReviewsOff)
+	}
 
 	// The sweep frees every stored slot, so it is only safe for the snow
 	// holding the lock.
