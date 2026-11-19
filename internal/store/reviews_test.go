@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -271,8 +272,29 @@ func TestMigratesV1Database(t *testing.T) {
 	defer s.Close()
 
 	var v int
-	if err := s.db.QueryRow(`SELECT version FROM schema_version`).Scan(&v); err != nil || v != 5 {
-		t.Fatalf("schema version = %d err=%v, want 5", v, err)
+	if err := s.db.QueryRow(`SELECT version FROM schema_version`).Scan(&v); err != nil || v != 6 {
+		t.Fatalf("schema version = %d err=%v, want 6", v, err)
+	}
+	for _, idx := range []struct{ table, cols string }{
+		{"findings", "review_id"}, {"reviews", "pr_id,started_at"}, {"cost_ledger", "at"},
+	} {
+		var cols []string
+		rows, err := s.db.Query(`SELECT ii.name FROM sqlite_master m, pragma_index_info(m.name) ii
+			WHERE m.type = 'index' AND m.sql IS NOT NULL AND m.tbl_name = ? ORDER BY m.name, ii.seqno`, idx.table)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for rows.Next() {
+			var c string
+			if err := rows.Scan(&c); err != nil {
+				t.Fatal(err)
+			}
+			cols = append(cols, c)
+		}
+		rows.Close()
+		if got := strings.Join(cols, ","); got != idx.cols {
+			t.Errorf("index columns on %s = %q, want %q", idx.table, got, idx.cols)
+		}
 	}
 	var n int
 	if err := s.db.QueryRow(`SELECT COUNT(*) FROM prs WHERE id = 'pr1'`).Scan(&n); err != nil || n != 1 {

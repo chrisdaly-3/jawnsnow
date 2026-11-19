@@ -48,6 +48,10 @@ var migrations = []string{
 		repo TEXT,
 		data TEXT
 	)`,
+	// The lookups every drawer open, poll evaluation and spend total make.
+	`CREATE INDEX findings_review_id ON findings (review_id);
+	CREATE INDEX reviews_pr_id_started_at ON reviews (pr_id, started_at);
+	CREATE INDEX cost_ledger_at ON cost_ledger (at)`,
 }
 
 type Store struct {
