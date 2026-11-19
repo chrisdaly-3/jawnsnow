@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/cli/go-gh/v2/pkg/api"
@@ -81,6 +82,16 @@ func NewGHPoster() (Poster, error) {
 // A failure is returned as is, with GitHub's message, and never retried: a
 // retry after a response was lost could post the review twice.
 func (p *poster) PostReview(ctx context.Context, in PostInput) (PostResult, error) {
+	// DISMISS and the empty event (a pending review) are never wanted, and a
+	// review is always posted against the commit it reviewed.
+	switch in.Event {
+	case "APPROVE", "COMMENT", "REQUEST_CHANGES":
+	default:
+		return PostResult{}, fmt.Errorf("github: post review: event %q is not APPROVE, COMMENT or REQUEST_CHANGES", in.Event)
+	}
+	if in.CommitOID == "" {
+		return PostResult{}, errors.New("github: post review: no commit to post against")
+	}
 	threads := make([]map[string]any, 0, len(in.Threads))
 	for _, t := range in.Threads {
 		m := map[string]any{"path": t.Path, "line": t.Line, "side": "RIGHT", "body": t.Body}

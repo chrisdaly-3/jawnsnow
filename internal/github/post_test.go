@@ -74,7 +74,7 @@ func TestPostReviewError(t *testing.T) {
 			return &api.GraphQLError{Errors: []api.GraphQLErrorItem{{Type: "RATE_LIMITED", Message: "API rate limit exceeded for user"}}}
 		},
 	}
-	_, err := NewPoster(d).PostReview(context.Background(), PostInput{PRID: "PR_1"})
+	_, err := NewPoster(d).PostReview(context.Background(), PostInput{PRID: "PR_1", CommitOID: "c", Event: "COMMENT"})
 	if err == nil || !strings.Contains(err.Error(), "API rate limit exceeded for user") {
 		t.Fatalf("err = %v", err)
 	}
@@ -85,7 +85,7 @@ func TestPostReviewError(t *testing.T) {
 
 	// A response with no review and no error is still a failure.
 	_, err = NewPoster(&fakeDoer{respond: func(int, string, map[string]any) []byte { return fixture(t, "post_error.json") }}).
-		PostReview(context.Background(), PostInput{PRID: "PR_1"})
+		PostReview(context.Background(), PostInput{PRID: "PR_1", CommitOID: "c", Event: "COMMENT"})
 	if err == nil {
 		t.Error("empty response accepted")
 	}
@@ -141,6 +141,62 @@ func TestClientStaysReadOnly(t *testing.T) {
 		}
 		if strings.Contains(strings.ToLower(string(src)), "mutation") {
 			t.Errorf("%s contains a mutation", f)
+		}
+	}
+}
+
+func TestPostReviewRejectsBadInput(t *testing.T) {
+	for name, in := range map[string]PostInput{
+		"dismiss":      {PRID: "PR_1", CommitOID: "c", Event: "DISMISS"},
+		"empty event":  {PRID: "PR_1", CommitOID: "c", Event: ""},
+		"lowercase":    {PRID: "PR_1", CommitOID: "c", Event: "approve"},
+		"empty commit": {PRID: "PR_1", CommitOID: "", Event: "COMMENT"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			p, d := okPoster(t)
+			if _, err := p.PostReview(context.Background(), in); err == nil {
+				t.Error("bad input accepted")
+			}
+			assertEq(t, len(d.calls), 0)
+		})
+	}
+}
+
+func TestPostReviewKeepsEveryThread(t *testing.T) {
+	p, d := okPoster(t)
+	_, err := p.PostReview(context.Background(), PostInput{PRID: "PR_1", CommitOID: "c", Event: "COMMENT", Threads: []PostThread{
+		{Path: "a.go", Line: 3, Body: "one"},
+		{Path: "b.go", Line: 20, StartLine: 15, Body: "two"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	th := d.calls[0].vars["input"].(map[string]any)["threads"].([]map[string]any)
+	assertEq(t, len(th), 2)
+	assertEq(t, th[0]["path"], any("a.go"))
+	assertEq(t, th[0]["line"], any(3))
+	assertEq(t, th[0]["side"], any("RIGHT"))
+	assertEq(t, th[0]["body"], any("one"))
+	if _, ok := th[0]["startLine"]; ok {
+		t.Error("single-line thread has startLine")
+	}
+	assertEq(t, th[1]["path"], any("b.go"))
+	assertEq(t, th[1]["line"], any(20))
+	assertEq(t, th[1]["side"], any("RIGHT"))
+	assertEq(t, th[1]["startLine"], any(15))
+	assertEq(t, th[1]["startSide"], any("RIGHT"))
+	assertEq(t, th[1]["body"], any("two"))
+}
+
+func TestQueryTextMatchesVariables(t *testing.T) {
+	for _, s := range []string{"$input: AddPullRequestReviewInput!", "addPullRequestReview(input: $input)"} {
+		if !strings.Contains(addReviewMutation, s) {
+			t.Errorf("mutation lacks %q", s)
+		}
+	}
+	for _, s := range []string{"$pr: ID!", "$before: String", "node(id: $pr)", "before: $before"} {
+		if !strings.Contains(threadIDsQuery, s) {
+			t.Errorf("thread query lacks %q", s)
 		}
 	}
 }
