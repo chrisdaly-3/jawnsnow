@@ -125,6 +125,57 @@ func TestDoneUnhideEmitsAction(t *testing.T) {
 	}
 }
 
+func TestDoneEnterOpensDrawer(t *testing.T) {
+	prs := donePRs()
+	if _, act := pressDone(t, testDone(120, 20, 0), prs, "enter"); act != (actionOpenDrawer{ID: "m2"}) {
+		t.Errorf("enter in Merged & closed = %#v, want actionOpenDrawer{m2}", act)
+	}
+	if _, act := pressDone(t, testDone(120, 20, 1), prs, "enter"); act != (actionOpenDrawer{ID: "w1"}) {
+		t.Errorf("enter in Waiting = %#v, want actionOpenDrawer{w1}", act)
+	}
+	if _, act := pressDone(t, testDone(120, 20, 0), nil, "enter"); act != (actionNone{}) {
+		t.Errorf("enter on an empty table = %#v, want actionNone", act)
+	}
+}
+
+// The drawer opens beside the Done view on the selected row's PR, takes
+// focus with tab, and esc closes it.
+func TestDoneEnterOpensDrawerThroughRootModel(t *testing.T) {
+	hidden := tracker.Hide(wallPR("1"), t0.Add(-time.Minute))
+	h := newHarness(t, opts{}, hidden, wallPR("2"))
+	h.finishPoll(t)
+	h.press(t, "2", "tab", "enter")
+	settleDrawer(t, h)
+	if !h.m.drawer.isOpen() || h.m.drawer.prID != "1" || h.m.view != ViewDone {
+		t.Fatalf("drawer open %v on %q in view %v, want open on 1 in Done", h.m.drawer.isOpen(), h.m.drawer.prID, h.m.view)
+	}
+	c := ansi.Strip(content(h.m))
+	if !strings.Contains(c, "No reviews yet") || !strings.Contains(c, "Waiting for new activity") {
+		t.Errorf("the drawer is not beside the Done view:\n%s", c)
+	}
+	if got := h.m.paneCount(); got != 3 {
+		t.Errorf("panes with the drawer open = %d, want 3", got)
+	}
+	h.press(t, "tab")
+	if !h.m.drawerCtx().Focused {
+		t.Errorf("tab did not focus the drawer (focus %d)", h.m.focus)
+	}
+	h.press(t, "esc")
+	if h.m.drawer.isOpen() || h.m.focus != 0 {
+		t.Errorf("esc: open %v focus %d, want closed and focus 0", h.m.drawer.isOpen(), h.m.focus)
+	}
+	// A drawer opened in Done doesn't follow to the Wall.
+	h.press(t, "tab", "enter")
+	settleDrawer(t, h)
+	if !h.m.drawer.isOpen() {
+		t.Fatal("enter did not open the drawer again")
+	}
+	h.press(t, "1")
+	if strings.Contains(ansi.Strip(content(h.m)), "No reviews yet") {
+		t.Errorf("the Done view's drawer shows on the Wall:\n%s", ansi.Strip(content(h.m)))
+	}
+}
+
 func TestDoneSorting(t *testing.T) {
 	prs := donePRs()
 	if got, want := ids(mergedRows(prs)), []string{"m2", "m1", "c1"}; !slices.Equal(got, want) {

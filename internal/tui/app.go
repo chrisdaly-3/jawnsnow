@@ -185,6 +185,9 @@ type Model struct {
 	wall   wallModel
 	done   doneModel
 	drawer drawerModel
+	// drawerView is the view the drawer was opened in, the only one it
+	// shows in.
+	drawerView View
 	// spinning is true while the spinner's tick loop runs; spinFrame is
 	// the frame counter every spinning card indexes its own spinner with.
 	spinning  bool
@@ -375,7 +378,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	case "?":
 		m.help = true
 	case "esc":
-		if m.view == ViewWall && m.drawer.isOpen() {
+		if m.drawerHere() {
 			var cmd tea.Cmd
 			m.drawer, cmd = m.drawer.hide()
 			m.focus = 0
@@ -407,11 +410,14 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 func (m Model) updateView(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	switch m.view {
 	case ViewWall:
-		if m.drawer.isOpen() && m.focus == drawerPane {
+		if m.drawerHere() && m.focus == m.drawerPane() {
 			return m.drawerUpdate(msg)
 		}
 		return m.wallUpdate(msg)
 	case ViewDone:
+		if m.drawerHere() && m.focus == m.drawerPane() {
+			return m.drawerUpdate(msg)
+		}
 		return m.doneUpdate(msg)
 	case ViewAgent:
 		return m.agentKey(msg)
@@ -434,7 +440,7 @@ func (m Model) drawerCtx() drawerCtx {
 	_, h := m.bodySize()
 	return drawerCtx{
 		PR: m.prs[id], Running: s.running, Ticker: s.ticker, Frame: m.spinFrame,
-		Focused: m.focus == drawerPane, Now: m.now(), Theme: m.theme, Tick: m.tick, Height: h,
+		Focused: m.view == m.drawerView && m.focus == m.drawerPane(), Now: m.now(), Theme: m.theme, Tick: m.tick, Height: h,
 	}
 }
 
@@ -468,6 +474,7 @@ func (m Model) closeGoneDrawer() (Model, tea.Cmd) {
 // doneUpdate gives msg to the Done view and applies the action it returns.
 func (m Model) doneUpdate(msg tea.Msg) (Model, tea.Cmd) {
 	w, h := m.bodySize()
+	w -= m.drawerWidthIn(ViewDone)
 	m.done.setSize(w, h)
 	m.done.now, m.done.focus = m.now(), m.focus
 	done, cmd, act := m.done.update(msg, m.wallPRs())
@@ -479,7 +486,7 @@ func (m Model) doneUpdate(msg tea.Msg) (Model, tea.Cmd) {
 // wallUpdate gives msg to the Wall and applies the action it returns.
 func (m Model) wallUpdate(msg tea.Msg) (Model, tea.Cmd) {
 	w, h := m.bodySize()
-	w -= m.drawer.width()
+	w -= m.drawerWidthIn(ViewWall)
 	m.wall.setSize(w, h)
 	m.wall.now, m.wall.feeds = m.now(), m.feedNames()
 	wall, cmd, act := m.wall.update(msg, m.wallPRs())
@@ -501,20 +508,39 @@ func (m Model) feedNames() []string {
 	return names
 }
 
-// drawerPane is the focus index of the review drawer, beside the Wall.
-const drawerPane = 1
-
-// paneCount is the number of focusable panes in the current view: the Done
-// view's two tables, the Wall and the drawer while it is open, and one for
-// every other view.
-func (m Model) paneCount() int {
-	switch {
-	case m.view == ViewDone:
+// drawerPane is the focus index of the review drawer: after the Done
+// view's two tables, or after the Wall.
+func (m Model) drawerPane() int {
+	if m.view == ViewDone {
 		return donePanes
-	case m.view == ViewWall && m.drawer.isOpen():
-		return 2
 	}
 	return 1
+}
+
+// drawerHere reports whether the drawer is open in the current view.
+func (m Model) drawerHere() bool { return m.drawer.isOpen() && m.view == m.drawerView }
+
+// drawerWidthIn is the drawer's width in view v: 0 unless it was opened
+// there.
+func (m Model) drawerWidthIn(v View) int {
+	if m.drawerView != v {
+		return 0
+	}
+	return m.drawer.width()
+}
+
+// paneCount is the number of focusable panes in the current view: the Done
+// view's two tables, the Wall, the drawer while it is open in either, and
+// one for every other view.
+func (m Model) paneCount() int {
+	n := 1
+	if m.view == ViewDone {
+		n = donePanes
+	}
+	if m.drawerHere() && (m.view == ViewDone || m.view == ViewWall) {
+		n++
+	}
+	return n
 }
 
 func (m Model) switchView(v View) Model {
@@ -541,6 +567,7 @@ func (m Model) apply(a action) (Model, tea.Cmd) {
 		return m.openPicker(a.ID), nil
 	case actionOpenDrawer:
 		var cmd tea.Cmd
+		m.drawerView = m.view
 		m.drawer, cmd = m.drawer.show(a.ID, m.width)
 		m, load := m.loadDrawer(a.ID)
 		return m, tea.Batch(cmd, load)
@@ -887,7 +914,7 @@ func (m Model) body(width, height int) string {
 	case ViewWall:
 		w := m.wall
 		w.now, w.feeds, w.badges = m.now(), m.feedNames(), m.reviewBadges(m.spinFrame)
-		dw := min(m.drawer.width(), max(width-1, 0))
+		dw := min(m.drawerWidthIn(ViewWall), max(width-1, 0))
 		w.setSize(width-dw, height)
 		wallView := w.view(width-dw, height, m.displayPRs(), m.theme, m.spinFrame)
 		if dw == 0 {
@@ -895,10 +922,15 @@ func (m Model) body(width, height int) string {
 		}
 		return m.withDrawer(wallView, width-dw, dw, height)
 	case ViewDone:
+		dw := min(m.drawerWidthIn(ViewDone), max(width-1, 0))
 		d := m.done
 		d.now, d.focus, d.verdicts = m.now(), m.focus, m.reviewVerdicts()
-		d.setSize(width, height)
-		return d.view(width, height, m.wallPRs(), m.theme)
+		d.setSize(width-dw, height)
+		doneView := d.view(width-dw, height, m.wallPRs(), m.theme)
+		if dw == 0 {
+			return doneView
+		}
+		return m.withDrawer(doneView, width-dw, dw, height)
 	case ViewAgent:
 		return m.agentBody(width, height)
 	default:
@@ -921,14 +953,14 @@ func fit(s string, width, height int) []string {
 	return lines
 }
 
-// withDrawer puts the drawer beside the wall's lines, which it pads to
-// wallW cells so the drawer's edge lines up.
-func (m Model) withDrawer(wallView string, wallW, drawerW, height int) string {
+// withDrawer puts the drawer beside the view's lines, which it pads to
+// viewW cells so the drawer's edge lines up.
+func (m Model) withDrawer(view string, viewW, drawerW, height int) string {
 	c := m.drawerCtx()
-	left := fit(wallView, wallW, height)
+	left := fit(view, viewW, height)
 	right := strings.Split(m.drawer.view(drawerW, height, c), "\n")
 	for i := range left {
-		left[i] += strings.Repeat(" ", max(wallW-ansi.StringWidth(left[i]), 0))
+		left[i] += strings.Repeat(" ", max(viewW-ansi.StringWidth(left[i]), 0))
 		if i < len(right) {
 			left[i] += right[i]
 		}

@@ -58,6 +58,7 @@ var keyMap = []keySection{
 	{"Done", []keyHint{
 		{"j k", "previous or next row"},
 		{"x", "unhide"},
+		{"enter", "open the review drawer"},
 		{"o", "open in the browser"},
 	}},
 }

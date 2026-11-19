@@ -105,6 +105,10 @@ func (m doneModel) update(msg tea.Msg, prs []tracker.Tracked) (doneModel, tea.Cm
 		if len(rows) > 0 {
 			return m, nil, actionOpen{URL: rows[cur].PR.URL}
 		}
+	case "enter":
+		if len(rows) > 0 {
+			return m, nil, actionOpenDrawer{ID: rows[cur].PR.ID}
+		}
 	}
 	return m, nil, actionNone{}
 }
