@@ -365,3 +365,93 @@ func TestCostViewTinyWindowDoesNotPanic(t *testing.T) {
 		_ = content(m)
 	}
 }
+
+func TestFooterKeepsGlobalKeys(t *testing.T) {
+	h := costHarness(t, opts{}, 120, 30, true)
+	for v := range viewCount {
+		h.m = h.m.switchView(v)
+		for _, w := range []int{80, 100, 120} {
+			got := ansi.Strip(h.m.footer(w))
+			if !strings.Contains(got, "? help") || !strings.Contains(got, "q quit") {
+				t.Errorf("%v at %d cols hides the global keys: %q", v, w, got)
+			}
+			if lw := ansi.StringWidth(got); lw > w {
+				t.Errorf("%v at %d cols: footer is %d wide", v, w, lw)
+			}
+		}
+	}
+	// A view's hints that don't fit are dropped whole, marked with "…".
+	h.m = h.m.switchView(ViewWall)
+	if got := ansi.Strip(h.m.footer(80)); !strings.Contains(got, "… · [ ] views") || strings.Contains(got, "author") {
+		t.Errorf("the Wall's footer at 80 cols doesn't drop whole hints: %q", got)
+	}
+	h.m = h.m.switchView(ViewCost)
+	want := " r range · f filter · g group · b bucket · t total · enter reviews · [ ] views · R poll · m mode · ? help · q quit"
+	if got := ansi.Strip(h.m.footer(120)); got != want {
+		t.Errorf("Cost footer at 120 cols:\n got %q\nwant %q", got, want)
+	}
+}
+
+func TestCostFooterShowsModeKeys(t *testing.T) {
+	h := costHarness(t, opts{}, 120, 30, true)
+	h.press(t, "4", "f")
+	if got := ansi.Strip(h.m.footer(120)); !strings.Contains(got, "space toggle · esc close") || strings.Contains(got, "g group") {
+		t.Errorf("the picker's footer: %q", got)
+	}
+	h.press(t, "esc", "r", "r")
+	if got := ansi.Strip(h.m.footer(120)); !strings.Contains(got, "enter apply · esc cancel") || strings.Contains(got, "g group") {
+		t.Errorf("the range input's footer: %q", got)
+	}
+}
+
+// enterRange types s into the custom range input, already open, and
+// presses enter, returning the loads that produced.
+func enterRange(t *testing.T, h *harness, s string) []costLoadedMsg {
+	t.Helper()
+	h.m, _ = update(t, h.m, ctrl('u'))
+	for _, r := range s {
+		h.m, _ = update(t, h.m, key(string(r)))
+	}
+	var cmd tea.Cmd
+	h.m, cmd = update(t, h.m, key("enter"))
+	return costLoads(t, cmd)
+}
+
+func TestCostViewCustomRangeEdges(t *testing.T) {
+	day := func(y int, mo time.Month, d int) time.Time { return time.Date(y, mo, d, 0, 0, 0, 0, time.UTC) }
+	cases := []struct {
+		in       string
+		from, to time.Time // zero when refused
+		note     string
+	}{
+		{in: "2026-11-12..2026-11-12", from: day(2026, 11, 12), to: day(2026, 11, 13)},
+		{in: "  2026-11-10 .. 2026-11-14  ", from: day(2026, 11, 10), to: day(2026, 11, 15)},
+		{in: "2024-11-18..2026-11-18", from: day(2024, 11, 18), to: day(2026, 11, 19)}, // 731 days
+		{in: "2024-11-17..2026-11-18", note: "range can be at most 2 years"},
+	}
+	for _, c := range cases {
+		h := costHarness(t, opts{}, 120, 30, true)
+		h.press(t, "4", "r", "r")
+		loads := enterRange(t, h, c.in)
+		if c.note != "" {
+			if len(loads) != 0 || !strings.Contains(stripped(h.m), c.note) {
+				t.Errorf("%q: loads %v, want none and %q inline:\n%s", c.in, loads, c.note, stripped(h.m))
+			}
+			continue
+		}
+		if len(loads) != 1 || !loads[0].From.Equal(c.from) || !loads[0].To.Equal(c.to) {
+			t.Errorf("%q: loads %v, want [%v, %v)", c.in, loads, c.from, c.to)
+		}
+	}
+}
+
+func TestCostViewPluralUnknownRuns(t *testing.T) {
+	h := costHarness(t, opts{}, 120, 30, true)
+	more := spend(4, 12, "r9", "PR_c", "acme/widgets", "carol", "sonnet", "follow_up", 0)
+	more.CostUnknown = true
+	seedCost(t, h.store, []store.CostRow{more}, nil)
+	h.press(t, "4")
+	if got := stripped(h.m); !strings.Contains(got, "Total $13.95 · 2 runs cost unknown") {
+		t.Errorf("two unknown runs aren't counted:\n%s", got)
+	}
+}

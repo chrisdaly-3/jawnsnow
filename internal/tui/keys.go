@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 type keyHint struct{ keys, help string }
@@ -98,8 +99,7 @@ var footerKeys = map[View][]keyHint{
 	ViewWall:  {{"h/l", "lane"}, {"j/k", "card"}, {"space", "review"}, {"x", "hide"}, {"o", "open"}, {"/", "filter"}, {"a", "author"}},
 	ViewAgent: {{"j/k", "tier"}, {"enter", "pick"}, {"x", "clear"}, {"e", "edit config"}},
 	ViewDone:  {{"j/k", "row"}, {"x", "unhide"}, {"o", "open"}},
-	ViewCost: {{"r", "range"}, {"f", "filter"}, {"g", "group"}, {"b", "bucket"}, {"t", "total"},
-		{"h/l", "cursor"}, {"j/k", "PR"}, {"enter", "reviews"}, {"tab", "pane"}},
+	ViewCost:  {{"r", "range"}, {"f", "filter"}, {"g", "group"}, {"b", "bucket"}, {"t", "total"}, {"enter", "reviews"}},
 }
 
 // The post flow's footer, by stage. m's hint names the view it switches to.
@@ -122,7 +122,38 @@ func postPreviewKeys(raw bool) []keyHint {
 
 var footerGlobal = []keyHint{{"[ ]", "views"}, {"R", "poll"}, {"m", "mode"}, {"?", "help"}, {"q", "quit"}}
 
-func footerHints(v View) []keyHint { return slices.Concat(footerKeys[v], footerGlobal) }
+// The Cost view's footer while its range input or filter picker has the
+// keys.
+var (
+	costRangeKeys  = []keyHint{{"enter", "apply"}, {"esc", "cancel"}}
+	costPickerKeys = []keyHint{{"h/l", "dimension"}, {"j/k", "value"}, {"space", "toggle"}, {"esc", "close"}}
+)
+
+func hintParts(hints []keyHint) []string {
+	parts := make([]string, len(hints))
+	for i, k := range hints {
+		parts[i] = strings.TrimSpace(k.keys + " " + k.help)
+	}
+	return parts
+}
+
+// hintLine joins the view's hints and the global ones into one line of at
+// most width cells. The global hints always end it: view hints that don't
+// fit are dropped whole from the right, leaving "…" in their place, and
+// only the globals alone are ever cut short.
+func hintLine(view, global []keyHint, width int) string {
+	vp, gp := hintParts(view), hintParts(global)
+	for k := len(vp); ; k-- {
+		parts := slices.Clone(vp[:k])
+		if k < len(vp) {
+			parts = append(parts, "…")
+		}
+		line := " " + strings.Join(append(parts, gp...), " · ")
+		if k == 0 || lipgloss.Width(line) <= width {
+			return ansi.Truncate(line, max(width, 0), "…")
+		}
+	}
+}
 
 func (m Model) helpBody(width, height int) string {
 	keyW := 0

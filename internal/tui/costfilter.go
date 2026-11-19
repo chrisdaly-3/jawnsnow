@@ -139,10 +139,7 @@ func (m Model) costPickerView(width, height int) []string {
 			tabs[d] = th.Muted().Render(" " + name + " ")
 		}
 	}
-	lines := []string{
-		strings.Join(tabs, " "),
-		th.Muted().Render("h/l dimension · j/k move · space toggle · esc close"),
-	}
+	lines := []string{strings.Join(tabs, " ")}
 	vals := c.dimValues(c.pickDim)
 	if len(vals) == 0 {
 		lines = append(lines, th.Muted().Render("  no values in this range"))

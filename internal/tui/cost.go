@@ -34,6 +34,10 @@ const (
 	subscriptionLabel = "≈ API-equivalent cost (subscription login)"
 	customRangeLayout = "2006-01-02"
 	invalidRangeNote  = "invalid range: want YYYY-MM-DD..YYYY-MM-DD, start on or before end"
+	// customRangeMaxDays bounds a custom range: Aggregate lays out every
+	// bucket inside Update.
+	customRangeMaxDays = 731
+	longRangeNote      = "range can be at most 2 years"
 )
 
 // seriesPalette colors series i (D11).
@@ -135,7 +139,11 @@ func parseRange(s string) (from, to time.Time, err error) {
 	if errA != nil || errB != nil || last.Before(from) {
 		return time.Time{}, time.Time{}, errors.New(invalidRangeNote)
 	}
-	return from, last.AddDate(0, 0, 1), nil
+	to = last.AddDate(0, 0, 1)
+	if (costModel{from: from, to: to}).days() > customRangeMaxDays {
+		return time.Time{}, time.Time{}, errors.New(longRangeNote)
+	}
+	return from, to, nil
 }
 
 // days is the range's length in calendar days.
@@ -467,7 +475,7 @@ func (m Model) costBody(width, height int) string {
 func (m Model) costFilterBar() string {
 	th, c := m.theme, m.cost
 	if c.typing {
-		s := "range " + c.input.View() + "  " + th.Muted().Render("enter apply · esc cancel")
+		s := "range " + c.input.View()
 		if c.inputErr != "" {
 			s += "  " + th.Accent().Render(c.inputErr)
 		}

@@ -113,15 +113,18 @@ func (m Model) footer(width int) string {
 	if p := m.reviewPrompt(); p != "" {
 		return ansi.Truncate(" "+p, max(width, 0), "…")
 	}
-	hints := footerHints(m.view)
-	if m.post != nil {
-		hints = m.post.hints()
+	// The post flow and the Cost view's input modes take every key, so the
+	// global ones don't apply and aren't shown.
+	view, global := footerKeys[m.view], footerGlobal
+	switch {
+	case m.post != nil:
+		view, global = m.post.hints(), nil
+	case m.view == ViewCost && m.cost.typing:
+		view, global = costRangeKeys, nil
+	case m.view == ViewCost && m.cost.picking:
+		view, global = costPickerKeys, nil
 	}
-	parts := make([]string, len(hints))
-	for i, k := range hints {
-		parts[i] = strings.TrimSpace(k.keys + " " + k.help)
-	}
-	return ansi.Truncate(" "+m.theme.Muted().Render(strings.Join(parts, " · ")), max(width, 0), "…")
+	return m.theme.Muted().Render(hintLine(view, global, width))
 }
 
 // ago is a short age: 40s, 3m, 2h.
