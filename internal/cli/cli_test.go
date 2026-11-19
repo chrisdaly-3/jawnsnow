@@ -516,3 +516,19 @@ func TestGHClientErrorWarns(t *testing.T) {
 		t.Errorf("banners repeat the login warning: %q", deps.Banners)
 	}
 }
+
+func TestNoGHLoginWarnsOnceInAutoMode(t *testing.T) {
+	home := isolate(t)
+	writeConfig(t, home, "[mode]\ndefault = \"auto\"\n")
+	deps, cleanup, err := buildDeps(os.Getenv, noClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	if deps.LoginWarning == "" {
+		t.Fatal("no LoginWarning")
+	}
+	if hasBanner(deps.Banners, "auto mode unavailable") || hasBanner(deps.Banners, "reviews off") {
+		t.Errorf("banners repeat the login warning: %q", deps.Banners)
+	}
+}

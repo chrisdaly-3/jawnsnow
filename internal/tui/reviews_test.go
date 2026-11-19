@@ -763,7 +763,11 @@ func TestHeadMovedDoesNotLoopInAutoMode(t *testing.T) {
 	h := newHarness(t, opts{reviews: true, auto: true}, seenAgo("1", 3*time.Hour))
 	h.reviewer.headMoved = true
 	h.finishPoll(t)
+	polls := h.client.polls
 	h.runReviews(t)
+	if h.client.polls != polls+1 {
+		t.Fatalf("searches = %d, want %d: a moved head must start a poll at once", h.client.polls, polls+1)
+	}
 	for range 5 {
 		h.evaluate(t)
 		h.runReviews(t)
@@ -789,7 +793,11 @@ func TestForcedHeadMovedNotice(t *testing.T) {
 	h.reviewer.headMoved = true
 	h.finishPoll(t)
 	h.m, _ = settle(t, h.m, spaceKey())
+	polls := h.client.polls
 	h.runReviews(t)
+	if h.client.polls != polls+1 {
+		t.Errorf("searches = %d, want %d: a moved head must start a poll at once", h.client.polls, polls+1)
+	}
 	if want := "PR moved on since the last poll — polling now"; !strings.Contains(content(h.m), want) {
 		t.Errorf("no %q notice:\n%s", want, content(h.m))
 	}

@@ -1299,12 +1299,18 @@ func TestLoginWarningIsFirstBanner(t *testing.T) {
 		Config: config.Defaults(), Theme: th, Store: st, Now: func() time.Time { return t0 },
 		LoginWarning: warn, Banners: []string{"first note", "second note"},
 	})
-	lines := m.bannerLines(120)
+	lines := m.bannerLines(80)
 	if len(lines) != 3 {
 		t.Fatalf("bannerLines = %q, want 3 lines", lines)
 	}
 	if first := ansi.Strip(lines[0]); !strings.Contains(first, "⚠ "+warn) {
 		t.Errorf("first banner = %q, want the warning with its ⚠ prefix", first)
+	}
+	if want := " " + m.theme.StatusFg("CI_FAILED").Bold(true).Render("⚠ "+warn); lines[0] != want {
+		t.Errorf("warning styling = %q, want %q", lines[0], want)
+	}
+	if lines[0] == " "+m.theme.Accent().Render("⚠ "+warn) {
+		t.Error("warning is in the accent style")
 	}
 	if !strings.Contains(ansi.Strip(lines[1]), "first note") || !strings.Contains(ansi.Strip(lines[2]), "second note") {
 		t.Errorf("the other banners are out of order: %q", lines[1:])

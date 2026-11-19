@@ -592,7 +592,7 @@ func (e *Engine) PruneIdle(ctx context.Context) error {
 				continue
 			}
 			if gone, err := e.dropSlotsWithoutClone(ctx, name); err != nil {
-				errs = append(errs, err)
+				errs = append(errs, fmt.Errorf("prune %s: %w", name, err))
 				continue
 			} else if gone {
 				continue
