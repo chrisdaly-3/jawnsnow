@@ -448,8 +448,15 @@ func (m drawerModel) layout(c drawerCtx) (lines []string, anchors []int) {
 	})...)
 	if note := cleanBlock(r.Note); strings.TrimSpace(note) != "" {
 		add(th.Accent().Render("Check notes"))
-		for _, l := range wrap(strings.Join(strings.Fields(note), " ")) {
-			add(th.Muted().Render(l))
+		// One note per line, as the engine writes them; only the spacing
+		// inside each is tidied.
+		for _, n := range strings.Split(note, "\n") {
+			if n = strings.Join(strings.Fields(n), " "); n == "" {
+				continue
+			}
+			for _, l := range wrap(n) {
+				add(th.Muted().Render(l))
+			}
 		}
 	}
 	return lines, anchors

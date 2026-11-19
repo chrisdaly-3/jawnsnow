@@ -264,6 +264,22 @@ func TestDrawerEmptyAndLoading(t *testing.T) {
 	}
 }
 
+// The engine writes one check note per line; the drawer keeps them apart.
+func TestDrawerCheckNotesKeepTheirLines(t *testing.T) {
+	r := drawerReview()
+	r.Note = "the reviewer's note\nnot done: read pkg/a.go\nwording: say which test"
+	d, c := openDrawer(t, 160, 80, r)
+	var lines []string
+	for _, l := range strings.Split(ansi.Strip(d.view(d.width(), 80, c)), "\n") {
+		lines = append(lines, strings.Trim(l, " │"))
+	}
+	for _, want := range []string{"the reviewer's note", "not done: read pkg/a.go", "wording: say which test"} {
+		if !slices.Contains(lines, want) {
+			t.Errorf("no line %q in:\n%s", want, strings.Join(lines, "\n"))
+		}
+	}
+}
+
 func TestDrawerCleansText(t *testing.T) {
 	r := drawerReview()
 	r.Findings[1].Body = "Bad \x1b]0;pwned\x07\x1b[31mred\x1b[0m text\x1b[2J\n\n- item one\n- item two\x07"
