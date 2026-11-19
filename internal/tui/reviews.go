@@ -58,7 +58,12 @@ type reviewState struct {
 	lastFailure time.Time
 	failHead    string
 	head        string // the head the running review started at
-	skip        string // why the last auto-mode evaluation didn't review it
+	forced      bool   // the running review was asked for, not started by auto mode
+	// movedHead is the snapshot head a review found already out of date.
+	// Auto mode leaves the PR alone while its snapshot still has this head;
+	// a poll that delivers another one lifts it.
+	movedHead string
+	skip      string // why the last auto-mode evaluation didn't review it
 	// cancelled is set when latest is a review that was cancelled, by a
 	// quit or by its PR leaving the wall, rather than one that failed.
 	cancelled bool
@@ -288,6 +293,7 @@ func (m Model) startReview(t tracker.Tracked, mode review.Mode, oneRun *config.T
 	ctx, cancel := context.WithCancel(context.Background())
 	m = m.withState(id, func(s *reviewState) {
 		s.running, s.cancel, s.ticker, s.head = true, cancel, "", t.PR.HeadOID
+		s.forced = mode == review.ModeManual
 	})
 	if mode == review.ModeAuto {
 		m.reviews.autoToday = maps.Clone(m.reviews.autoToday)
@@ -337,10 +343,13 @@ func (m Model) finishReview(msg reviewDoneMsg) (Model, tea.Cmd) {
 	// stands until the next poll plans the new head.
 	headMoved := errors.Is(msg.Err, review.ErrHeadMoved)
 	now := m.now()
+	forced := false
 	m = m.withState(msg.PRID, func(s *reviewState) {
 		head := cmp.Or(msg.Review.HeadOID, s.head)
 		s.running, s.cancel, s.ticker = false, nil, ""
 		if headMoved {
+			s.movedHead = s.head
+			forced = s.forced
 			return
 		}
 		r := msg.Review
@@ -372,7 +381,16 @@ func (m Model) finishReview(msg reviewDoneMsg) (Model, tea.Cmd) {
 	}
 	m, start := m.startQueued()
 	m, load := m.loadReviewInputs()
-	return m, tea.Batch(start, load)
+	// The new head is on GitHub already; poll now rather than at the next
+	// tick, so it reaches the wall and auto mode can review it.
+	var poll tea.Cmd
+	if headMoved {
+		m, poll = m.startPoll()
+		if forced {
+			m.notice = "PR moved on since the last poll — polling now"
+		}
+	}
+	return m, tea.Batch(start, load, poll)
 }
 
 // startQueued starts queued forced reviews while slots are free. One whose
@@ -494,6 +512,13 @@ func (m Model) autoStart() (Model, tea.Cmd) {
 	for _, t := range wall {
 		id := t.PR.ID
 		s := m.reviews.state[id]
+		if s.movedHead != "" {
+			if s.movedHead == t.PR.HeadOID {
+				m = m.withState(id, func(s *reviewState) { s.skip = "head moved" })
+				continue
+			}
+			m = m.withState(id, func(s *reviewState) { s.movedHead = "" })
+		}
 		c := schedule.Candidate{
 			T: t, Latest: s.latest, AutoToday: m.reviews.autoToday[id], TeamFeed: m.teamFeed(t),
 			Running: s.running || m.queued(id),

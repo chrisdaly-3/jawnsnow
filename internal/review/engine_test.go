@@ -1044,3 +1044,46 @@ func TestEngineWaitBlocksUntilRunSaved(t *testing.T) {
 		t.Errorf("stored = %d reviews, want 1", len(saved))
 	}
 }
+
+// A stored slot of a repo with no mapped path and no clone is not worth a
+// network clone: the rows go, nothing is cloned.
+func TestPruneIdleNeverClones(t *testing.T) {
+	env := newEngineEnv(t)
+	var cloned []string
+	env.e.CloneURL = func(repo string) string { cloned = append(cloned, repo); return env.s.upstream }
+	ctx := context.Background()
+	slot := store.Slot{Repo: "o/nope", Path: filepath.Join(env.data, "worktrees", "o__nope", "slot-1"), LastUsed: env.now.Add(-5 * time.Hour)}
+	if err := env.st.SaveSlot(ctx, slot); err != nil {
+		t.Fatal(err)
+	}
+	if err := env.e.PruneIdle(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if len(cloned) != 0 {
+		t.Errorf("PruneIdle asked for a clone URL of %v", cloned)
+	}
+	if exists(filepath.Join(env.data, "clones", "o__nope.git")) {
+		t.Error("PruneIdle cloned the repo")
+	}
+	if slots, _ := env.st.Slots(ctx, "o/nope"); len(slots) != 0 {
+		t.Errorf("slot rows kept: %+v", slots)
+	}
+}
+
+func TestHasIdleSlotFiltersPoolDir(t *testing.T) {
+	env := newEngineEnv(t)
+	ctx := context.Background()
+	old := env.now.Add(-5 * time.Hour)
+	if err := env.st.SaveSlot(ctx, store.Slot{Repo: "o/n", Path: filepath.Join(env.data, "elsewhere", "slot-1"), LastUsed: old}); err != nil {
+		t.Fatal(err)
+	}
+	if due, err := env.e.hasIdleSlot(ctx, "o/n", time.Hour); err != nil || due {
+		t.Errorf("hasIdleSlot = %v, %v for a slot outside the pool directory, want false", due, err)
+	}
+	if err := env.st.SaveSlot(ctx, store.Slot{Repo: "o/n", Path: filepath.Join(env.data, "worktrees", "o__n", "slot-1"), LastUsed: old}); err != nil {
+		t.Fatal(err)
+	}
+	if due, err := env.e.hasIdleSlot(ctx, "o/n", time.Hour); err != nil || !due {
+		t.Errorf("hasIdleSlot = %v, %v for an idle slot in the pool directory, want true", due, err)
+	}
+}

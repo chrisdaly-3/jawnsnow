@@ -591,6 +591,12 @@ func (e *Engine) PruneIdle(ctx context.Context) error {
 			if !due {
 				continue
 			}
+			if gone, err := e.dropSlotsWithoutClone(ctx, name); err != nil {
+				errs = append(errs, err)
+				continue
+			} else if gone {
+				continue
+			}
 			if rp, err = e.repoPool(ctx, name); err != nil {
 				errs = append(errs, fmt.Errorf("prune %s: %w", name, err))
 				continue
@@ -603,15 +609,48 @@ func (e *Engine) PruneIdle(ctx context.Context) error {
 
 // hasIdleSlot reports whether repo has a stored free slot unused for longer
 // than idle.
+// Like Pool.PruneIdle, it counts only slots inside the repo's pool directory.
 func (e *Engine) hasIdleSlot(ctx context.Context, repo string, idle time.Duration) (bool, error) {
 	slots, err := e.Store.Slots(ctx, repo)
 	if err != nil {
 		return false, err
 	}
+	data, err := e.dataDir()
+	if err != nil {
+		return false, err
+	}
+	poolDir := filepath.Join(data, "worktrees", strings.ReplaceAll(repo, "/", "__"))
 	now := e.now()
 	return slices.ContainsFunc(slots, func(s store.Slot) bool {
-		return !s.Busy && now.Sub(s.LastUsed) > idle
+		return filepath.Dir(s.Path) == poolDir && !s.Busy && now.Sub(s.LastUsed) > idle
 	}), nil
+}
+
+// dropSlotsWithoutClone deletes repo's stored slot rows when it has no
+// mapped path and no clone under the data directory. Resolving it would
+// start a network clone just to prune, and without the clone those
+// worktrees can't be valid. It reports whether it dropped them.
+func (e *Engine) dropSlotsWithoutClone(ctx context.Context, repo string) (bool, error) {
+	if e.Config().RepoFor(repo).Path != "" {
+		return false, nil
+	}
+	data, err := e.dataDir()
+	if err != nil {
+		return false, err
+	}
+	clone := filepath.Join(data, "clones", strings.ReplaceAll(repo, "/", "__")+".git")
+	if _, err := os.Stat(clone); err == nil {
+		return false, nil
+	}
+	slots, err := e.Store.Slots(ctx, repo)
+	if err != nil {
+		return false, err
+	}
+	var errs []error
+	for _, s := range slots {
+		errs = append(errs, e.Store.DeleteSlot(ctx, s.Path))
+	}
+	return true, errors.Join(errs...)
 }
 
 // dataDir creates DataDir and returns its real path. Pools and review

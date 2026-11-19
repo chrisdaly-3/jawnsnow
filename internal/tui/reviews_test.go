@@ -749,3 +749,48 @@ func TestPruneIdleEveryTenMinutes(t *testing.T) {
 		t.Errorf("no next prune in 10m: %v", ticks)
 	}
 }
+
+// evaluate runs one auto-mode evaluation: a read of the store's inputs, then
+// autoStart over them.
+func (h *harness) evaluate(t *testing.T) {
+	t.Helper()
+	m, cmd := h.m.loadReviewInputs()
+	msgs, _ := runCmd(t, cmd)
+	h.m, _ = settle(t, m, msgs...)
+}
+
+func TestHeadMovedDoesNotLoopInAutoMode(t *testing.T) {
+	h := newHarness(t, opts{reviews: true, auto: true}, seenAgo("1", 3*time.Hour))
+	h.reviewer.headMoved = true
+	h.finishPoll(t)
+	h.runReviews(t)
+	for range 5 {
+		h.evaluate(t)
+		h.runReviews(t)
+	}
+	if got := len(h.reviewer.requested()); got != 1 {
+		t.Fatalf("auto mode ran %d reviews at an unchanged head, want 1", got)
+	}
+
+	moved := h.client.snaps["1"]
+	moved.HeadOID = "head-1b"
+	h.client.snaps["1"] = moved
+	h.press(t, "R")
+	h.clock.now = h.clock.now.Add(3 * time.Hour) // past the quiet period
+	h.evaluate(t)
+	h.runReviews(t)
+	if got := len(h.reviewer.requested()); got != 2 {
+		t.Errorf("runs after a poll delivered a new head = %d, want 2", got)
+	}
+}
+
+func TestForcedHeadMovedNotice(t *testing.T) {
+	h := newHarness(t, opts{reviews: true}, wallPR("1"))
+	h.reviewer.headMoved = true
+	h.finishPoll(t)
+	h.m, _ = settle(t, h.m, spaceKey())
+	h.runReviews(t)
+	if want := "PR moved on since the last poll — polling now"; !strings.Contains(content(h.m), want) {
+		t.Errorf("no %q notice:\n%s", want, content(h.m))
+	}
+}
