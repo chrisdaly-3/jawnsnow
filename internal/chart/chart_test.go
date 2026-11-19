@@ -109,6 +109,7 @@ func TestChartDegenerateSeries(t *testing.T) {
 		"spike":  {{Name: "a", Values: []float64{0, 0, 1e12, 0}, Color: 39}},
 		"nan":    {{Name: "a", Values: []float64{math.NaN(), math.Inf(1), -3, 2}, Color: 39}},
 		"noname": {{Values: []float64{1, 2}, Color: 39}},
+		"huge":   {{Name: "a", Values: []float64{1e308, 1.7e308}, Color: 39}},
 	}
 	for name, lines := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -157,7 +158,7 @@ func TestRenderColorsAreXterm256(t *testing.T) {
 	seen := map[int]bool{}
 	for _, m := range ms {
 		switch {
-		case m[1] == "0" || m[1] == "39":
+		case m[1] == "" || m[1] == "0" || m[1] == "39":
 		case strings.HasPrefix(m[1], "38;5;"):
 			n, err := strconv.Atoi(strings.TrimPrefix(m[1], "38;5;"))
 			if err != nil || n < 16 || n > 255 {
@@ -185,6 +186,9 @@ func TestRenderLastLineWinsCell(t *testing.T) {
 	if strings.Contains(plot, "38;5;39m") {
 		t.Error("overdrawn cells should take the last line's color")
 	}
+	if !strings.Contains(plot, "38;5;214m") {
+		t.Errorf("last line's color missing from the plot rows: %q", plot)
+	}
 }
 
 func TestNiceMax(t *testing.T) {
@@ -205,5 +209,23 @@ func TestBrailleBits(t *testing.T) {
 	c.set(1, 3)
 	if r := rune(0x2800) + rune(c.bits); r != '⢁' {
 		t.Errorf("got %q", r)
+	}
+}
+
+func TestRenderClampsOutOfPaletteColors(t *testing.T) {
+	for _, c := range []int{3, 0, 15, -1, 256, 300} {
+		rows := Render([]Line{{Name: "a", Values: []float64{1, 2, 3}, Color: c}}, Options{Width: 30, Height: 8, Cursor: -1})
+		out := strings.Join(rows, "\n")
+		if !strings.Contains(out, "38;5;244m") {
+			t.Errorf("Color %d: want fallback 244 in %q", c, out)
+		}
+		for _, m := range sgr.FindAllStringSubmatch(out, -1) {
+			if strings.HasPrefix(m[1], "38;5;") {
+				n, _ := strconv.Atoi(strings.TrimPrefix(m[1], "38;5;"))
+				if n < 16 || n > 255 {
+					t.Errorf("Color %d: emitted %q", c, m[0])
+				}
+			}
+		}
 	}
 }

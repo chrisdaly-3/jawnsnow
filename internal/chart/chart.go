@@ -3,7 +3,6 @@
 package chart
 
 import (
-	"fmt"
 	"math"
 	"strconv"
 	"strings"
@@ -56,10 +55,10 @@ func niceMax(v float64) float64 {
 	exp := math.Floor(math.Log10(v))
 	for _, m := range []float64{1, 2, 5, 10} {
 		if n := m * math.Pow(10, exp); n >= v*(1-1e-12) {
-			return n
+			return min(n, math.MaxFloat64)
 		}
 	}
-	return math.Pow(10, exp+1)
+	return math.MaxFloat64
 }
 
 func plainLabel(v float64) string { return strconv.FormatFloat(v, 'f', -1, 64) }
@@ -72,11 +71,20 @@ func clean(v float64) float64 {
 	return v
 }
 
+// paletteColor keeps colors inside xterm-256 16–255; the basic 16 are
+// remapped by terminal themes, so anything else falls back to cursorColor.
+func paletteColor(c int) int {
+	if c < 16 || c > 255 {
+		return cursorColor
+	}
+	return c
+}
+
 func colorize(s string, color int, noColor bool) string {
 	if noColor || s == "" {
 		return s
 	}
-	return fmt.Sprintf("\x1b[38;5;%dm%s\x1b[39m", color, s)
+	return lipgloss.NewStyle().Foreground(lipgloss.Color(strconv.Itoa(paletteColor(color)))).Render(s)
 }
 
 // Render draws the lines as exactly Height rows, each at most Width cells
