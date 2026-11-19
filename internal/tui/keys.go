@@ -66,6 +66,17 @@ var keyMap = []keySection{
 		{"x", "clear the tier's session pick"},
 		{"e", "edit config.toml in $VISUAL or $EDITOR"},
 	}},
+	{"Cost", []keyHint{
+		{"r", "cycle the range: 7d, 30d, 90d or custom"},
+		{"f", "filter by author, repo, model, effort, tier, mode or outcome"},
+		{"g", "group by model, author, repo or tier"},
+		{"b", "bucket by day, week or hour"},
+		{"t", "running total or per bucket"},
+		{"h l", "move the chart cursor"},
+		{"j k", "choose a top PR"},
+		{"enter", "show the PR in the Reviews view"},
+		{"tab", "filters, chart or top PRs"},
+	}},
 	{"Done", []keyHint{
 		{"j k", "previous or next row"},
 		{"x", "unhide"},
@@ -87,6 +98,8 @@ var footerKeys = map[View][]keyHint{
 	ViewWall:  {{"h/l", "lane"}, {"j/k", "card"}, {"space", "review"}, {"x", "hide"}, {"o", "open"}, {"/", "filter"}, {"a", "author"}},
 	ViewAgent: {{"j/k", "tier"}, {"enter", "pick"}, {"x", "clear"}, {"e", "edit config"}},
 	ViewDone:  {{"j/k", "row"}, {"x", "unhide"}, {"o", "open"}},
+	ViewCost: {{"r", "range"}, {"f", "filter"}, {"g", "group"}, {"b", "bucket"}, {"t", "total"},
+		{"h/l", "cursor"}, {"j/k", "PR"}, {"enter", "reviews"}, {"tab", "pane"}},
 }
 
 // The post flow's footer, by stage. m's hint names the view it switches to.

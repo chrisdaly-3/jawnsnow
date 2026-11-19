@@ -171,6 +171,10 @@ type Model struct {
 	session review.SessionTiers
 	claude  review.ClaudeInfo
 	agent   agentModel
+	cost    costModel
+	// pendingReviewsFilter is the PR filter the Cost view's top-PR list
+	// hands to the Reviews view, which applies it.
+	pendingReviewsFilter reviewsFilter
 
 	prs map[string]tracker.Tracked
 	// loaded is set once the stored PRs arrive; no poll starts before, or
@@ -249,7 +253,7 @@ func New(d Deps) Model {
 		open:   func(url string) error { return browser.New("", io.Discard, io.Discard).Browse(url) },
 		launch: func(c tea.Cmd) tea.Cmd { return c }, reviews: newReviews(d.Reviewer, d.ReviewsOff),
 		execProcess: tea.ExecProcess, poster: d.Poster, postOff: d.PostOff, dataDir: dataDir,
-		prs: map[string]tracker.Tracked{}, wall: newWall(), done: newDone(), drawer: newDrawer(), dirty: map[string]bool{}, deleted: map[string]bool{},
+		prs: map[string]tracker.Tracked{}, wall: newWall(), done: newDone(), cost: newCost(), drawer: newDrawer(), dirty: map[string]bool{}, deleted: map[string]bool{},
 		mode: mode, width: 80, height: 24,
 	}
 }
@@ -311,6 +315,9 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 		return next, cmd
 	}
 	if next, cmd, ok := m.updatePost(msg); ok {
+		return next, cmd
+	}
+	if next, cmd, ok := m.updateCost(msg); ok {
 		return next, cmd
 	}
 	switch msg := msg.(type) {
@@ -404,6 +411,9 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	if m.view == ViewWall && !m.help && m.wall.capturing() && msg.String() != "ctrl+c" {
 		return m.updateView(msg)
 	}
+	if m.view == ViewCost && !m.help && m.cost.capturing() && msg.String() != "ctrl+c" {
+		return m.updateView(msg)
+	}
 	// The help overlay hides the view, so only the keys that close it or
 	// quit do anything.
 	if m.help {
@@ -429,11 +439,11 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		}
 		return m.updateView(msg)
 	case "]":
-		m = m.switchView((m.view + 1) % viewCount)
+		return m.showView((m.view + 1) % viewCount)
 	case "[":
-		m = m.switchView((m.view + viewCount - 1) % viewCount)
+		return m.showView((m.view + viewCount - 1) % viewCount)
 	case "1", "2", "3", "4", "5":
-		m = m.switchView(View(k[0] - '1'))
+		return m.showView(View(k[0] - '1'))
 	case "tab":
 		m.focus = (m.focus + 1) % m.paneCount()
 	case "shift+tab":
@@ -464,6 +474,8 @@ func (m Model) updateView(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		return m.doneUpdate(msg)
 	case ViewAgent:
 		return m.agentKey(msg)
+	case ViewCost:
+		return m.costKey(msg)
 	}
 	return m, nil
 }
@@ -587,12 +599,16 @@ func (m Model) drawerWidthIn(v View) int {
 }
 
 // paneCount is the number of focusable panes in the current view: the Done
-// view's two tables, the Wall, the drawer while it is open in either, and
-// one for every other view.
+// view's two tables, the Cost view's filter bar, chart and top PRs, the
+// Wall, the drawer while it is open in the Wall or Done, and one for every
+// other view.
 func (m Model) paneCount() int {
 	n := 1
-	if m.view == ViewDone {
+	switch m.view {
+	case ViewDone:
 		n = donePanes
+	case ViewCost:
+		n = costPanes
 	}
 	if m.drawerHere() && (m.view == ViewDone || m.view == ViewWall) {
 		n++
@@ -603,6 +619,16 @@ func (m Model) paneCount() int {
 func (m Model) switchView(v View) Model {
 	m.view, m.focus = v, 0
 	return m
+}
+
+// showView switches to v and starts what it needs: the Cost view reads its
+// rows again.
+func (m Model) showView(v View) (Model, tea.Cmd) {
+	m = m.switchView(v)
+	if v == ViewCost {
+		return m.enterCost()
+	}
+	return m, nil
 }
 
 // apply carries out a view's action against the current PRs.
@@ -1002,6 +1028,8 @@ func (m Model) body(width, height int) string {
 		return m.withDrawer(doneView, width-dw, dw, height)
 	case ViewAgent:
 		return m.agentBody(width, height)
+	case ViewCost:
+		return m.costBody(width, height)
 	default:
 		return placeholder(m.theme, width, height, "Coming in plan 3")
 	}

@@ -1167,8 +1167,8 @@ func TestModeToggle(t *testing.T) {
 func TestHelpListsEveryKey(t *testing.T) {
 	h := newHarness(t, opts{}, wallPR("1"))
 	// Tall enough for every section: the key list outgrew 30 lines, then
-	// 50 with the post flow's keys.
-	h.m, _ = update(t, h.m, tea.WindowSizeMsg{Width: 160, Height: 64})
+	// 50 with the post flow's keys, then 64 with the Cost view's.
+	h.m, _ = update(t, h.m, tea.WindowSizeMsg{Width: 160, Height: 80})
 	h.press(t, "?")
 	c := content(h.m)
 	for _, k := range allKeys() {
