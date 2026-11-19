@@ -69,8 +69,15 @@ func TestDefaultSelectionSkipsAddressedAndPosted(t *testing.T) {
 	if sel.Include[6] || !hasKey(sel.Include, 6) {
 		t.Error("addressed unanchored finding should be excluded")
 	}
-	if strings.Contains(sel.Body, "old note") || !strings.Contains(sel.Body, "new note") {
-		t.Errorf("body should list only the included unanchored finding: %q", sel.Body)
+	if sel.Body != "" {
+		t.Errorf("default body must hold only the user's own summary: %q", sel.Body)
+	}
+	in, _, err := Build(review(fresh, oldNote, newNote), "PR", sel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(in.Body, "old note") || !strings.Contains(in.Body, "new note") {
+		t.Errorf("body should list only the included unanchored finding: %q", in.Body)
 	}
 }
 
@@ -114,18 +121,85 @@ func TestBuildAnchoredAndUnanchored(t *testing.T) {
 	}
 }
 
-func TestBuildDoesNotDuplicateOtherNotes(t *testing.T) {
+func TestBuildAddsOtherNotesOnce(t *testing.T) {
 	r := review(unanchored(1, "d.go", "note"), anchored(2, "a.go", 1, "x"))
 	sel := DefaultSelection(r)
 	in, _, err := Build(r, "PR", sel)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n := strings.Count(in.Body, "Other notes"); n != 1 {
-		t.Errorf("Other notes appears %d times in %q", n, in.Body)
+	if want := "**Other notes**\n\n- `d.go`: note"; in.Body != want {
+		t.Errorf("body = %q, want %q", in.Body, want)
 	}
-	if in.Body != sel.Body {
-		t.Errorf("body changed: %q vs %q", in.Body, sel.Body)
+}
+
+func TestUncheckedNoteIsNotPosted(t *testing.T) {
+	r := review(unanchored(1, "a.go", "note one"), unanchored(2, "b.go", "note two"), unanchored(3, "c.go", "note three"))
+	sel := DefaultSelection(r)
+	sel.Include[2] = false
+	in, _, err := Build(r, "PR", sel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(in.Body, "note two") || !strings.Contains(in.Body, "note one") || !strings.Contains(in.Body, "note three") {
+		t.Errorf("body = %q", in.Body)
+	}
+	if n := strings.Count(in.Body, "**Other notes**"); n != 1 {
+		t.Errorf("Other notes count = %d", n)
+	}
+}
+
+func TestNotePathWithBacktick(t *testing.T) {
+	r := review(unanchored(1, "a`b.go", "n"), unanchored(2, "c``d.go", "n"))
+	in, _, err := Build(r, "PR", Selection{Event: "COMMENT"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"- `` a`b.go ``: n", "- ``` c``d.go ```: n"} {
+		if !strings.Contains(in.Body, want) {
+			t.Errorf("missing %q in %q", want, in.Body)
+		}
+	}
+}
+
+func TestRequestChangesBlankAfterSanitize(t *testing.T) {
+	r := review(unanchored(1, "a.go", "n"))
+	_, _, err := Build(r, "PR", Selection{Event: "REQUEST_CHANGES", Body: "\u200b\ufeff"})
+	if err == nil {
+		t.Error("want error: notes do not count as the summary")
+	}
+}
+
+func TestHiddenContentResistsEvasion(t *testing.T) {
+	for _, tc := range []struct {
+		name, md string
+		want     []string
+	}{
+		{"fence in bullet", "- note\n  ```\n<!-- hidden -->\n@victim", []string{"HTML comment", "mentions @victim"}},
+		{"fence in ordered item", "1. x\n   ```\n<!-- hidden -->\n@victim", []string{"HTML comment", "mentions @victim"}},
+		{"backtick in info string", "```x`\n<!-- hidden -->\n```", []string{"HTML comment"}},
+		{"escaped backtick comment", "\\` <!-- secret --> `", []string{"HTML comment"}},
+		{"escaped backtick tag", "\\`<b>x</b>`", []string{"raw HTML"}},
+		{"mention after hyphen", "x-@alice", []string{"mentions @alice"}},
+		{"mention after dot", "y.@bob", []string{"mentions @bob"}},
+		{"mention after slash", "z/@carol", []string{"mentions @carol"}},
+		{"team mention", "ping @org/team-a", []string{"mentions @org/team-a"}},
+		{"link reference", "[//]: # (hidden note)", []string{"link reference (renders as nothing)"}},
+		{"processing instruction", "<?x hidden ?>", []string{"raw HTML"}},
+		{"doctype", "<!DOCTYPE html>", []string{"raw HTML"}},
+		{"email", "user@example.com", nil},
+		{"code span mention", "`@alice`", nil},
+		{"indented code", "para\n\n    <!-- c -->\n    @alice", nil},
+	} {
+		if got := HiddenContent(tc.md); !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("%s: got %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestSanitizeDropsInvisibles(t *testing.T) {
+	if got := Sanitize("a\u202eb\u200bc\u2066d\ufeffe\u2060f"); got != "abcdef" {
+		t.Errorf("got %q", got)
 	}
 }
 

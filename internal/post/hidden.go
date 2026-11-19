@@ -1,59 +1,78 @@
 package post
 
 import (
+	"bytes"
 	"regexp"
 	"strings"
+
+	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/ast"
+	"github.com/yuin/goldmark/extension"
+	"github.com/yuin/goldmark/parser"
+	"github.com/yuin/goldmark/text"
 )
 
-var (
-	// A tag needs a name followed by whitespace, ">" or "/>": "<https://x>"
-	// is an autolink and "a < b" is prose.
-	tagRe     = regexp.MustCompile(`</?[A-Za-z][A-Za-z0-9-]*(?:\s|/?>|$)`)
-	mentionRe = regexp.MustCompile(`(?:^|[^A-Za-z0-9_.+/-])@([A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)`)
-	fenceRe   = regexp.MustCompile("^ {0,3}(`{3,}|~{3,})")
-)
+// A login, optionally with a team: @org/team-name.
+var mentionRe = regexp.MustCompile(`@([A-Za-z0-9][A-Za-z0-9-]*(?:/[A-Za-z0-9][A-Za-z0-9_.-]*)?)`)
+
+var parserFor = goldmark.New(goldmark.WithExtensions(extension.GFM)).Parser()
 
 // HiddenContent names what a rendered view hides or acts on: HTML comments,
-// raw HTML, images and @mentions (which notify people). Fenced blocks and
-// inline code spans are skipped. It is a scanner, not a markdown parser.
+// other raw HTML, images, link reference definitions (which render as
+// nothing) and @mentions (which notify people). It reads goldmark's syntax
+// tree, so code spans, fences and indented code are skipped by construction
+// and nesting in lists or quotes cannot fool it.
 func HiddenContent(md string) []string {
+	src := []byte(md)
+	pc := parser.NewContext()
+	root := parserFor.Parse(text.NewReader(src), parser.WithContext(pc))
+
 	var comment, html, image bool
 	var logins []string
 	seen := map[string]bool{}
 
-	var fence string // the opening run while inside a fenced block
-	for _, line := range strings.Split(md, "\n") {
-		if m := fenceRe.FindStringSubmatch(line); m != nil {
-			run := m[1]
-			if fence == "" {
-				fence = run
-				continue
-			}
-			if run[0] == fence[0] && len(run) >= len(fence) && strings.TrimSpace(line[strings.Index(line, run)+len(run):]) == "" {
-				fence = ""
-				continue
-			}
-		}
-		if fence != "" {
-			continue
-		}
-		text := stripCodeSpans(line)
-		if strings.Contains(text, "<!--") {
+	raw := func(b []byte) {
+		if bytes.HasPrefix(bytes.TrimSpace(b), []byte("<!--")) {
 			comment = true
-		}
-		if tagRe.MatchString(text) {
+		} else {
 			html = true
 		}
-		if strings.Contains(text, "![") {
-			image = true
+	}
+	_ = ast.Walk(root, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+		if !entering {
+			return ast.WalkContinue, nil
 		}
-		for _, m := range mentionRe.FindAllStringSubmatch(text, -1) {
-			if !seen[m[1]] {
-				seen[m[1]] = true
-				logins = append(logins, "@"+m[1])
+		switch n := n.(type) {
+		case *ast.HTMLBlock:
+			raw(n.Lines().Value(src))
+		case *ast.RawHTML:
+			raw(n.Segments.Value(src))
+		case *ast.CodeSpan:
+			return ast.WalkSkipChildren, nil
+		case *ast.Image:
+			image = true
+		case *ast.Text:
+			seg := n.Segment
+			val := seg.Value(src)
+			for _, loc := range mentionRe.FindAllSubmatchIndex(val, -1) {
+				prev := byte(0)
+				if loc[0] > 0 {
+					prev = val[loc[0]-1]
+				} else if seg.Start > 0 {
+					prev = src[seg.Start-1]
+				}
+				if isWordByte(prev) {
+					continue
+				}
+				login := strings.TrimRight(string(val[loc[2]:loc[3]]), "-./")
+				if !seen[login] {
+					seen[login] = true
+					logins = append(logins, "@"+login)
+				}
 			}
 		}
-	}
+		return ast.WalkContinue, nil
+	})
 
 	var out []string
 	if comment {
@@ -65,49 +84,15 @@ func HiddenContent(md string) []string {
 	if image {
 		out = append(out, "image")
 	}
+	if len(pc.References()) > 0 {
+		out = append(out, "link reference (renders as nothing)")
+	}
 	if len(logins) > 0 {
 		out = append(out, "mentions "+strings.Join(logins, ", "))
 	}
 	return out
 }
 
-// stripCodeSpans blanks inline code: a run of N backticks closes at the next
-// run of exactly N. An unmatched run is literal text.
-func stripCodeSpans(line string) string {
-	var b strings.Builder
-	for i := 0; i < len(line); {
-		if line[i] != '`' {
-			b.WriteByte(line[i])
-			i++
-			continue
-		}
-		j := i
-		for j < len(line) && line[j] == '`' {
-			j++
-		}
-		n := j - i
-		end := -1
-		for k := j; k < len(line); {
-			if line[k] != '`' {
-				k++
-				continue
-			}
-			s := k
-			for k < len(line) && line[k] == '`' {
-				k++
-			}
-			if k-s == n {
-				end = k
-				break
-			}
-		}
-		if end < 0 {
-			b.WriteString(line[i:j])
-			i = j
-			continue
-		}
-		b.WriteByte(' ')
-		i = end
-	}
-	return b.String()
+func isWordByte(b byte) bool {
+	return b == '_' || b >= '0' && b <= '9' || b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z'
 }

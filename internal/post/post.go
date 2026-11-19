@@ -22,7 +22,8 @@ const (
 	RequestChanges Event = "REQUEST_CHANGES"
 )
 
-// Include is keyed by Finding.ID; a missing entry means included.
+// Body is the user's own summary; Build appends the checked unanchored
+// findings to it. Include is keyed by Finding.ID; a missing entry means included.
 type Selection struct {
 	Event   Event
 	Body    string
@@ -41,21 +42,16 @@ type Preview struct {
 const shortOIDLen = 7
 
 // DefaultSelection leaves findings that were already dealt with unchecked, so
-// a re-review does not post the same point twice. The body carries only the
-// unanchored findings; Claude's understanding and verdict reason stay private.
+// a re-review does not post the same point twice. The body stays empty: it is
+// the user's own summary, and Build adds the checked unanchored findings to it.
+// Claude's understanding and verdict reason stay private.
 func DefaultSelection(r store.Review) Selection {
 	sel := Selection{Event: eventFor(r.Verdict), Include: map[int64]bool{}}
-	var notes []store.Finding
 	for _, f := range r.Findings {
 		if f.Ledger == "addressed" || f.Ledger == "answered" || f.ThreadID != "" {
 			sel.Include[f.ID] = false
-			continue
-		}
-		if f.Unanchored {
-			notes = append(notes, f)
 		}
 	}
-	sel.Body = strings.TrimLeft(otherNotes(notes), "\n")
 	return sel
 }
 
@@ -72,19 +68,31 @@ func eventFor(verdict string) Event {
 // otherNotes renders unanchored findings as one markdown list. Later lines of
 // a body are indented two spaces so they stay inside their list item.
 func otherNotes(fs []store.Finding) string {
-	if len(fs) == 0 {
-		return ""
-	}
-	return "\n\n**Other notes**\n\n" + noteItems(fs)
-}
-
-func noteItems(fs []store.Finding) string {
 	items := make([]string, len(fs))
 	for i, f := range fs {
 		body := strings.ReplaceAll(Sanitize(f.Body), "\n", "\n  ")
-		items[i] = fmt.Sprintf("- `%s`: %s", Sanitize(f.Path), body)
+		items[i] = "- " + codeSpan(Sanitize(f.Path)) + ": " + body
 	}
-	return strings.Join(items, "\n")
+	return "**Other notes**\n\n" + strings.Join(items, "\n")
+}
+
+// codeSpan wraps s in a backtick run one longer than any run inside it, padded
+// with spaces, so a path cannot close its own span early.
+func codeSpan(s string) string {
+	longest, run := 0, 0
+	for _, r := range s {
+		if r == '`' {
+			run++
+			longest = max(longest, run)
+		} else {
+			run = 0
+		}
+	}
+	if longest == 0 {
+		return "`" + s + "`"
+	}
+	fence := strings.Repeat("`", longest+1)
+	return fence + " " + s + " " + fence
 }
 
 func Build(r store.Review, prID string, sel Selection) (in github.PostInput, p Preview, err error) {
@@ -114,22 +122,24 @@ func Build(r store.Review, prID string, sel Selection) (in github.PostInput, p P
 		threads = append(threads, t)
 	}
 
-	body := Sanitize(sel.Body)
-	if len(notes) > 0 && !strings.Contains(body, noteItems(notes)) {
-		body += otherNotes(notes)
-	}
-	body = strings.TrimLeft(body, "\n")
-	if strings.TrimSpace(body) == "" {
+	own := Sanitize(sel.Body)
+	ownBlank := strings.TrimSpace(own) == ""
+	body := own
+	if len(notes) > 0 {
+		if ownBlank {
+			body = otherNotes(notes)
+		} else {
+			body = strings.TrimLeft(own, "\n") + "\n\n" + otherNotes(notes)
+		}
+	} else if ownBlank {
 		body = ""
 	}
 
-	if body == "" {
-		switch {
-		case sel.Event == RequestChanges:
-			return in, p, errors.New("Request changes needs a summary — press e to write one")
-		case sel.Event == Comment && len(threads) == 0:
-			return in, p, errors.New("nothing to post: write a summary or select a finding")
-		}
+	switch {
+	case sel.Event == RequestChanges && ownBlank:
+		return in, p, errors.New("Request changes needs a summary — press e to write one")
+	case sel.Event == Comment && body == "" && len(threads) == 0:
+		return in, p, errors.New("nothing to post: write a summary or select a finding")
 	}
 
 	in = github.PostInput{PRID: prID, CommitOID: r.HeadOID, Event: string(sel.Event), Body: body, Threads: threads}
@@ -176,9 +186,20 @@ func Sanitize(s string) string {
 		if r == '\n' || r == '\t' {
 			return r
 		}
-		if unicode.IsControl(r) {
+		if unicode.IsControl(r) || invisible(r) {
 			return -1
 		}
 		return r
 	}, s)
+}
+
+// invisible reports zero-width and bidi format characters, which can hide or
+// reorder text without being visible in a preview.
+func invisible(r rune) bool {
+	switch {
+	case r >= 0x200B && r <= 0x200F, r >= 0x202A && r <= 0x202E,
+		r >= 0x2060 && r <= 0x2064, r >= 0x2066 && r <= 0x2069, r == 0xFEFF:
+		return true
+	}
+	return false
 }
