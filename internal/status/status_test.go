@@ -133,3 +133,11 @@ func TestLanes(t *testing.T) {
 		}
 	}
 }
+
+func TestInlineOnlyCommentIsYourReview(t *testing.T) {
+	r := rev("COMMENTED", "", "A", 1)
+	r.NewThreads = 2
+	if YourLatestReview([]github.Review{r}, viewer) == nil {
+		t.Fatal("an inline-only comment review should be your review")
+	}
+}

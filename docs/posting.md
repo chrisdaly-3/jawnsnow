@@ -131,7 +131,7 @@ When GitHub accepts the review:
 
 1. snow records the post in its database straight away: the GitHub review ID and URL, the event, the commit, which findings were included, and the time.
 2. It looks up the review threads GitHub made for the inline comments and stores each thread's ID on its finding.
-3. It polls at once, so the PR's status catches up. A posted approval or change request, or a comment with a summary, is your review on GitHub: the PR moves lanes, and the next Claude review uses the `follow_up` tier.
+3. It polls at once, so the PR's status catches up. A posted approval or change request, or a comment with a summary or at least one inline comment that starts a thread, is your review on GitHub: the PR moves lanes, and the next Claude review uses the `follow_up` tier.
 
 The drawer then shows `Posted as Comment · just now` on that pass, and the Reviews view shows `✓`. The next pass gets the posted findings with their thread IDs, so it can read the author's replies in those threads and mark a finding answered. See [the ledger](reviews.md#the-earlier-findings-ledger).
 

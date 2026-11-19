@@ -32,10 +32,14 @@ type Check struct {
 type Review struct {
 	Author, State, Body, CommitOID string
 	SubmittedAt                    time.Time
+	// NewThreads is how many of the review's comments start a thread rather
+	// than reply in one. Only the viewer's own reviews carry it; same ignores
+	// it so a review isn't seen as two when only one fetch asked for it.
+	NewThreads int
 }
 
 // same reports whether r and o are one review, fetched twice. The query
-// doesn't ask for review IDs, so every field must match.
+// doesn't ask for review IDs, so every fetched field must match.
 func (r Review) same(o Review) bool {
 	return r.Author == o.Author && r.State == o.State && r.Body == o.Body &&
 		r.CommitOID == o.CommitOID && r.SubmittedAt.Equal(o.SubmittedAt)

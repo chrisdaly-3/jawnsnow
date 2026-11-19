@@ -9,8 +9,9 @@ import (
 
 // YourLatestReview returns the newest review by viewer that counts as a
 // review: APPROVED, CHANGES_REQUESTED, DISMISSED, or COMMENTED with a
-// non-blank body. PENDING reviews and empty COMMENTED reviews (which GitHub
-// creates for thread replies) are skipped. "Newest" is by SubmittedAt, not
+// non-blank body or at least one comment that starts a thread. PENDING reviews
+// and COMMENTED reviews with no body whose comments are all replies (which is
+// what GitHub creates for thread replies) are skipped. "Newest" is by SubmittedAt, not
 // slice order.
 func YourLatestReview(reviews []github.Review, viewer string) *github.Review {
 	var best *github.Review
@@ -31,7 +32,7 @@ func counts(r *github.Review) bool {
 	case "APPROVED", "CHANGES_REQUESTED", "DISMISSED":
 		return true
 	case "COMMENTED":
-		return strings.TrimSpace(r.Body) != ""
+		return strings.TrimSpace(r.Body) != "" || r.NewThreads > 0
 	}
 	return false
 }

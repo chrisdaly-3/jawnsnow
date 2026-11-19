@@ -31,7 +31,8 @@ func TestDetailQueryAliasesEachPR(t *testing.T) {
 		"p0: node(id: $id0)", "p1: node(id: $id1)",
 		"isRequired(pullRequestId: $id0)", "isRequired(pullRequestId: $id1)",
 		"rateLimit", "$id0: ID!", "$id1: ID!", "$login: String!",
-		"reviews(last:50)", "mine: reviews(last: 10, author: $login)",
+		"reviews(last:50){nodes{author{login} state body submittedAt commit{oid}}}",
+		"mine: reviews(last: 10, author: $login){nodes{author{login} state body submittedAt commit{oid} comments(first:5){nodes{replyTo{id}}}}}",
 	} {
 		if !strings.Contains(q, want) {
 			t.Errorf("DetailQuery(2) missing %q", want)

@@ -37,17 +37,22 @@ const checkContextNodes = `pageInfo{hasNextPage endCursor} nodes{__typename ` +
 
 const reviewNodes = `nodes{author{login} state body submittedAt commit{oid}}`
 
+const mineReviewNodes = `nodes{author{login} state body submittedAt commit{oid} comments(first:5){nodes{replyTo{id}}}}`
+
 // Each alias inlines its own ID variable because isRequired takes the pull
 // request ID, which rules out a shared fragment. %[1]s is that variable.
 // Thread replies and bot comments are reviews too, so on a busy PR the
 // viewer's own review can fall outside the last 50; "mine" fetches it by
-// author.
+// author. Only "mine" asks for each review's first five comments, to tell an
+// inline-only review from an empty thread reply without paying for it on all
+// 50. A review whose first five comments are all replies yet has more is rare
+// enough that it's counted as having no new threads.
 const prSelection = `id number title url state isDraft updatedAt mergedAt closedAt additions deletions baseRefName headRefOid reviewDecision
     author{login} repository{nameWithOwner} labels(first:20){nodes{name}}
     head: commits(last:1){nodes{commit{oid committedDate statusCheckRollup{state contexts(first:100){` + checkContextNodes + `}}}}}
     commits(last:100){nodes{commit{oid parents(first:2){nodes{oid}}}}}
     reviews(last:50){` + reviewNodes + `}
-    mine: reviews(last: 10, author: $login){` + reviewNodes + `}
+    mine: reviews(last: 10, author: $login){` + mineReviewNodes + `}
     comments(last:20){nodes{author{login} createdAt}}`
 
 // checksPageQuery fetches the next page of check contexts for one pull request.

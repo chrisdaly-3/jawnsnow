@@ -72,3 +72,33 @@ func TestOnlyBaseMergesSince(t *testing.T) {
 		})
 	}
 }
+
+func TestCountsTable(t *testing.T) {
+	withThreads := func(state, body string, n int) github.Review {
+		r := rev(state, body, "A", 1)
+		r.NewThreads = n
+		return r
+	}
+	tests := []struct {
+		name string
+		r    github.Review
+		want bool
+	}{
+		{"inline-only comment review", withThreads("COMMENTED", "", 1), true},
+		{"thread reply", withThreads("COMMENTED", "", 0), false},
+		{"blank body, no thread", withThreads("COMMENTED", " \n", 0), false},
+		{"comment with body", withThreads("COMMENTED", "hi", 0), true},
+		{"pending with threads", withThreads("PENDING", "", 2), false},
+		{"approved", withThreads("APPROVED", "", 0), true},
+		{"changes requested", withThreads("CHANGES_REQUESTED", "", 0), true},
+		{"dismissed", withThreads("DISMISSED", "", 0), true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := YourLatestReview([]github.Review{tt.r}, viewer) != nil
+			if got != tt.want {
+				t.Errorf("counts = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

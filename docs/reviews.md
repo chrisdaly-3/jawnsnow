@@ -51,7 +51,7 @@ A review stops when its PR leaves the Wall (merged, closed, hidden or stale), an
 Each review has a tier, which picks its model and effort:
 
 - `first_pass` until you have submitted a GitHub review on the PR;
-- `follow_up` once you have: an approval, a change request, a dismissed review, or a comment review with a summary. A review you post from snow counts too, unless it is a comment with only inline comments and no summary.
+- `follow_up` once you have: an approval, a change request, a dismissed review, or a comment review with a summary or at least one inline comment that starts a thread. Replies in existing threads and pending reviews don't count. A review you post from snow counts too.
 
 So if Claude reviews commit A, you don't review on GitHub, and the author pushes B, the next review is still `first_pass`. The defaults are `claude-opus-5-5` at `high` effort for first passes and `claude-sonnet-5-5` at `medium` for follow-ups. [`[[review.overrides]]`](configuration.md#reviewoverrides), the Agent view's session picks and the `c` picker can change them; [configuration.md](configuration.md#model-and-effort-tiers) gives the order.
 

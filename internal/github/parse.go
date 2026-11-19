@@ -55,6 +55,13 @@ type reviewsPage struct {
 		Commit      *struct {
 			OID string `json:"oid"`
 		} `json:"commit"`
+		Comments *struct {
+			Nodes []struct {
+				ReplyTo *struct {
+					ID string `json:"id"`
+				} `json:"replyTo"`
+			} `json:"nodes"`
+		} `json:"comments"`
 	} `json:"nodes"`
 }
 
@@ -64,6 +71,13 @@ func (p reviewsPage) reviews() []Review {
 		rev := Review{Author: login(r.Author), State: r.State, Body: r.Body, SubmittedAt: r.SubmittedAt}
 		if r.Commit != nil {
 			rev.CommitOID = r.Commit.OID
+		}
+		if r.Comments != nil {
+			for _, c := range r.Comments.Nodes {
+				if c.ReplyTo == nil {
+					rev.NewThreads++
+				}
+			}
 		}
 		out = append(out, rev)
 	}
@@ -161,7 +175,11 @@ func parsePRPage(raw json.RawMessage) (Snapshot, pageInfo, error) {
 	// The viewer's reviews usually appear in both lists.
 	s.Reviews = n.Reviews.reviews()
 	for _, r := range n.Mine.reviews() {
-		if !slices.ContainsFunc(s.Reviews, r.same) {
+		// Only "mine" fetches comments, so when it repeats a review from the
+		// last 50 the kept copy takes its thread count.
+		if i := slices.IndexFunc(s.Reviews, r.same); i >= 0 {
+			s.Reviews[i].NewThreads = r.NewThreads
+		} else {
 			s.Reviews = append(s.Reviews, r)
 		}
 	}

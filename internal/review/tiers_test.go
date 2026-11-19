@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"github.com/chrisdaly-3/jawnsnow/internal/config"
+	"github.com/chrisdaly-3/jawnsnow/internal/github"
+	"github.com/chrisdaly-3/jawnsnow/internal/status"
 )
 
 func f64(v float64) *float64 { return &v }
@@ -153,5 +155,18 @@ func TestResolveSessionThenOneRun(t *testing.T) {
 	got = Resolve(cfg, in)
 	if got.Model != "claude-haiku-5-5" || got.Effort != "xhigh" {
 		t.Fatalf("partial one-run = %+v, want haiku/xhigh", got)
+	}
+}
+
+func TestInlineOnlyCommentResolvesToFollowUp(t *testing.T) {
+	cfg := config.Defaults().Review
+	r := github.Review{Author: "me", State: "COMMENTED", NewThreads: 1}
+	in := ResolveInput{HasYourReview: status.YourLatestReview([]github.Review{r}, "me") != nil}
+	got := Resolve(cfg, in)
+	if want := Resolve(cfg, ResolveInput{HasYourReview: true}); got != want {
+		t.Fatalf("inline-only comment resolved to %+v, want the follow_up tier %+v", got, want)
+	}
+	if got == Resolve(cfg, ResolveInput{}) {
+		t.Fatal("resolved to first_pass")
 	}
 }

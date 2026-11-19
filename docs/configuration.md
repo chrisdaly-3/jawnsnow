@@ -401,7 +401,7 @@ model  = "claude-sonnet-5-5"
 effort = "medium"
 ```
 
-Each review uses one of two tiers. It is `follow_up` once you have submitted a GitHub review on the PR, and `first_pass` before that. A submitted review here means an approval, a change request, a dismissed review, or a comment review with a summary. Empty comment reviews (which GitHub creates for replies in review threads) and pending reviews don't count. A review you post from snow counts too, unless it is a comment with only inline comments and no summary, so the reviews after it use `follow_up`.
+Each review uses one of two tiers. It is `follow_up` once you have submitted a GitHub review on the PR, and `first_pass` before that. A submitted review here means an approval, a change request, a dismissed review, or a comment review with a summary or at least one inline comment that starts a thread. Comment reviews that only reply in existing threads (which GitHub creates for each reply) and pending reviews don't count. A review you post from snow counts too, so the reviews after it use `follow_up`.
 
 The model and effort for a run are worked out in this order, each step replacing what it sets:
 

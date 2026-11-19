@@ -2,6 +2,7 @@ package github
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"testing"
 )
@@ -81,4 +82,30 @@ func TestCheckStateMapping(t *testing.T) {
 	} {
 		assertEq(t, statusContextState(in), want)
 	}
+}
+
+func TestParseNewThreadsFromMine(t *testing.T) {
+	review := func(comments string) string {
+		return `{"author":{"login":"me"},"state":"COMMENTED","body":"","submittedAt":"%s","commit":{"oid":"c1"}` + comments + `}`
+	}
+	node := func(at, mineComments string) string {
+		return fmt.Sprintf(`{"id":"P","reviews":{"nodes":[%s]},"mine":{"nodes":[%s]}}`,
+			fmt.Sprintf(review(""), at), fmt.Sprintf(review(mineComments), at))
+	}
+	inline := `,"comments":{"nodes":[{"replyTo":null},{"replyTo":{"id":"x"}}]}`
+	reply := `,"comments":{"nodes":[{"replyTo":{"id":"x"}},{"replyTo":{"id":"y"}}]}`
+
+	snap, err := parsePR(json.RawMessage(node("2026-11-16T09:00:00Z", inline)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEq(t, len(snap.Reviews), 1)
+	assertEq(t, snap.Reviews[0].NewThreads, 1)
+
+	snap, err = parsePR(json.RawMessage(node("2026-11-16T09:00:00Z", reply)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEq(t, len(snap.Reviews), 1)
+	assertEq(t, snap.Reviews[0].NewThreads, 0)
 }
