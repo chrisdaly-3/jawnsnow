@@ -46,6 +46,7 @@ With no command, snow starts the interface.
 
 commands:
   config default  print the commented default config
+  config path     print the config file snow reads (or would create)
 
   version         print the version
   help            print this help
@@ -76,6 +77,15 @@ func Run(args []string, stdout, stderr io.Writer) int {
 			}
 			return 0
 		}
+		if len(args) == 2 && args[1] == "path" {
+			// stdout is only the path, so "$(snow config path)" works.
+			path, _, ignoredXDG := config.Resolve(os.Getenv, fileExists)
+			if ignoredXDG != "" {
+				fmt.Fprintf(stderr, "snow: %s\n", ignoredXDGNote(ignoredXDG))
+			}
+			fmt.Fprintln(stdout, path)
+			return 0
+		}
 		fmt.Fprint(stderr, usage)
 		return 2
 	default:
@@ -99,6 +109,18 @@ func runTUI(stderr io.Writer) int {
 	return 0
 }
 
+// fileExists is config.Resolve's test for whether a config file is there.
+func fileExists(p string) bool {
+	_, err := os.Stat(p)
+	return err == nil
+}
+
+// ignoredXDGNote says that a relative XDG_CONFIG_HOME was skipped, as the
+// XDG spec requires.
+func ignoredXDGNote(value string) string {
+	return fmt.Sprintf("XDG_CONFIG_HOME is not an absolute path (%q), so it was ignored", value)
+}
+
 // newGHClient returns a nil client when gh has no token for github.com.
 func newGHClient() (github.Client, error) {
 	if token, _ := auth.TokenForHost("github.com"); token == "" {
@@ -119,12 +141,9 @@ func buildDeps(getenv func(string) string, newClient func() (github.Client, erro
 	var banners []string
 	var configBanner string
 
-	path, _, ignoredXDG := config.Resolve(getenv, func(p string) bool {
-		_, err := os.Stat(p)
-		return err == nil
-	})
+	path, _, ignoredXDG := config.Resolve(getenv, fileExists)
 	if ignoredXDG != "" {
-		banners = append(banners, fmt.Sprintf("config: XDG_CONFIG_HOME is not an absolute path (%q), so it was ignored", ignoredXDG))
+		banners = append(banners, "config: "+ignoredXDGNote(ignoredXDG))
 	}
 	shown := tildePath(path, getenv("HOME"))
 	created, createErr := config.WriteDefaultIfMissing(path)

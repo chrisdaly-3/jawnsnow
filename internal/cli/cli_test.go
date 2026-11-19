@@ -242,6 +242,80 @@ func TestCLIConfigDefault(t *testing.T) {
 	}
 }
 
+// TestCLIConfigPath checks that `snow config path` prints exactly the file
+// startup would use, so "$(snow config path)" is safe in shell, and that a
+// skipped XDG_CONFIG_HOME is reported on stderr, never on stdout.
+func TestCLIConfigPath(t *testing.T) {
+	cases := []struct {
+		name       string
+		xdg        string // "" unset; "ABS" a temp dir; anything else as given
+		homeFile   bool   // create ~/.config/jawnsnow/config.toml
+		xdgFile    bool   // create $XDG_CONFIG_HOME/jawnsnow/config.toml
+		wantXDG    bool   // want the XDG path; else the home path
+		wantStderr string
+	}{
+		{name: "no XDG, no files", wantXDG: false},
+		{name: "XDG set, no files: create target is XDG", xdg: "ABS", wantXDG: true},
+		{name: "XDG set, only the home file", xdg: "ABS", homeFile: true, wantXDG: false},
+		{name: "XDG set, both files", xdg: "ABS", homeFile: true, xdgFile: true, wantXDG: true},
+		{name: "relative XDG is ignored", xdg: "cfg", wantXDG: false, wantStderr: `XDG_CONFIG_HOME is not an absolute path ("cfg")`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			home := isolate(t)
+			xdg := tc.xdg
+			if xdg == "ABS" {
+				xdg = t.TempDir()
+			}
+			t.Setenv("XDG_CONFIG_HOME", xdg)
+			homePath := filepath.Join(home, ".config", "jawnsnow", "config.toml")
+			xdgPath := filepath.Join(xdg, "jawnsnow", "config.toml")
+			for _, f := range []struct {
+				on   bool
+				path string
+			}{{tc.homeFile, homePath}, {tc.xdgFile, xdgPath}} {
+				if !f.on {
+					continue
+				}
+				if err := os.MkdirAll(filepath.Dir(f.path), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(f.path, nil, 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			var out, errb bytes.Buffer
+			if code := Run([]string{"config", "path"}, &out, &errb); code != 0 {
+				t.Fatalf("exit code = %d, stderr %q", code, errb.String())
+			}
+			want := homePath
+			if tc.wantXDG {
+				want = xdgPath
+			}
+			if out.String() != want+"\n" {
+				t.Errorf("stdout = %q, want %q", out.String(), want+"\n")
+			}
+			if tc.wantStderr == "" && errb.Len() != 0 {
+				t.Errorf("stderr = %q, want empty", errb.String())
+			}
+			if tc.wantStderr != "" && !strings.Contains(errb.String(), tc.wantStderr) {
+				t.Errorf("stderr = %q, want it to contain %q", errb.String(), tc.wantStderr)
+			}
+		})
+	}
+}
+
+func TestCLIConfigUnknownSubcommand(t *testing.T) {
+	var out, errb bytes.Buffer
+	if code := Run([]string{"config", "bogus"}, &out, &errb); code != 2 {
+		t.Fatalf("exit code = %d, want 2", code)
+	}
+	if !strings.Contains(errb.String(), "config path") {
+		t.Errorf("usage on stderr doesn't list config path:\n%s", errb.String())
+	}
+}
+
 func (fakeClient) ReviewContext(context.Context, string) (github.PRContext, github.RateLimit, error) {
 	return github.PRContext{}, github.RateLimit{}, nil
 }

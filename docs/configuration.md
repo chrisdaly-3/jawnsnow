@@ -21,11 +21,16 @@ After that snow never writes to the file again. An existing file is never opened
 No config at ~/.config/jawnsnow/config.toml — using defaults (could not create it: <error>). Run "snow config default" to start one.
 ```
 
-`snow config default` prints the same commented defaults to standard output. Use it to start a file by hand, or to see what a newer snow ships:
+`snow config path` prints the file snow reads, or would create, using the same lookup as startup. It prints only the path, so it is safe in `$(...)`. A note about an ignored `XDG_CONFIG_HOME` goes to standard error.
+
+`snow config default` prints the same commented defaults to standard output. Use it to see what a newer snow ships, or to start a file by hand. To start one where snow will look, without overwriting a file that is already there:
 
 ```sh
-snow config default > "${XDG_CONFIG_HOME:-$HOME/.config}/jawnsnow/config.toml"
+mkdir -p "$(dirname "$(snow config path)")"
+(set -o noclobber; snow config default > "$(snow config path)")
 ```
+
+`noclobber` makes the redirect fail, instead of replacing your config, when the file already exists. To compare your file with the defaults, use `diff "$(snow config path)" <(snow config default)`.
 
 Every key is optional. A key you leave out keeps its default. A `[[feeds]]` list is the one exception to merging: if the file has any `[[feeds]]` block, those blocks replace the default feed instead of adding to it.
 

@@ -29,6 +29,7 @@ Both put `snow` in `$(go env GOPATH)/bin` (or `$GOBIN`). The commands:
 | --- | --- |
 | `snow` | start the interface |
 | `snow config default` | print the commented default config |
+| `snow config path` | print the config file snow reads, or would create |
 | `snow version` | print the version |
 | `snow help` | print the usage |
 

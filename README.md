@@ -67,7 +67,7 @@ The demo and screenshots use made-up PRs.
 
 ## Configuration
 
-Every option is commented in the config file, and snow reloads the file when you save it. `snow config default` prints the defaults. [docs/configuration.md](docs/configuration.md) describes every key.
+Every option is commented in the config file, and snow reloads the file when you save it. `snow config path` prints which file that is, and `snow config default` prints the defaults. [docs/configuration.md](docs/configuration.md) describes every key.
 
 ## Documentation
 
