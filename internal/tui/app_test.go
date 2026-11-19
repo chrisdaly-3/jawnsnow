@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -1164,18 +1165,73 @@ func TestModeToggle(t *testing.T) {
 	}
 }
 
+var splitRow = regexp.MustCompile(`^(\S.*?)\s{2,}(\S.*)$`)
+
 func TestHelpListsEveryKey(t *testing.T) {
-	h := newHarness(t, opts{}, wallPR("1"))
-	// Tall enough for every section: the key list outgrew 30 lines, then
-	// 50 with the post flow's keys, then 64 with the Cost view's.
-	h.m, _ = update(t, h.m, tea.WindowSizeMsg{Width: 160, Height: 80})
-	h.press(t, "?")
-	c := content(h.m)
+	type tc struct {
+		name  string
+		setup func(h *harness)
+		want  []string // section titles shown besides Everywhere
+	}
+	cases := []tc{
+		{"wall", func(h *harness) {}, []string{"Wall"}},
+		{"wall with drawer", func(h *harness) { h.press(t, "enter"); settleDrawer(t, h) }, []string{"Wall", "Drawer"}},
+		{"agent", func(h *harness) { h.m.view = ViewAgent }, []string{"Agent"}},
+		{"done", func(h *harness) { h.m.view = ViewDone }, []string{"Done"}},
+		{"reviews", func(h *harness) { h.m.view = ViewReviews }, []string{"Reviews"}},
+		{"cost", func(h *harness) { h.m.view = ViewCost }, []string{"Cost"}},
+		{"cost picker", func(h *harness) { h.m.view = ViewCost; h.m.cost.picking = true }, []string{"Cost filter"}},
+		{"post", func(h *harness) { h.m.post = &postFlow{} }, []string{"Post"}},
+	}
+	seen := map[string]bool{}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			h := drawerHarness(t, opts{})
+			h.m, _ = update(t, h.m, tea.WindowSizeMsg{Width: 100, Height: 40})
+			c.setup(h)
+			h.m.help = true
+			// The overlay's rows only: the footer repeats words like "hide".
+			rows := map[string]bool{}
+			for _, l := range strings.Split(ansi.Strip(content(h.m)), "\n") {
+				if !strings.Contains(l, "│") {
+					continue
+				}
+				l = strings.TrimSpace(strings.Trim(strings.TrimSpace(l), "│"))
+				if k := splitRow.FindStringSubmatch(l); len(k) == 3 {
+					rows[k[1]+"\x00"+k[2]] = true
+				}
+			}
+			shown := map[string]bool{"Everywhere": true}
+			for _, w := range c.want {
+				shown[w] = true
+			}
+			want := map[string]bool{}
+			for _, s := range keyMap {
+				for _, k := range s.keys {
+					id := k.keys + "\x00" + k.help
+					if shown[s.title] {
+						want[id] = true
+						seen[id] = true
+						if !rows[id] {
+							t.Errorf("help missing %q %q (section %s)", k.keys, k.help, s.title)
+						}
+					}
+				}
+			}
+			for id := range rows {
+				if !want[id] {
+					t.Errorf("help shows %q from another section", id)
+				}
+			}
+		})
+	}
 	for _, k := range allKeys() {
-		if !strings.Contains(c, k.keys) || !strings.Contains(c, k.help) {
-			t.Errorf("help overlay missing %q %q", k.keys, k.help)
+		if !seen[k.keys+"\x00"+k.help] {
+			t.Errorf("%q %q is in no view's help", k.keys, k.help)
 		}
 	}
+	h := newHarness(t, opts{}, wallPR("1"))
+	h.press(t, "?")
 	h.press(t, "?")
 	if h.m.help {
 		t.Error("? did not close the help overlay")

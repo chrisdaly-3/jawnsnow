@@ -15,7 +15,17 @@ type keySection struct {
 	keys  []keyHint
 }
 
-// keyMap is every key snow uses; the help overlay lists all of it.
+// costPickerHelp is the Cost view's filter picker, which only the help for
+// that modal lists.
+var costPickerHelp = []keyHint{
+	{"h l", "previous or next dimension"},
+	{"j k", "move through the values"},
+	{"space", "include or leave out the value"},
+	{"esc", "close the picker"},
+}
+
+// keyMap is every key snow uses. The help overlay shows the Everywhere
+// section and the current view's (see helpSections), so it fits a terminal.
 var keyMap = []keySection{
 	{"Everywhere", []keyHint{
 		{"[ ]", "previous or next view"},
@@ -61,6 +71,7 @@ var keyMap = []keySection{
 		{"enter", "pick the event, then post"},
 		{"esc", "back out a step"},
 	}},
+	{"Cost filter", costPickerHelp},
 	{"Agent", []keyHint{
 		{"j k", "choose a tier"},
 		{"enter", "pick a model and effort for this session"},
@@ -166,13 +177,47 @@ func hintLine(view, global []keyHint, width int) string {
 	}
 }
 
+var viewSection = map[View]string{
+	ViewWall: "Wall", ViewAgent: "Agent", ViewDone: "Done", ViewReviews: "Reviews", ViewCost: "Cost",
+}
+
+// helpSections are the sections the help overlay shows: Everywhere, then
+// the open modal's or the current view's, then the review drawer's when it
+// is open in this view.
+func (m Model) helpSections() []keySection {
+	titles := []string{"Everywhere"}
+	switch {
+	case m.post != nil:
+		titles = append(titles, "Post")
+	case m.view == ViewCost && m.cost.picking:
+		titles = append(titles, "Cost filter")
+	default:
+		titles = append(titles, viewSection[m.view])
+		if m.drawerHere() {
+			titles = append(titles, "Drawer")
+		}
+	}
+	var out []keySection
+	for _, t := range titles {
+		for _, s := range keyMap {
+			if s.title == t {
+				out = append(out, s)
+			}
+		}
+	}
+	return out
+}
+
 func (m Model) helpBody(width, height int) string {
+	secs := m.helpSections()
 	keyW := 0
-	for _, k := range allKeys() {
-		keyW = max(keyW, lipgloss.Width(k.keys))
+	for _, s := range secs {
+		for _, k := range s.keys {
+			keyW = max(keyW, lipgloss.Width(k.keys))
+		}
 	}
 	var b strings.Builder
-	for i, s := range keyMap {
+	for i, s := range secs {
 		if i > 0 {
 			b.WriteString("\n\n")
 		}
