@@ -435,6 +435,24 @@ func TestSweepStartupSkipsUnmappedRepoWithoutClone(t *testing.T) {
 	}
 }
 
+func TestSweepStartupSkipsBadMappedPath(t *testing.T) {
+	st := openStore(t)
+	if err := st.SaveTracked(context.Background(), []tracker.Tracked{wallPR("o/n", 5)}); err != nil {
+		t.Fatal(err)
+	}
+	data := filepath.Join(t.TempDir(), "jawnsnow")
+	bad := filepath.Join(t.TempDir(), "typo")
+	cfg := config.Defaults()
+	cfg.Repos = map[string]config.Repo{"o/n": {Path: bad, Scope: "full"}}
+	err := sweepStartup(context.Background(), st, func() config.Config { return cfg }, data)
+	if want := `repos."o/n".path ` + bad + " is not a git repository"; err == nil || !strings.Contains(err.Error(), want) {
+		t.Errorf("sweep err = %v, want it to name %q", err, want)
+	}
+	if _, err := os.Stat(filepath.Join(data, "clones")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("sweep made %s/clones (stat err %v)", data, err)
+	}
+}
+
 type fakeWaiter struct{ order *[]string }
 
 func (f fakeWaiter) Wait(ctx context.Context) error {

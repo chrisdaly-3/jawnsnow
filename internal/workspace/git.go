@@ -88,9 +88,11 @@ func sshCommandConfigured(ctx context.Context, dir string) bool {
 
 var nameRE = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]*/[A-Za-z0-9_][A-Za-z0-9_.-]*$`)
 
-// Resolve returns the repository for name ("owner/name"). A mapped,
-// working path wins; otherwise a blobless bare clone lives under
-// dataDir/clones and is reused once it exists.
+// Resolve returns the repository for name ("owner/name"): the mapped path
+// when there is one, which must be a repository, or else a blobless bare
+// clone under dataDir/clones, reused once it exists. A mapped path that is
+// not a repository is an error and never cloned in its place, since it is
+// most likely a typo.
 func Resolve(ctx context.Context, name string, rc config.Repo, dataDir string, cloneURL func(name string) string) (Repo, error) {
 	if !nameRE.MatchString(name) || strings.Contains(name, "..") {
 		return Repo{}, fmt.Errorf("invalid repo name %q", name)
@@ -98,10 +100,15 @@ func Resolve(ctx context.Context, name string, rc config.Repo, dataDir string, c
 	url := cloneURL(name)
 
 	if rc.Path != "" {
-		if r, err := open(ctx, name, expandHome(rc.Path)); err == nil {
-			r.CloneURL = url
-			return r, nil
+		r, err := open(ctx, name, expandHome(rc.Path))
+		if err != nil {
+			if ctx.Err() != nil {
+				return Repo{}, ctx.Err()
+			}
+			return Repo{}, fmt.Errorf("repos.%q.path %s is not a git repository", name, rc.Path)
 		}
+		r.CloneURL = url
+		return r, nil
 	}
 
 	clones := filepath.Join(dataDir, "clones")

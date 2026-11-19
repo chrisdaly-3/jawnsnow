@@ -2,6 +2,8 @@ package workspace
 
 import (
 	"context"
+	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -43,8 +45,7 @@ func TestResolveMakesBlobslessBareClone(t *testing.T) {
 	dataDir := realPath(t, t.TempDir())
 	url := func(string) string { return "file://" + s.upstream }
 
-	// A mapped path that is not a repo falls through to the clone.
-	r, err := Resolve(ctx, "o/n", config.Repo{Path: filepath.Join(s.root, "missing")}, dataDir, url)
+	r, err := Resolve(ctx, "o/n", config.Repo{}, dataDir, url)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,6 +67,24 @@ func TestResolveMakesBlobslessBareClone(t *testing.T) {
 	}
 	if r2.GitDir != want {
 		t.Fatalf("second GitDir = %s", r2.GitDir)
+	}
+}
+
+// A mistyped repos.<name>.path is an error: cloning in its place would
+// review a copy the user didn't mean.
+func TestResolveBadMappedPathErrors(t *testing.T) {
+	s := newScratch(t)
+	dataDir := realPath(t, t.TempDir())
+	notRepo := t.TempDir()
+	for _, p := range []string{filepath.Join(s.root, "missing"), notRepo} {
+		_, err := Resolve(context.Background(), "o/n", config.Repo{Path: p}, dataDir, func(string) string { return "file://" + s.upstream })
+		want := `repos."o/n".path ` + p + " is not a git repository"
+		if err == nil || err.Error() != want {
+			t.Errorf("Resolve(%s) err = %v, want %q", p, err, want)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dataDir, "clones")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("a bad mapped path made %s/clones (stat err %v)", dataDir, err)
 	}
 }
 

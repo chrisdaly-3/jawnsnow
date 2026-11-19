@@ -368,7 +368,8 @@ func shutdown(w waiter, d time.Duration, closers ...func()) {
 // sweepStartup clears what an earlier run left behind in each repo that has
 // a PR on the wall: its idle worktree slots, and its refs for PRs no longer
 // tracked. A repo with no mapped path and no clone from an earlier run has
-// nothing of ours in it, so it is skipped rather than cloned.
+// nothing of ours in it, so it is skipped rather than cloned; one whose
+// mapped path is not a repository is skipped with an error.
 func sweepStartup(ctx context.Context, st *store.Store, cfg func() config.Config, dataDir string) error {
 	all, err := st.LoadTracked(ctx)
 	if err != nil {
@@ -403,6 +404,7 @@ func sweepStartup(ctx context.Context, st *store.Store, cfg func() config.Config
 		}
 		r, err := workspace.Resolve(ctx, repo, rc, data, noClone)
 		if err != nil {
+			errs = append(errs, err) // a mapped path that isn't a repo
 			continue
 		}
 		slots := filepath.Join(data, "worktrees", fileName)
