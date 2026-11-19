@@ -35,6 +35,9 @@ type fakeReviewer struct {
 	blocking int
 	fail     error
 	n        int
+	// headMoved makes Run return review.ErrHeadMoved and save nothing, as
+	// the engine does after a force push.
+	headMoved bool
 	// block makes Run signal entered, then wait for its context to end and
 	// return a failed review, as a killed claude does. Set it before the
 	// run starts.
@@ -57,6 +60,10 @@ func (f *fakeReviewer) Run(ctx context.Context, req review.Request, onEvent func
 	}
 	err := f.fail
 	block, entered := f.block, f.entered
+	if f.headMoved {
+		f.mu.Unlock()
+		return store.Review{}, review.ErrHeadMoved
+	}
 	f.mu.Unlock()
 	if block {
 		close(entered)
@@ -458,6 +465,28 @@ func TestCancelledReviewIsNotAFailure(t *testing.T) {
 	c := content(h.m)
 	if !strings.Contains(c, "· review cancelled") || strings.Contains(c, "review failed") {
 		t.Errorf("badge after a cancelled review, want \"· review cancelled\":\n%s", c)
+	}
+}
+
+func TestHeadMovedIsNotAFailure(t *testing.T) {
+	h := newHarness(t, opts{reviews: true}, wallPR("1"))
+	h.reviewer.headMoved = true
+	h.finishPoll(t)
+	h.m, _ = settle(t, h.m, spaceKey())
+	h.runReviews(t)
+
+	s := h.m.reviews.state["1"]
+	if s.running {
+		t.Fatal("the review is still running")
+	}
+	if s.failures != 0 || s.latest != nil {
+		t.Errorf("failures = %d, latest = %+v; want no failure and no review", s.failures, s.latest)
+	}
+	if c := content(h.m); strings.Contains(c, "review failed") || strings.Contains(c, "review cancelled") {
+		t.Errorf("badge after the head moved:\n%s", c)
+	}
+	if rs, err := h.store.Reviews(context.Background(), "1"); err != nil || len(rs) != 0 {
+		t.Errorf("stored reviews = %+v, %v; want none", rs, err)
 	}
 }
 

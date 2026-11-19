@@ -22,6 +22,12 @@ import (
 	"github.com/chrisdaly-3/jawnsnow/internal/workspace"
 )
 
+// ErrHeadMoved is returned, with no review saved, when the PR's head was
+// force-pushed after the poll the review was planned from: the fetched head
+// is not the snapshot's, and the snapshot's is gone. The next poll plans a
+// review of the new head.
+var ErrHeadMoved = errors.New("the PR's head moved since the last poll")
+
 // maxContinuations is how many times one pass resumes its session to fill
 // reading gaps or reword findings.
 const maxContinuations = 2
@@ -80,7 +86,8 @@ type repoPool struct {
 // returned with it. A continuation that fails after an earlier run gave
 // parseable output is the exception: that output is kept and the review is
 // incomplete. Cost rows and the saved review are written even after
-// ctx is cancelled, so a stopped run's spend is still counted.
+// ctx is cancelled, so a stopped run's spend is still counted. ErrHeadMoved
+// saves nothing.
 func (e *Engine) Run(ctx context.Context, req Request, onEvent func(Event)) (store.Review, error) {
 	defer e.runStarted()()
 	pr := req.PR.PR
@@ -96,6 +103,9 @@ func (e *Engine) Run(ctx context.Context, req Request, onEvent func(Event)) (sto
 	if err == nil {
 		defer unlock()
 		err = e.review(ctx, req, &rv, onEvent)
+	}
+	if errors.Is(err, ErrHeadMoved) {
+		return rv, err // nothing ran, and the next poll plans the new head
 	}
 	if err != nil {
 		rv.Outcome, rv.Error, rv.Findings = outcomeFailed, err.Error(), nil
@@ -191,6 +201,14 @@ func (e *Engine) review(ctx context.Context, req Request, rv *store.Review, onEv
 	head, base, err := rp.repo.FetchPR(ctx, pr.Number, pr.BaseRef)
 	if err != nil {
 		return fmt.Errorf("fetch PR: %w", err)
+	}
+	if pr.HeadOID != "" && head != pr.HeadOID {
+		// A push since the poll: review the head the plan and its quiet
+		// period were for, if the fetch brought it.
+		if !rp.repo.HasCommit(ctx, pr.HeadOID) {
+			return ErrHeadMoved
+		}
+		head = pr.HeadOID
 	}
 	rv.HeadOID, rv.BaseOID = head, base
 	mergeBase, err := rp.repo.MergeBase(ctx, head, base)

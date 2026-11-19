@@ -88,7 +88,7 @@ func WriteReviewFiles(ctx context.Context, r Repo, dir string, in FilesInput) (R
 		return ReviewFiles{}, err
 	}
 
-	if !followUp || !r.hasCommit(ctx, in.LastReviewed) || !r.hasCommit(ctx, in.LastMergeBase) {
+	if !followUp || !r.HasCommit(ctx, in.LastReviewed) || !r.HasCommit(ctx, in.LastMergeBase) {
 		return files, nil
 	}
 	since, err := r.since(ctx, in, files.Changed, prFiles)
@@ -214,8 +214,8 @@ func (r Repo) changedPaths(ctx context.Context, from, to string) ([]string, erro
 	return paths, nil
 }
 
-// hasCommit reports whether id is a commit in r.
-func (r Repo) hasCommit(ctx context.Context, id string) bool {
+// HasCommit reports whether id is a commit in r.
+func (r Repo) HasCommit(ctx context.Context, id string) bool {
 	_, err := Git(ctx, r.GitDir, "cat-file", "-e", id+"^{commit}")
 	return err == nil
 }

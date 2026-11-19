@@ -3,6 +3,7 @@ package tui
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
@@ -331,10 +332,17 @@ func waitReview(ch <-chan tea.Msg) tea.Cmd {
 
 func (m Model) finishReview(msg reviewDoneMsg) (Model, tea.Cmd) {
 	failed := msg.Err != nil || msg.Review.Outcome == "failed"
+	// A head that moved stops the run before it does anything, like a
+	// cancel: nothing failed, nothing was saved, and the latest review
+	// stands until the next poll plans the new head.
+	headMoved := errors.Is(msg.Err, review.ErrHeadMoved)
 	now := m.now()
 	m = m.withState(msg.PRID, func(s *reviewState) {
 		head := cmp.Or(msg.Review.HeadOID, s.head)
 		s.running, s.cancel, s.ticker = false, nil, ""
+		if headMoved {
+			return
+		}
 		r := msg.Review
 		if r.ID == "" { // the run failed before it had a review to return
 			r = store.Review{PRID: msg.PRID, HeadOID: head, StartedAt: now}

@@ -598,6 +598,54 @@ func TestEngineForcePushIsFull(t *testing.T) {
 	}
 }
 
+// A push after the poll that queued the review moves refs/pull/N/head past
+// the snapshot's head; the review is of the head the quiet period covered.
+func TestEngineReviewsSnapshotHeadAfterLaterPush(t *testing.T) {
+	env := newEngineEnv(t)
+	later := env.s.addPRCommit(t, "c.txt") // pushed after the poll; the snapshot head stays prSHA
+	env.claude.script(fakeRun{Reads: readAll, Output: output(nil, nil), Cost: 0.3})
+
+	rv, err := env.run(t, Request{Mode: ModeAuto})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rv.HeadOID != env.s.prSHA || rv.HeadOID == later {
+		t.Errorf("reviewed head %s, want the snapshot head %s", rv.HeadOID, env.s.prSHA)
+	}
+	diff, err := os.ReadFile(filepath.Join(env.reviewDir(rv.ID), "diff.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(diff), "c.txt") {
+		t.Errorf("the diff has the later push's c.txt:\n%s", diff)
+	}
+}
+
+// A force push leaves the snapshot's head out of the fetch: the review stops
+// before it costs anything, and nothing is saved.
+func TestEngineHeadMovedStopsBeforeClaude(t *testing.T) {
+	env := newEngineEnv(t)
+	env.snap.HeadOID = strings.Repeat("3", 40) // a head the fetch didn't bring
+	env.claude.script(fakeRun{Reads: readAll, Output: output(nil, nil), Cost: 0.3})
+
+	_, err := env.run(t, Request{Mode: ModeAuto})
+	if !errors.Is(err, ErrHeadMoved) {
+		t.Fatalf("err = %v, want ErrHeadMoved", err)
+	}
+	if n := len(env.claude.calls()); n != 0 {
+		t.Errorf("claude ran %d times", n)
+	}
+	if n := len(env.costRows(t)); n != 0 {
+		t.Errorf("cost rows = %d", n)
+	}
+	if saved := env.stored(t); len(saved) != 0 {
+		t.Errorf("stored = %+v, want no review", saved)
+	}
+	if slots, _ := env.st.Slots(context.Background(), "o/n"); len(slots) != 0 {
+		t.Errorf("slots = %+v, want none acquired", slots)
+	}
+}
+
 func TestEngineFetchFailureIsFailed(t *testing.T) {
 	env := newEngineEnv(t)
 	env.snap.Number = 99 // upstream has no refs/pull/99/head
