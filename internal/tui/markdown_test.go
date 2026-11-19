@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	gansi "charm.land/glamour/v2/ansi"
 	"charm.land/glamour/v2/styles"
 	"github.com/alecthomas/chroma/v2"
 	chromastyles "github.com/alecthomas/chroma/v2/styles"
@@ -162,19 +163,72 @@ func TestRenderLightDiffersFromDark(t *testing.T) {
 // Glamour's package-level styles are shared; converting colors must not
 // write through them.
 func TestGlowStyleDoesNotMutateGlamour(t *testing.T) {
-	before := glamourStyleHexCount()
-	glamourStyle(mdKey{width: 60, style: "dark"})
-	if after := glamourStyleHexCount(); after != before {
-		t.Errorf("hex colors in glamour's dark style went from %d to %d", before, after)
+	for name, cfg := range map[string]gansi.StyleConfig{"dark": styles.DarkStyleConfig, "light": styles.LightStyleConfig} {
+		before := glamourStyleHexCount(cfg)
+		glamourStyle(mdKey{width: 60, style: name})
+		if after := glamourStyleHexCount(cfg); after != before {
+			t.Errorf("%s: hex colors in glamour's style went from %d to %d", name, before, after)
+		}
 	}
 }
 
-func glamourStyleHexCount() int {
+func glamourStyleHexCount(cfg gansi.StyleConfig) int {
 	n := 0
-	walkColors(reflect.ValueOf(styles.DarkStyleConfig), "", func(_, c string) {
+	walkColors(reflect.ValueOf(cfg), "", func(_, c string) {
 		if strings.HasPrefix(c, "#") {
 			n++
 		}
 	})
 	return n
+}
+
+const paletteSrc = "# Heading\n\n**bold** and `code` and [a link](https://example.com/x)\n\n- one\n- two\n\n" +
+	"```go\n// comment\nfunc add(a, b int) string {\n\treturn \"x\" + fmt.Sprint(a+b, 42)\n}\n```\n\n> quote\n"
+
+var (
+	sgrRE     = regexp.MustCompile(`\x1b\[([0-9;]*)m`)
+	indexedRE = regexp.MustCompile(`^(38|48);5;(\d+)`)
+)
+
+// Every color in the rendered bytes is an xterm index in 16-255: no
+// truecolor, and none of the basic-16 parameters a terminal theme remaps.
+func TestRenderedBytesUseOnlyPalette(t *testing.T) {
+	for _, style := range []string{"dark", "light"} {
+		out := strings.Join(newMarkdownCache().render(paletteSrc, 60, mdTheme(t, style, false)), "\n")
+		n := 0
+		for _, m := range sgrRE.FindAllStringSubmatch(out, -1) {
+			params := strings.Split(m[1], ";")
+			for i := 0; i < len(params); i++ {
+				p, _ := strconv.Atoi(params[i])
+				switch {
+				case (p == 38 || p == 48) && i+1 < len(params) && params[i+1] == "2":
+					t.Errorf("%s: truecolor in %q", style, m[0])
+					i += 4
+				case (p == 38 || p == 48) && i+2 < len(params) && params[i+1] == "5":
+					n++
+					if idx, _ := strconv.Atoi(params[i+2]); idx < 16 || idx > 255 {
+						t.Errorf("%s: index %d out of 16-255 in %q", style, idx, m[0])
+					}
+					i += 2
+				case p >= 30 && p <= 37, p >= 40 && p <= 47, p >= 90 && p <= 97, p >= 100 && p <= 107:
+					t.Errorf("%s: basic color parameter %d in %q", style, p, m[0])
+				}
+			}
+		}
+		if n < 8 {
+			t.Errorf("%s: only %d indexed colors found; the sample is too thin", style, n)
+		}
+	}
+}
+
+func TestRenderedLinesFitWidth(t *testing.T) {
+	for _, style := range []string{"dark", "light"} {
+		for _, w := range []int{20, 40, 80} {
+			for _, l := range newMarkdownCache().render(paletteSrc, w, mdTheme(t, style, false)) {
+				if got := ansi.StringWidth(l); got > w {
+					t.Errorf("%s width %d: line is %d cells: %q", style, w, got, ansi.Strip(l))
+				}
+			}
+		}
+	}
 }
