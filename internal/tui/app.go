@@ -168,6 +168,9 @@ type Model struct {
 	post *postFlow
 	// pollAgain asks for a poll as soon as the one in flight finishes.
 	pollAgain bool
+	// unconfirmedPosts are posts the store has no row for, by review ID:
+	// ones whose record failed, and ones that may have reached GitHub.
+	unconfirmedPosts map[string]unconfirmedPost
 
 	reviews reviewsModel
 	// session is the Agent view's model picks for this session.
@@ -344,7 +347,7 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 			m.notice = "could not read reviews: " + msg.Err.Error()
 			return m, nil
 		}
-		return m.drawerUpdate(msg)
+		return m.drawerUpdate(m.withUnrecorded(msg))
 	case loadedMsg:
 		m.loaded = true
 		if msg.err != nil {

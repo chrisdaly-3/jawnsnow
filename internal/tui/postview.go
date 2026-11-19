@@ -89,8 +89,11 @@ func (m Model) postFrame(width, height int) (top, body []string, cursorRow, rows
 	case postLoading:
 		return []string{th.Accent().Render(title), "", th.Muted().Render("Checking earlier posts…")}, nil, 0, rows
 	case postRepost:
-		last := p.prior[0]
-		q := fmt.Sprintf("Already posted as %s %s — post again? y/n", eventLabel(last.Event), postedAgo(m.now().Sub(last.At)))
+		a := p.ask
+		q := fmt.Sprintf("Already posted as %s %s — post again? y/n", eventLabel(a.event), postedAgo(m.now().Sub(a.at)))
+		if a.uncertain {
+			q = fmt.Sprintf("A post may already have reached GitHub %s — post again? y/n", postedAgo(m.now().Sub(a.at)))
+		}
 		return append([]string{th.Accent().Render(title), ""}, wrap(q, th.Accent())...), nil, 0, rows
 	case postResult:
 		return append([]string{th.Accent().Render(title), ""}, wrap(cleanLine(p.result), th.StatusFg("CI_FAILED"))...), nil, 0, rows

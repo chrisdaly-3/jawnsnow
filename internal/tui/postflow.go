@@ -2,11 +2,13 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -53,17 +55,54 @@ const postQuitWarning = "posting to GitHub — ctrl+c again to quit anyway"
 
 const headMovedWarning = "PR has new commits since this review — comments will show as outdated"
 
+const uncertainPost = "the post may have reached GitHub — check the PR before posting again: "
+
+// postDoubt is why a post the store has no row for may still be on GitHub.
+type postDoubt int
+
+const (
+	postUnrecorded postDoubt = iota + 1 // it posted, but the record failed
+	postUncertain                       // the post failed in a way that may have come after GitHub took it
+)
+
+// unconfirmedPost is a post only the model knows of. Drawer loads never
+// replace these, so the repost question survives them.
+type unconfirmedPost struct {
+	Event string
+	At    time.Time
+	Kind  postDoubt
+}
+
+// priorPost is what the repost question names.
+type priorPost struct {
+	event     string
+	at        time.Time
+	uncertain bool
+}
+
+// postKey identifies a stored post, so the flow can tell one recorded
+// since it opened.
+func postKey(p store.Posted) string {
+	return p.GitHubReviewID + "@" + strconv.FormatInt(p.At.UnixNano(), 10)
+}
+
 // postFlow is the open post modal. Like the picker it is replaced, never
 // written in place, since older copies of the model share it.
 type postFlow struct {
 	stage  postStage
 	review store.Review // a copy, so a drawer reload can't change what posts
-	prior  []store.Posted
-	pick   int // index into postEvents
-	sel    post.Selection
-	cursor int // the checklist row, in orderedFindings order
-	scroll int
-	raw    bool
+	// ask is the earlier post the repost question names; known are the
+	// stored posts the flow has asked about, by postKey.
+	ask   priorPost
+	known map[string]bool
+	// mustAsk is set when a post may have reached GitHub: the next enter
+	// asks again before sending.
+	mustAsk bool
+	pick    int // index into postEvents
+	sel     post.Selection
+	cursor  int // the checklist row, in orderedFindings order
+	scroll  int
+	raw     bool
 	// inFlight is set from the confirming enter until the post's result
 	// arrives; every key but ctrl+c is ignored meanwhile, so a second
 	// enter sends nothing. editing is the same for the editor. quitArmed
@@ -91,15 +130,17 @@ type (
 		ReviewID, Body string
 		Err            error
 	}
-	// postDoneMsg ends a post. Err means GitHub refused it and nothing was
-	// recorded; otherwise it posted, and RecordErr says whether the record
-	// was saved.
+	// postDoneMsg ends a post. Raced is a post recorded since the flow
+	// opened, and then nothing was sent. Err means the post failed:
+	// github.IsRefused says whether nothing reached GitHub. Otherwise it
+	// posted, and RecordErr says whether the record was saved.
 	postDoneMsg struct {
-		ReviewID, PRID string
-		Posted         store.Posted
-		Err            error
-		ThreadErr      error
-		RecordErr      error
+		ReviewID, PRID, Event string
+		Posted                store.Posted
+		Raced                 *store.Posted
+		Err                   error
+		ThreadErr             error
+		RecordErr             error
 	}
 )
 
@@ -146,16 +187,22 @@ func (m Model) updatePost(msg tea.Msg) (_ Model, _ tea.Cmd, ok bool) {
 			m.post, m.notice = nil, "could not read earlier posts: "+msg.Err.Error()
 			return m, nil, true
 		}
-		// A post whose record failed is known only to the drawer, and
-		// counts as posted all the same.
-		prior := msg.Posted
-		if d, ok := m.drawer.posted[msg.ReviewID]; ok && (len(prior) == 0 || d.At.After(prior[0].At)) {
-			prior = append([]store.Posted{d}, prior...)
-		}
 		p := *m.post
-		p.prior, p.stage = prior, postPick
-		if len(prior) > 0 {
-			p.stage = postRepost
+		p.known = map[string]bool{}
+		for _, ps := range msg.Posted {
+			p.known[postKey(ps)] = true
+		}
+		var last *priorPost
+		if len(msg.Posted) > 0 {
+			last = &priorPost{event: msg.Posted[0].Event, at: msg.Posted[0].At}
+		}
+		// A post only the model knows of counts as posted all the same.
+		if u, ok := m.unconfirmedPosts[msg.ReviewID]; ok && (last == nil || u.At.After(last.at)) {
+			last = &priorPost{event: u.Event, at: u.At, uncertain: u.Kind == postUncertain}
+		}
+		p.stage = postPick
+		if last != nil {
+			p.ask, p.stage = *last, postRepost
 		}
 		m.post = &p
 	case postEditReadyMsg:
@@ -285,10 +332,17 @@ func (m Model) previewKey(p postFlow, k string) (Model, tea.Cmd) {
 		if err != nil {
 			break // the preview shows why
 		}
+		if p.mustAsk {
+			u := m.unconfirmedPosts[p.review.ID]
+			p.ask = priorPost{event: u.Event, at: u.At, uncertain: true}
+			p.stage, p.mustAsk = postRepost, false
+			m.post = &p
+			return m, nil
+		}
 		// Each post gets its own ctrl+c guard.
 		p.inFlight, p.quitArmed, p.err = true, false, ""
 		m.post = &p
-		return m, m.postCmd(p.review, p.sel, in, pv.ThreadFindings)
+		return m, m.postCmd(p.review, p.sel, in, pv.ThreadFindings, p.known)
 	case "esc":
 		p.stage, p.err = postPick, ""
 		m.post = &p
@@ -372,13 +426,29 @@ func (m Model) runEditor(msg postEditReadyMsg) (Model, tea.Cmd, bool) {
 	}), true
 }
 
-// postCmd posts in, then records it. A refused post records nothing. Once
-// GitHub has the review the record is always attempted, whatever the
-// modal does meanwhile.
-func (m Model) postCmd(rv store.Review, sel post.Selection, in github.PostInput, threadFindings []int64) tea.Cmd {
+// postCmd posts in, then records it. It first reads the review's posts
+// again, and sends nothing if one was recorded since the flow asked
+// (known). A refused post records nothing. Once GitHub has the review the
+// record is written at once, before the thread lookup, whatever the modal
+// does meanwhile; the threads follow in a second write.
+func (m Model) postCmd(rv store.Review, sel post.Selection, in github.PostInput, threadFindings []int64, known map[string]bool) tea.Cmd {
 	poster, st, now := m.poster, m.store, m.now
 	return func() tea.Msg {
-		done := postDoneMsg{ReviewID: rv.ID, PRID: rv.PRID}
+		done := postDoneMsg{ReviewID: rv.ID, PRID: rv.PRID, Event: in.Event}
+		cctx, ccancel := context.WithTimeout(context.Background(), inputsTimeout)
+		ps, err := st.PostedFor(cctx, rv.ID)
+		ccancel()
+		if err != nil {
+			done.Err = &github.RefusedError{Err: fmt.Errorf("could not check earlier posts: %w", err)}
+			return done
+		}
+		for _, p := range ps {
+			if !known[postKey(p)] {
+				done.Raced = &p
+				return done
+			}
+		}
+
 		ctx, cancel := context.WithTimeout(context.Background(), postTimeout)
 		defer cancel()
 		res, err := poster.PostReview(ctx, in)
@@ -386,21 +456,29 @@ func (m Model) postCmd(rv store.Review, sel post.Selection, in github.PostInput,
 			done.Err = err
 			return done
 		}
-		var threadOf map[string]string
-		if len(res.Comments) > 0 {
-			ids := make([]string, len(res.Comments))
-			for i, c := range res.Comments {
-				ids[i] = c.ID
-			}
-			threadOf, done.ThreadErr = poster.ThreadIDs(ctx, in.PRID, ids)
-		}
 		done.Posted = store.Posted{
 			ReviewID: rv.ID, GitHubReviewID: res.ReviewID, URL: res.URL, Event: in.Event,
 			CommitOID: in.CommitOID, FindingIDs: includedIDs(rv, sel), At: now(),
 		}
 		rctx, rcancel := context.WithTimeout(context.Background(), recordTimeout)
-		defer rcancel()
-		done.RecordErr = st.RecordPost(rctx, done.Posted, matchThreads(in, threadFindings, res.Comments, threadOf))
+		done.RecordErr = st.RecordPost(rctx, done.Posted, nil)
+		rcancel()
+		if len(res.Comments) == 0 {
+			return done
+		}
+		ids := make([]string, len(res.Comments))
+		for i, c := range res.Comments {
+			ids[i] = c.ID
+		}
+		threadOf, err := poster.ThreadIDs(ctx, in.PRID, ids)
+		if err == nil && done.RecordErr == nil {
+			sctx, scancel := context.WithTimeout(context.Background(), recordTimeout)
+			if err = st.SetThreadIDs(sctx, rv.ID, matchThreads(in, threadFindings, res.Comments, threadOf)); err != nil {
+				err = fmt.Errorf("save them: %w", err)
+			}
+			scancel()
+		}
+		done.ThreadErr = err
 		return done
 	}
 }
@@ -450,23 +528,52 @@ func matchThreads(in github.PostInput, findingIDs []int64, comments []github.Pos
 }
 
 // finishPost applies a post's result. A refusal goes back to the preview
-// with the selections kept; a post that landed polls now so the PR's
-// status catches up, and a record that failed after it stays on screen.
+// with the selections kept; a failure that may have posted does too, but
+// the next enter asks first. A post recorded meanwhile asks the repost
+// question. A post that landed polls now so the PR's status catches up,
+// and a record that failed after it stays on screen.
 func (m Model) finishPost(msg postDoneMsg) (Model, tea.Cmd) {
 	current := m.post.on(msg.ReviewID) && m.post.inFlight
 	if m.notice == postQuitWarning {
 		m.notice = ""
 	}
+	if r := msg.Raced; r != nil {
+		if current {
+			p := *m.post
+			p.inFlight, p.quitArmed = false, false
+			p.known = maps.Clone(p.known)
+			if p.known == nil {
+				p.known = map[string]bool{}
+			}
+			p.known[postKey(*r)] = true
+			p.ask, p.stage = priorPost{event: r.Event, at: r.At}, postRepost
+			m.post = &p
+		} else {
+			m.notice = "not posted: it was posted meanwhile, " + postedAgo(m.now().Sub(r.At))
+		}
+		return m, nil
+	}
 	if msg.Err != nil {
+		refused := github.IsRefused(msg.Err)
 		text := "post failed: " + msg.Err.Error()
+		if !refused {
+			text = uncertainPost + msg.Err.Error()
+			m = m.withUnconfirmed(msg.ReviewID, unconfirmedPost{Event: msg.Event, At: m.now(), Kind: postUncertain})
+		}
 		if current {
 			p := *m.post
 			p.inFlight, p.quitArmed, p.err = false, false, text
+			if !refused {
+				p.mustAsk = true
+			}
 			m.post = &p
 		} else {
 			m.notice = text
 		}
 		return m, nil
+	}
+	if msg.RecordErr != nil {
+		m = m.withUnconfirmed(msg.ReviewID, unconfirmedPost{Event: msg.Posted.Event, At: msg.Posted.At, Kind: postUnrecorded})
 	}
 	var reload tea.Cmd
 	if m.drawer.prID == msg.PRID {
@@ -501,6 +608,36 @@ func (m Model) finishPost(msg postDoneMsg) (Model, tea.Cmd) {
 	}
 	m, relog := m.reloadReviewLog()
 	return m, tea.Batch(reload, poll, relog)
+}
+
+// withUnconfirmed remembers a post the store has no row for.
+func (m Model) withUnconfirmed(reviewID string, u unconfirmedPost) Model {
+	m.unconfirmedPosts = maps.Clone(m.unconfirmedPosts)
+	if m.unconfirmedPosts == nil {
+		m.unconfirmedPosts = map[string]unconfirmedPost{}
+	}
+	m.unconfirmedPosts[reviewID] = u
+	return m
+}
+
+// withUnrecorded adds the posts whose record failed to a drawer load, so
+// the drawer keeps saying they were posted.
+func (m Model) withUnrecorded(msg drawerLoadedMsg) drawerLoadedMsg {
+	for _, r := range msg.Reviews {
+		u, ok := m.unconfirmedPosts[r.ID]
+		if !ok || u.Kind != postUnrecorded {
+			continue
+		}
+		if p, ok := msg.Posted[r.ID]; ok && !u.At.After(p.At) {
+			continue
+		}
+		msg.Posted = maps.Clone(msg.Posted)
+		if msg.Posted == nil {
+			msg.Posted = map[string]store.Posted{}
+		}
+		msg.Posted[r.ID] = store.Posted{ReviewID: r.ID, Event: u.Event, At: u.At}
+	}
+	return msg
 }
 
 func (d drawerModel) withPosted(p store.Posted) drawerModel {

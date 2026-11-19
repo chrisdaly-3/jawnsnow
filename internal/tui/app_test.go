@@ -264,6 +264,7 @@ func wallPR(id string) tracker.Tracked {
 
 type harness struct {
 	m      Model
+	dbPath string
 	client *fakeClient
 	store  *store.Store
 	clock  *testClock
@@ -311,7 +312,8 @@ type opts struct {
 // reload listener blocks until o.reloads has a value, so fill it first.
 func newHarness(t *testing.T, o opts, prs ...tracker.Tracked) *harness {
 	t.Helper()
-	st, err := store.Open(t.TempDir() + "/db")
+	dbPath := t.TempDir() + "/db"
+	st, err := store.Open(dbPath)
 	if err != nil {
 		t.Fatalf("store.Open: %v", err)
 	}
@@ -324,7 +326,7 @@ func newHarness(t *testing.T, o opts, prs ...tracker.Tracked) *harness {
 		t.Fatalf("theme.New: %v", err)
 	}
 
-	h := &harness{store: st, clock: &testClock{now: t0}, client: &fakeClient{snaps: map[string]github.Snapshot{}, viewerErrs: o.viewerErrs}}
+	h := &harness{dbPath: dbPath, store: st, clock: &testClock{now: t0}, client: &fakeClient{snaps: map[string]github.Snapshot{}, viewerErrs: o.viewerErrs}}
 	for _, p := range prs {
 		h.client.snaps[p.PR.ID] = p.PR
 	}

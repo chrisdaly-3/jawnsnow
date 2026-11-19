@@ -2,7 +2,9 @@ package tui
 
 import (
 	"context"
+	"database/sql"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -27,6 +29,9 @@ type fakePoster struct {
 	result    github.PostResult
 	threads   map[string]string
 	threadIDs [][]string
+	// inLookup, when set, is called as the thread lookup starts; it may
+	// block to hold the lookup.
+	inLookup func()
 }
 
 func (f *fakePoster) PostReview(_ context.Context, in github.PostInput) (github.PostResult, error) {
@@ -39,6 +44,9 @@ func (f *fakePoster) PostReview(_ context.Context, in github.PostInput) (github.
 
 func (f *fakePoster) ThreadIDs(_ context.Context, _ string, ids []string) (map[string]string, error) {
 	f.threadIDs = append(f.threadIDs, slices.Clone(ids))
+	if f.inLookup != nil {
+		f.inLookup()
+	}
 	return f.threads, nil
 }
 
@@ -195,7 +203,7 @@ func TestConfirmTwiceSendsOnce(t *testing.T) {
 
 func TestPostErrorRecordsNothing(t *testing.T) {
 	h := newPostHarness(t, postReview(), opts{})
-	h.poster.err = errors.New("github: post review: Line could not be resolved")
+	h.poster.err = &github.RefusedError{Err: errors.New("github: post review: Line could not be resolved")}
 	h.press(t, "P", "k", "enter", "space")
 	h.wait()
 	h.press(t, "enter")
@@ -348,14 +356,8 @@ func TestRecordFailureAfterPostIsVisible(t *testing.T) {
 	h := newPostHarness(t, postReview(), opts{})
 	h.press(t, "P", "k", "enter")
 	h.wait()
-	m, cmd := update(t, h.m, key("enter"))
-	// The store going away between the post and its record stands in for a
-	// failed write.
-	if err := h.store.Close(); err != nil {
-		t.Fatal(err)
-	}
-	msgs, _ := runCmd(t, cmd)
-	h.m, _ = settle(t, m, msgs...)
+	failRecords(t, h.harness)
+	h.press(t, "enter")
 	if len(h.poster.posts) != 1 {
 		t.Fatalf("%d posts, want 1", len(h.poster.posts))
 	}
@@ -565,14 +567,149 @@ func TestCtrlCWhilePostingAsksAgain(t *testing.T) {
 	}
 }
 
-func TestRepostAsksAfterUnrecordedPost(t *testing.T) {
+// failRecords makes every later post record fail, as a full disk would,
+// while reads keep working.
+func failRecords(t *testing.T, h *harness) {
+	t.Helper()
+	db, err := sql.Open("sqlite", h.dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`CREATE TRIGGER fail_posts BEFORE INSERT ON posted_reviews
+		BEGIN SELECT RAISE(FAIL, 'database or disk is full'); END`); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A post whose record failed is known only to the model. A drawer reload,
+// here the one after a review on the PR finishes, must not lose it.
+func TestRepostAsksAfterUnrecordedPostAndReload(t *testing.T) {
 	h := newPostHarness(t, markdownReview("fix `x`"), opts{})
-	// What a post whose record failed leaves: the drawer knows, the store
-	// doesn't.
-	h.m.drawer = h.m.drawer.withPosted(store.Posted{ReviewID: "r1", Event: "COMMENT", At: t0.Add(-3 * time.Minute)})
+	failRecords(t, h.harness)
+	h.press(t, "P", "enter")
+	h.wait()
+	h.press(t, "enter")
+	if got := modalText(h.m); !strings.Contains(got, "posted to GitHub, but saving the record failed:") {
+		t.Fatalf("no record failure shown:\n%s", got)
+	}
+	h.press(t, "esc")
+	h.clock.now = h.clock.now.Add(3 * time.Minute)
+	var load tea.Cmd
+	h.m, load = h.m.loadDrawer("1")
+	msgs, _ := runCmd(t, load)
+	h.m, _ = settle(t, h.m, msgs...)
+	if got := modalText(h.m); !strings.Contains(got, "Posted as Comment · 3m ago") {
+		t.Errorf("the drawer forgot the post after a reload:\n%s", got)
+	}
 	h.press(t, "P")
 	if got := modalText(h.m); !strings.Contains(got, "Already posted as Comment 3m ago — post again? y/n") {
-		t.Errorf("no repost question:\n%s", got)
+		t.Errorf("no repost question after a reload:\n%s", got)
+	}
+	if len(h.poster.posts) != 1 {
+		t.Errorf("%d posts, want 1", len(h.poster.posts))
+	}
+}
+
+const uncertainText = "the post may have reached GitHub — check the PR before posting again:"
+
+// An error that isn't a clean refusal may have come after GitHub took the
+// review, so a retry asks first, in this flow and in the next.
+func TestUncertainPostAsksBeforeRetry(t *testing.T) {
+	h := newPostHarness(t, markdownReview("fix `x`"), opts{})
+	h.poster.err = fmt.Errorf("github: post review: %w", context.DeadlineExceeded)
+	h.press(t, "P", "enter")
+	h.wait()
+	h.press(t, "enter")
+	if got := modalText(h.m); !strings.Contains(got, uncertainText+" github: post review: context deadline exceeded") {
+		t.Fatalf("no uncertain warning:\n%s", got)
+	}
+	h.poster.err = nil
+	h.wait()
+	h.press(t, "enter")
+	if len(h.poster.posts) != 1 {
+		t.Fatalf("the retry posted without asking: %d posts", len(h.poster.posts))
+	}
+	if got := modalText(h.m); !strings.Contains(got, "A post may already have reached GitHub just now — post again? y/n") {
+		t.Fatalf("no repost question:\n%s", got)
+	}
+	h.press(t, "n")
+	if h.m.post != nil {
+		t.Fatalf("n: modal %+v, want closed", h.m.post)
+	}
+
+	// Opened again, it still asks, and y goes on to post.
+	h.clock.now = h.clock.now.Add(2 * time.Minute)
+	h.press(t, "P")
+	if got := modalText(h.m); !strings.Contains(got, "A post may already have reached GitHub 2m ago — post again? y/n") {
+		t.Fatalf("reopened: no repost question:\n%s", got)
+	}
+	h.press(t, "y", "enter")
+	h.wait()
+	h.press(t, "enter")
+	if len(h.poster.posts) != 2 || h.m.post != nil {
+		t.Errorf("after y: %d posts, modal %+v; want 2 and closed", len(h.poster.posts), h.m.post)
+	}
+}
+
+// The record is written as soon as GitHub has the review, before the
+// thread lookup, so a lookup that hangs can't leave the post unrecorded.
+func TestRecordPrecedesThreadLookup(t *testing.T) {
+	h := newPostHarness(t, postReview(), opts{})
+	release := make(chan struct{})
+	inLookup := make(chan struct{})
+	h.poster.inLookup = func() { close(inLookup); <-release }
+	h.press(t, "P", "k", "enter", "space")
+	h.wait()
+	m, cmd := update(t, h.m, key("enter"))
+	done := make(chan []tea.Msg)
+	go func() {
+		msgs, _ := runCmd(t, cmd)
+		done <- msgs
+	}()
+	<-inLookup
+	posted, err := h.store.PostedFor(context.Background(), "r1")
+	if err != nil || len(posted) != 1 || posted[0].GitHubReviewID != "PRR_1" {
+		t.Errorf("while the lookup hangs: posted = %+v, %v; want the record", posted, err)
+	}
+	close(release)
+	h.m, _ = settle(t, m, <-done...)
+	rs, err := h.store.Reviews(context.Background(), "1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range rs[0].Findings {
+		if want := map[int64]string{1: "PRRT_1"}[f.ID]; f.ThreadID != want {
+			t.Errorf("finding %d thread = %q, want %q", f.ID, f.ThreadID, want)
+		}
+	}
+	if posted, _ := h.store.PostedFor(context.Background(), "r1"); len(posted) != 1 {
+		t.Errorf("%d posted rows, want 1", len(posted))
+	}
+}
+
+// A post recorded after the flow opened, by another snow say, stops the
+// send and asks first.
+func TestPostRechecksBeforeSending(t *testing.T) {
+	h := newPostHarness(t, markdownReview("fix `x`"), opts{})
+	h.press(t, "P", "enter")
+	other := store.Posted{ReviewID: "r1", GitHubReviewID: "PRR_9", Event: "APPROVE", CommitOID: "head-1", At: t0.Add(-time.Minute)}
+	if err := h.store.RecordPost(context.Background(), other, nil); err != nil {
+		t.Fatal(err)
+	}
+	h.wait()
+	h.press(t, "enter")
+	if len(h.poster.posts) != 0 {
+		t.Fatalf("posted %d times over a post it didn't know about", len(h.poster.posts))
+	}
+	if got := modalText(h.m); !strings.Contains(got, "Already posted as Approve 1m ago — post again? y/n") {
+		t.Fatalf("no repost question:\n%s", got)
+	}
+	h.press(t, "y", "enter")
+	h.wait()
+	h.press(t, "enter")
+	if len(h.poster.posts) != 1 || h.m.post != nil {
+		t.Errorf("after y: %d posts, modal %+v; want 1 and closed", len(h.poster.posts), h.m.post)
 	}
 }
 
@@ -648,7 +785,7 @@ const quitWarning = "posting to GitHub — ctrl+c again to quit anyway"
 
 func TestCtrlCGuardResetsAfterFailedPost(t *testing.T) {
 	h := newPostHarness(t, markdownReview("fix `x`"), opts{})
-	h.poster.err = errors.New("github: post review: no permission")
+	h.poster.err = &github.RefusedError{Err: errors.New("github: post review: no permission")}
 	h.press(t, "P", "enter")
 	h.wait()
 	m, post1 := update(t, h.m, key("enter"))
@@ -680,7 +817,7 @@ func TestCtrlCWarningClearsWhenPostEnds(t *testing.T) {
 	for _, fail := range []bool{false, true} {
 		h := newPostHarness(t, markdownReview("fix `x`"), opts{})
 		if fail {
-			h.poster.err = errors.New("github: post review: no permission")
+			h.poster.err = &github.RefusedError{Err: errors.New("github: post review: no permission")}
 		}
 		h.press(t, "P", "enter")
 		h.wait()
