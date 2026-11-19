@@ -241,11 +241,11 @@ func TestPromptEarlierFindingsStayOnOneLine(t *testing.T) {
 
 func TestPromptMarksPostedEarlierFindings(t *testing.T) {
 	p := BuildPrompt(testInput())
-	if !strings.Contains(p, "12 · b.go:9 · non-blocking · posted · posted body") {
+	if !strings.Contains(p, "12 · b.go:9 · non-blocking · posted as thread T9 · posted body") {
 		t.Errorf("posted finding not marked:\n%s", p)
 	}
 	for _, l := range strings.Split(p, "\n") {
-		if strings.HasPrefix(l, "11 ·") && strings.Contains(l, "posted ·") {
+		if strings.HasPrefix(l, "11 ·") && strings.Contains(l, "posted as thread") {
 			t.Errorf("unposted finding marked posted: %q", l)
 		}
 	}
@@ -277,5 +277,15 @@ func TestPromptNamesNoToolOrPerson(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+func TestPromptLinksPostedFindingToThread(t *testing.T) {
+	in := testInput()
+	in.Context.Threads = append(in.Context.Threads, github.Thread{ID: "T9", Path: "b.go", Line: 9,
+		Comments: []github.TextComment{{Author: "carol", Body: "reply"}}})
+	p := BuildPrompt(in)
+	if !strings.Contains(p, "posted as thread T9") {
+		t.Errorf("posted finding not linked to its thread:\n%s", p)
 	}
 }

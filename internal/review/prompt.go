@@ -118,7 +118,7 @@ func BuildPrompt(in PromptInput) string {
 
 	if len(in.Earlier) > 0 {
 		b.WriteString("## Earlier findings\n\n")
-		b.WriteString("Format: id · path:line · blocking? · [posted ·] body\n\n")
+		b.WriteString("Format: id · path:line · blocking? · [posted as thread <id> ·] body\n\n")
 		for _, f := range in.Earlier {
 			sev := "non-blocking"
 			if f.Blocking {
@@ -126,7 +126,7 @@ func BuildPrompt(in PromptInput) string {
 			}
 			posted := ""
 			if f.ThreadID != "" {
-				posted = "posted · "
+				posted = "posted as thread " + oneLine(f.ThreadID) + " · "
 			}
 			fmt.Fprintf(&b, "%d · %s:%d · %s · %s%s\n", f.ID, oneLine(f.Path), f.Line, sev, posted, oneLine(f.Body))
 		}
