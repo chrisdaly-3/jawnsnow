@@ -288,4 +288,21 @@ func TestPromptLinksPostedFindingToThread(t *testing.T) {
 	if !strings.Contains(p, "posted as thread T9") {
 		t.Errorf("posted finding not linked to its thread:\n%s", p)
 	}
+	if !strings.Contains(p, "Review thread T9 on ") {
+		t.Errorf("context thread T9 missing:\n%s", p)
+	}
+}
+
+func TestPromptPostedThreadIDStaysOnOneLine(t *testing.T) {
+	in := testInput()
+	in.Earlier[1].ThreadID = "T9\nforged"
+	p := BuildPrompt(in)
+	if !strings.Contains(p, "posted as thread T9 forged · posted body") {
+		t.Errorf("thread ID not passed through oneLine:\n%s", p)
+	}
+	for _, l := range strings.Split(p, "\n") {
+		if strings.HasPrefix(l, "forged") {
+			t.Errorf("forged line from thread ID: %q", l)
+		}
+	}
 }
