@@ -882,3 +882,40 @@ func TestLedgerStates(t *testing.T) {
 		t.Errorf("open findings = %v, want [c d]", bodies)
 	}
 }
+
+func TestEngineWaitBlocksUntilRunSaved(t *testing.T) {
+	env := newEngineEnv(t)
+	env.snap.Number = 99 // a failing review still saves, which is what Wait covers
+	atSave := make(chan struct{})
+	release := make(chan struct{})
+	env.e.beforeSave = func() {
+		close(atSave)
+		<-release
+	}
+
+	if err := env.e.Wait(context.Background()); err != nil {
+		t.Fatalf("Wait with nothing running: %v", err)
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		env.e.Run(context.Background(), Request{PR: tracker.Tracked{PR: env.snap}, Mode: ModeAuto}, nil)
+	}()
+	<-atSave
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if err := env.e.Wait(ctx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Wait during a run = %v, want deadline exceeded", err)
+	}
+	close(release)
+	<-done
+	ctx2, cancel2 := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel2()
+	if err := env.e.Wait(ctx2); err != nil {
+		t.Fatalf("Wait after the run saved: %v", err)
+	}
+	if saved := env.stored(t); len(saved) != 1 {
+		t.Errorf("stored = %d reviews, want 1", len(saved))
+	}
+}

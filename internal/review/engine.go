@@ -62,6 +62,10 @@ type Engine struct {
 	data  string               // DataDir with symlinks resolved, once created
 	repos map[string]*repoPool // by "owner/name"
 
+	runMu    sync.Mutex
+	inFlight int           // Runs between their start and their save
+	idle     chan struct{} // closed when inFlight returns to 0; set while it is above 0
+
 	repoLocks keyedLock // one Resolve per repo at a time
 	prLocks   keyedLock // a PR's workspace work and its release never overlap
 }
@@ -78,6 +82,7 @@ type repoPool struct {
 // incomplete. Cost rows and the saved review are written even after
 // ctx is cancelled, so a stopped run's spend is still counted.
 func (e *Engine) Run(ctx context.Context, req Request, onEvent func(Event)) (store.Review, error) {
+	defer e.runStarted()()
 	pr := req.PR.PR
 	rv := store.Review{
 		ID: NewID(), PRID: pr.ID, Repo: pr.Repo, Number: pr.Number, Author: pr.Author,
@@ -103,6 +108,42 @@ func (e *Engine) Run(ctx context.Context, req Request, onEvent func(Event)) (sto
 		return rv, errors.Join(err, fmt.Errorf("save review: %w", serr))
 	}
 	return rv, err
+}
+
+// runStarted counts a Run as in flight and returns the func that ends it.
+// Run defers it first, so it fires after the review is saved.
+func (e *Engine) runStarted() func() {
+	e.runMu.Lock()
+	if e.inFlight == 0 {
+		e.idle = make(chan struct{})
+	}
+	e.inFlight++
+	e.runMu.Unlock()
+	return func() {
+		e.runMu.Lock()
+		defer e.runMu.Unlock()
+		if e.inFlight--; e.inFlight == 0 {
+			close(e.idle)
+		}
+	}
+}
+
+// Wait blocks until no Run is in flight, which is after each has saved its
+// review, or until ctx ends. Shutdown calls it before closing the store.
+func (e *Engine) Wait(ctx context.Context) error {
+	e.runMu.Lock()
+	if e.inFlight == 0 {
+		e.runMu.Unlock()
+		return nil
+	}
+	idle := e.idle
+	e.runMu.Unlock()
+	select {
+	case <-idle:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // review runs the pipeline and fills rv. It returns the error that fails

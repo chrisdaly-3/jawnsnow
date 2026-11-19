@@ -3,7 +3,9 @@ package cli
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -11,6 +13,8 @@ import (
 
 	"github.com/chrisdaly-3/jawnsnow/internal/config"
 	"github.com/chrisdaly-3/jawnsnow/internal/github"
+	"github.com/chrisdaly-3/jawnsnow/internal/store"
+	"github.com/chrisdaly-3/jawnsnow/internal/tracker"
 )
 
 // isolate points HOME and XDG_DATA_HOME at a temp dir so startup never
@@ -20,6 +24,8 @@ func isolate(t *testing.T) string {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_DATA_HOME", filepath.Join(home, "data"))
+	// An empty PATH keeps startup from finding, and running, the real claude.
+	t.Setenv("PATH", t.TempDir())
 	return home
 }
 
@@ -231,4 +237,188 @@ func TestCLIConfigDefault(t *testing.T) {
 
 func (fakeClient) ReviewContext(context.Context, string) (github.PRContext, github.RateLimit, error) {
 	return github.PRContext{}, github.RateLimit{}, nil
+}
+
+// fakeClaude puts a claude on PATH that answers detection and nothing else.
+func fakeClaude(t *testing.T, loggedIn bool) {
+	t.Helper()
+	dir := t.TempDir()
+	script := "#!/bin/sh\n" +
+		"case \"$1\" in\n" +
+		"  --version) echo '9.9.9 (Claude Code)' ;;\n" +
+		"  auth) echo '{\"loggedIn\":" + map[bool]string{true: "true", false: "false"}[loggedIn] + ",\"authMethod\":\"test\"}' ;;\n" +
+		"esac\n"
+	if err := os.WriteFile(filepath.Join(dir, "claude"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+}
+
+func withClient() (github.Client, error) { return fakeClient{viewer: "octo"}, nil }
+
+func TestBuildDepsWiresReviewer(t *testing.T) {
+	isolate(t)
+	fakeClaude(t, true)
+	deps, cleanup, err := buildDeps(os.Getenv, withClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	if deps.Reviewer == nil || deps.ReviewsOff != "" {
+		t.Fatalf("reviewer=%v off=%q", deps.Reviewer, deps.ReviewsOff)
+	}
+	if !deps.Claude.Found || !deps.Claude.LoggedIn || deps.Claude.Version != "9.9.9" {
+		t.Fatalf("Claude = %+v", deps.Claude)
+	}
+}
+
+func TestBuildDepsNoClaude(t *testing.T) {
+	isolate(t)
+	deps, cleanup, err := buildDeps(os.Getenv, withClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	if deps.ReviewsOff != "claude not found on PATH" || deps.Reviewer != nil {
+		t.Fatalf("off=%q reviewer=%v", deps.ReviewsOff, deps.Reviewer)
+	}
+	// Never the zero value, which the TUI reads as "detection didn't run".
+	if deps.Claude.Err != "claude not found on PATH" {
+		t.Fatalf("Claude = %+v", deps.Claude)
+	}
+}
+
+func TestBuildDepsClaudeLoggedOut(t *testing.T) {
+	isolate(t)
+	fakeClaude(t, false)
+	deps, cleanup, err := buildDeps(os.Getenv, withClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	if !strings.Contains(deps.ReviewsOff, "not logged in") || deps.Reviewer != nil {
+		t.Fatalf("off=%q reviewer=%v", deps.ReviewsOff, deps.Reviewer)
+	}
+}
+
+// The engine fetches PR context through the client, so with no gh login
+// there is nothing to review with.
+func TestBuildDepsNoGHTurnsReviewsOff(t *testing.T) {
+	isolate(t)
+	fakeClaude(t, true)
+	deps, cleanup, err := buildDeps(os.Getenv, noClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	if deps.Reviewer != nil || !strings.Contains(deps.ReviewsOff, "gh") {
+		t.Fatalf("off=%q reviewer=%v", deps.ReviewsOff, deps.Reviewer)
+	}
+}
+
+func TestAutoDefaultFallsBackWithoutClaude(t *testing.T) {
+	home := isolate(t)
+	writeConfig(t, home, "[mode]\ndefault = \"auto\"\n")
+	deps, cleanup, err := buildDeps(os.Getenv, withClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	// buildDeps leaves the configured mode alone; the TUI starts in watcher
+	// mode because there is no reviewer.
+	if deps.Config.Mode.Default != "auto" || deps.Reviewer != nil || deps.ReviewsOff == "" {
+		t.Fatalf("mode=%q reviewer=%v off=%q", deps.Config.Mode.Default, deps.Reviewer, deps.ReviewsOff)
+	}
+}
+
+func gitIn(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+func wallPR(repo string, n int) tracker.Tracked {
+	return tracker.Tracked{
+		PR:    github.Snapshot{ID: "PR_" + repo + "_" + string(rune('a'+n)), Repo: repo, Number: n},
+		Place: tracker.PlaceWall,
+	}
+}
+
+func openStore(t *testing.T) *store.Store {
+	t.Helper()
+	st, err := store.Open(filepath.Join(t.TempDir(), "jawnsnow.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	return st
+}
+
+func TestSweepStartupDropsRefsOfUntrackedPRs(t *testing.T) {
+	st := openStore(t)
+	repo := t.TempDir()
+	gitIn(t, repo, "init", "-q")
+	gitIn(t, repo, "commit", "-q", "--allow-empty", "-m", "x")
+	gitIn(t, repo, "update-ref", "refs/jawnsnow/5/head", "HEAD")
+	gitIn(t, repo, "update-ref", "refs/jawnsnow/99/head", "HEAD")
+	cfg := config.Defaults()
+	cfg.Repos = map[string]config.Repo{"o/n": {Path: repo, Scope: "full"}}
+	// A PR off the wall doesn't count as tracked, and doesn't trigger a sweep.
+	done := wallPR("o/other", 1)
+	done.Place = tracker.PlaceDone
+	if err := st.SaveTracked(context.Background(), []tracker.Tracked{wallPR("o/n", 5), done}); err != nil {
+		t.Fatal(err)
+	}
+
+	data := filepath.Join(t.TempDir(), "jawnsnow")
+	if err := sweepStartup(context.Background(), st, func() config.Config { return cfg }, data); err != nil {
+		t.Fatal(err)
+	}
+	refs := gitIn(t, repo, "for-each-ref", "--format=%(refname)", "refs/jawnsnow/")
+	if refs != "refs/jawnsnow/5/head" {
+		t.Fatalf("refs after sweep = %q, want only PR 5's", refs)
+	}
+}
+
+func TestSweepStartupSkipsUnmappedRepoWithoutClone(t *testing.T) {
+	st := openStore(t)
+	if err := st.SaveTracked(context.Background(), []tracker.Tracked{wallPR("o/n", 5)}); err != nil {
+		t.Fatal(err)
+	}
+	data := filepath.Join(t.TempDir(), "jawnsnow")
+	cfg := config.Defaults()
+	if err := sweepStartup(context.Background(), st, func() config.Config { return cfg }, data); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(data); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("sweep created %s (stat err %v); it must not clone or create anything", data, err)
+	}
+}
+
+type fakeWaiter struct{ order *[]string }
+
+func (f fakeWaiter) Wait(ctx context.Context) error {
+	<-ctx.Done()
+	*f.order = append(*f.order, "wait")
+	return ctx.Err()
+}
+
+func TestShutdownWaitsThenClosesInOrder(t *testing.T) {
+	var order []string
+	start := time.Now()
+	shutdown(fakeWaiter{&order}, 50*time.Millisecond,
+		func() { order = append(order, "watcher") },
+		func() { order = append(order, "store") })
+	if strings.Join(order, ",") != "wait,watcher,store" {
+		t.Fatalf("order = %v", order)
+	}
+	if d := time.Since(start); d < 50*time.Millisecond || d > 2*time.Second {
+		t.Fatalf("shutdown took %v, want about the 50ms wait", d)
+	}
 }

@@ -2,11 +2,17 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -14,10 +20,24 @@ import (
 
 	"github.com/chrisdaly-3/jawnsnow/internal/config"
 	"github.com/chrisdaly-3/jawnsnow/internal/github"
+	"github.com/chrisdaly-3/jawnsnow/internal/review"
 	"github.com/chrisdaly-3/jawnsnow/internal/store"
 	"github.com/chrisdaly-3/jawnsnow/internal/theme"
+	"github.com/chrisdaly-3/jawnsnow/internal/tracker"
 	"github.com/chrisdaly-3/jawnsnow/internal/tui"
+	"github.com/chrisdaly-3/jawnsnow/internal/workspace"
 )
+
+const (
+	// claudeProbeTimeout bounds startup detection of the claude CLI.
+	claudeProbeTimeout = 5 * time.Second
+	// shutdownWait bounds how long quitting waits for reviews to save.
+	shutdownWait = 10 * time.Second
+)
+
+// sweepBannerWait is how long startup waits for the worktree cleanup before
+// moving on; its error shows as a banner only when it finishes in that time.
+var sweepBannerWait = 2 * time.Second
 
 const usage = `usage: snow [command]
 
@@ -125,12 +145,7 @@ func buildDeps(getenv func(string) string, newClient func() (github.Client, erro
 
 	deps := tui.Deps{Config: cfg, Theme: th, Store: st, ConfigBanner: configBanner, Now: time.Now}
 	var watcher *config.Watcher
-	cleanup := func() {
-		if watcher != nil {
-			_ = watcher.Close()
-		}
-		_ = st.Close()
-	}
+	cur := &currentConfig{cfg: cfg}
 
 	// The TUI looks up the gh user itself, so a failed lookup is retried
 	// rather than turning polling off for the session.
@@ -146,15 +161,222 @@ func buildDeps(getenv func(string) string, newClient func() (github.Client, erro
 
 	// A missing config directory means creating the file failed, which the
 	// banner above already explains, so it is not an error.
+	stopTee := func() {}
 	if w, err := config.NewWatcher(path); err == nil {
 		watcher = w
-		deps.Reloads = w.Events()
+		deps.Reloads, stopTee = cur.follow(w.Events())
 	} else if !errors.Is(err, os.ErrNotExist) {
 		banners = append(banners, fmt.Sprintf("config reload is off: %v", err))
 	}
 
+	dataDir := filepath.Dir(store.DataPath())
+	var engine *review.Engine
+	deps.Claude, deps.ReviewsOff = detectClaude()
+	switch {
+	case deps.ReviewsOff != "":
+	case deps.Client == nil:
+		deps.ReviewsOff = `reviews need a gh login — run "gh auth login"`
+	default:
+		engine = &review.Engine{
+			Config: cur.get, Client: deps.Client, Store: st,
+			DataDir: dataDir, Claude: deps.Claude.Path, Viewer: viewerOf(deps.Client),
+		}
+	}
+
+	sweepCtx, stopSweep := context.WithCancel(context.Background())
+	sweepDone := make(chan struct{})
+	var sweepErr error
+	go func() {
+		defer close(sweepDone)
+		sweepErr = sweepStartup(sweepCtx, st, cur.get, dataDir)
+	}()
+	if engine != nil {
+		deps.Reviewer = &sweepGated{Engine: engine, ready: sweepDone}
+	}
+	select {
+	case <-sweepDone:
+		if sweepErr != nil {
+			banners = append(banners, "worktree cleanup: "+sweepErr.Error())
+		}
+	case <-time.After(sweepBannerWait):
+	}
+
+	cleanup := func() {
+		var w waiter
+		if engine != nil {
+			w = engine
+		}
+		shutdown(w, shutdownWait,
+			func() { stopSweep(); <-sweepDone },
+			stopTee,
+			func() {
+				if watcher != nil {
+					_ = watcher.Close()
+				}
+			},
+			func() { _ = st.Close() })
+	}
+
 	deps.Banners = banners
 	return deps, cleanup, nil
+}
+
+// detectClaude finds claude on PATH and asks whether it is usable. A missing
+// claude still yields a non-zero ClaudeInfo, since the zero value tells the
+// TUI that detection didn't run.
+func detectClaude() (review.ClaudeInfo, string) {
+	path, err := exec.LookPath("claude")
+	if err != nil {
+		info := review.ClaudeInfo{Err: "claude not found on PATH"}
+		return info, info.Unusable()
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), claudeProbeTimeout)
+	defer cancel()
+	info := review.DetectClaude(ctx, path)
+	return info, info.Unusable()
+}
+
+// viewerOf looks the gh user up on first use and keeps it. A failed lookup
+// is retried on the next call.
+func viewerOf(c github.Client) func() string {
+	var mu sync.Mutex
+	var login string
+	return func() string {
+		mu.Lock()
+		defer mu.Unlock()
+		if login == "" {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			login, _ = c.Viewer(ctx)
+		}
+		return login
+	}
+}
+
+// currentConfig is the config the review engine reads. The TUI gets its own
+// copy of each reload; follow keeps this one in step.
+type currentConfig struct {
+	mu  sync.Mutex
+	cfg config.Config
+}
+
+func (c *currentConfig) get() config.Config {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.cfg
+}
+
+// follow records each good reload from in and passes every reload on. The
+// returned stop ends the forwarding.
+func (c *currentConfig) follow(in <-chan config.Reload) (<-chan config.Reload, func()) {
+	out := make(chan config.Reload)
+	done := make(chan struct{})
+	var once sync.Once
+	go func() {
+		defer close(out)
+		for {
+			select {
+			case r, ok := <-in:
+				if !ok {
+					return
+				}
+				if r.Err == nil {
+					c.mu.Lock()
+					c.cfg = r.Config
+					c.mu.Unlock()
+				}
+				select {
+				case out <- r:
+				case <-done:
+					return
+				}
+			case <-done:
+				return
+			}
+		}
+	}()
+	return out, func() { once.Do(func() { close(done) }) }
+}
+
+// sweepGated holds reviews back until the startup sweep is done, since the
+// sweep frees every stored worktree slot.
+type sweepGated struct {
+	*review.Engine
+	ready <-chan struct{}
+}
+
+func (g *sweepGated) Run(ctx context.Context, req review.Request, onEvent func(review.Event)) (store.Review, error) {
+	select {
+	case <-g.ready:
+	case <-ctx.Done():
+		return store.Review{}, ctx.Err()
+	}
+	return g.Engine.Run(ctx, req, onEvent)
+}
+
+type waiter interface {
+	Wait(ctx context.Context) error
+}
+
+// shutdown waits up to d for in-flight reviews to save, then runs closers in
+// order. The store must close last, after every review has saved.
+func shutdown(w waiter, d time.Duration, closers ...func()) {
+	if w != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), d)
+		_ = w.Wait(ctx)
+		cancel()
+	}
+	for _, c := range closers {
+		c()
+	}
+}
+
+// sweepStartup clears what an earlier run left behind in each repo that has
+// a PR on the wall: its idle worktree slots, and its refs for PRs no longer
+// tracked. A repo with no mapped path and no clone from an earlier run has
+// nothing of ours in it, so it is skipped rather than cloned.
+func sweepStartup(ctx context.Context, st *store.Store, cfg func() config.Config, dataDir string) error {
+	all, err := st.LoadTracked(ctx)
+	if err != nil {
+		return err
+	}
+	byRepo := map[string]map[int]bool{}
+	for _, t := range all {
+		if t.Place != tracker.PlaceWall {
+			continue
+		}
+		if byRepo[t.PR.Repo] == nil {
+			byRepo[t.PR.Repo] = map[int]bool{}
+		}
+		byRepo[t.PR.Repo][t.PR.Number] = true
+	}
+	data, err := filepath.Abs(dataDir)
+	if err != nil {
+		return err
+	}
+	if real, err := filepath.EvalSymlinks(data); err == nil {
+		data = real
+	}
+	// Resolve would clone a repo it can't find; there is nothing to clone for.
+	noClone := func(string) string { return "" }
+
+	var errs []error
+	for _, repo := range slices.Sorted(maps.Keys(byRepo)) {
+		fileName := strings.ReplaceAll(repo, "/", "__")
+		rc := cfg().RepoFor(repo)
+		if _, err := os.Stat(filepath.Join(data, "clones", fileName+".git")); rc.Path == "" && err != nil {
+			continue
+		}
+		r, err := workspace.Resolve(ctx, repo, rc, data, noClone)
+		if err != nil {
+			continue
+		}
+		slots := filepath.Join(data, "worktrees", fileName)
+		if err := workspace.Sweep(ctx, r, slots, byRepo[repo], st); err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", repo, err))
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // tildePath shortens a path under home to ~/....
