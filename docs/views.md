@@ -170,17 +170,19 @@ The cost is the sum of every run of every Claude review of the PR, continuations
 
 ### Waiting for new activity
 
-PRs you hid with `x`, and PRs that went stale (no update for longer than their feeds' `since`).
+PRs you hid with `x`, PRs that went stale (no update for longer than their feeds' `since`), and PRs that no current feed finds any more (you removed or renamed the feed that found them).
 
 | Column | Shows |
 | --- | --- |
 | PR | `owner/name#number` and the title |
 | Author | the PR's author |
-| Reason | `hidden` or `stale` |
+| Reason | `hidden`, `stale` or `no longer in a feed` |
 | Since | how long it has waited, like `3d` |
 | Latest Claude verdict | the latest review's badge, as on the Wall |
 
 snow checks these PRs every `github.idle_poll_interval`. A PR goes back to the Wall when its head commit changes, or when someone other than you comments or reviews after it started waiting. If it merges or closes, it moves to "Merged & closed". A merged or closed PR that is reopened goes back to the Wall. If nothing happens for `done.keep_for`, snow stops tracking it. `x` on a row puts it back on the Wall now.
+
+A `no longer in a feed` PR is different. New commits and comments don't bring it back, because no feed would be refreshing it. It returns to the Wall only when a current feed finds it again, for example after you add a feed whose query matches it, or restore the feed you removed. `x` on it leaves it where it is and says `no current feed finds this PR — add one that does`. It is not reviewed automatically while it waits.
 
 ## The Reviews view
 

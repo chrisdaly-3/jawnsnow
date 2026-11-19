@@ -65,6 +65,12 @@ Nothing on the wall. Feeds: review-requested · press R to poll
 - A PR you hid, or one that went stale, is in the Done view's "Waiting for new activity" table. Press `x` there to bring it back.
 - A filter may be hiding cards: the Wall says `No PRs match the filter.` Press `esc`.
 
+## PRs from a feed I removed are still on the Wall
+
+They move off the Wall at the next poll. When you remove a `[[feeds]]` block or rename it, each PR that only that feed found goes to the Done view's "Waiting for new activity" table with the reason `no longer in a feed`. A PR also found by a feed that is still in the config stays on the Wall. If a PR you expect to be gone is still there, press `R` to poll.
+
+A `no longer in a feed` PR returns to the Wall if a current feed finds it again, and `x` on it only says so. If nothing finds it, snow stops tracking it after `done.keep_for`. Its saved reviews and costs stay.
+
 ## A PR stuck in Waiting on CI
 
 A required check that waits on a review, such as a code-owner gate, stays pending until someone approves, which keeps the PR in "Waiting on CI" and out of auto mode. Add its name to `github.ignore_checks` or the repo's `ignore_checks`, as a glob such as `"codeowners-gate*"`. The change applies at once.

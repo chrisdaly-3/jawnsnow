@@ -171,6 +171,8 @@ team = true
 
 Each search returns at most 100 PRs, the most recently updated first. A feed whose search fails is skipped for that poll and named in a banner; the other feeds still run. A search that hits GitHub's rate limit is different: it ends the whole poll.
 
+snow remembers which feeds found each PR. When you remove a feed, or change its `name`, the PRs that only that feed found move to the Done view's "Waiting for new activity" table at the next poll, marked `no longer in a feed`. They return to the Wall when a current feed finds them or when the feed's name is back in the config, and are dropped after [`done.keep_for`](#donekeep_for). A PR with no recorded feed is left where it is. Changing a feed's `query` doesn't move PRs that an earlier query found: they stay under that feed's name.
+
 ### `feeds.name`
 
 | Type | Default | Valid values |
