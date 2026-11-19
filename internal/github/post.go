@@ -68,6 +68,26 @@ type Poster interface {
 	ThreadIDs(ctx context.Context, prID string, commentIDs []string) (map[string]string, error)
 }
 
+// RefusedError is a post GitHub answered and declined, so nothing was
+// posted and it is safe to send again.
+type RefusedError struct{ Err error }
+
+func (e *RefusedError) Error() string { return e.Err.Error() }
+func (e *RefusedError) Unwrap() error { return e.Err }
+
+// IsRefused reports whether a PostReview error means nothing was posted:
+// GitHub answered with errors and no review, or with an HTTP 4xx, or the
+// input was refused before anything was sent. Any other error, a timeout
+// or a 5xx among them, may have come after GitHub took the review.
+func IsRefused(err error) bool {
+	var r *RefusedError
+	if errors.As(err, &r) {
+		return true
+	}
+	var h *api.HTTPError
+	return errors.As(err, &h) && h.StatusCode >= 400 && h.StatusCode < 500
+}
+
 type poster struct{ d Doer }
 
 func NewPoster(d Doer) Poster { return &poster{d: d} }
@@ -90,10 +110,10 @@ func (p *poster) PostReview(ctx context.Context, in PostInput) (PostResult, erro
 	switch in.Event {
 	case "APPROVE", "COMMENT", "REQUEST_CHANGES":
 	default:
-		return PostResult{}, fmt.Errorf("github: post review: event %q is not APPROVE, COMMENT or REQUEST_CHANGES", in.Event)
+		return PostResult{}, &RefusedError{fmt.Errorf("github: post review: event %q is not APPROVE, COMMENT or REQUEST_CHANGES", in.Event)}
 	}
 	if in.CommitOID == "" {
-		return PostResult{}, errors.New("github: post review: no commit to post against")
+		return PostResult{}, &RefusedError{errors.New("github: post review: no commit to post against")}
 	}
 	threads := make([]map[string]any, 0, len(in.Threads))
 	for _, t := range in.Threads {
@@ -128,7 +148,14 @@ func (p *poster) PostReview(ctx context.Context, in PostInput) (PostResult, erro
 		} `json:"addPullRequestReview"`
 	}
 	if err := p.d.DoWithContext(ctx, addReviewMutation, map[string]any{"input": input}, &resp); err != nil {
-		return PostResult{}, fmt.Errorf("github: post review: %w", err)
+		err = fmt.Errorf("github: post review: %w", err)
+		// go-gh decodes the data before returning GraphQL errors, so a
+		// null addPullRequestReview here is GitHub saying no.
+		var gqlErr *api.GraphQLError
+		if errors.As(err, &gqlErr) && resp.AddPullRequestReview == nil {
+			return PostResult{}, &RefusedError{err}
+		}
+		return PostResult{}, err
 	}
 	if resp.AddPullRequestReview == nil {
 		return PostResult{}, fmt.Errorf("github: post review: no review in the response")

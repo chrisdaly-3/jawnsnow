@@ -2,6 +2,9 @@ package github
 
 import (
 	"context"
+	"errors"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -216,5 +219,55 @@ func TestQueryTextMatchesVariables(t *testing.T) {
 		if !strings.Contains(threadIDsQuery, s) {
 			t.Errorf("thread query lacks %q", s)
 		}
+	}
+}
+
+// Only a clean refusal means nothing was posted: GitHub answered with an
+// error and no review, or with an HTTP 4xx. Anything else may have posted.
+func TestIsRefused(t *testing.T) {
+	gql := func(int, string, map[string]any) error {
+		return &api.GraphQLError{Errors: []api.GraphQLErrorItem{{Type: "UNPROCESSABLE", Message: "Line could not be resolved"}}}
+	}
+	httpErr := func(code int) func(int, string, map[string]any) error {
+		return func(int, string, map[string]any) error {
+			return &api.HTTPError{StatusCode: code, Message: http.StatusText(code)}
+		}
+	}
+	for _, tc := range []struct {
+		name    string
+		fixture string
+		fail    func(int, string, map[string]any) error
+		refused bool
+	}{
+		{"graphql error, no review", "post_error.json", gql, true},
+		{"graphql error beside a review", "post_ok.json", gql, false},
+		{"422", "post_error.json", httpErr(422), true},
+		{"403", "post_error.json", httpErr(403), true},
+		{"502", "post_error.json", httpErr(502), false},
+		{"500", "post_error.json", httpErr(500), false},
+		{"deadline", "post_error.json", func(int, string, map[string]any) error { return context.DeadlineExceeded }, false},
+		{"network", "post_error.json", func(int, string, map[string]any) error {
+			return &net.OpError{Op: "read", Net: "tcp", Err: errors.New("connection reset by peer")}
+		}, false},
+		{"no review and no error", "post_error.json", nil, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := &fakeDoer{respond: func(int, string, map[string]any) []byte { return fixture(t, tc.fixture) }, fail: tc.fail}
+			_, err := NewPoster(d).PostReview(context.Background(), PostInput{PRID: "PR_1", CommitOID: "c", Event: "COMMENT"})
+			if err == nil {
+				t.Fatal("no error")
+			}
+			if got := IsRefused(err); got != tc.refused {
+				t.Errorf("IsRefused(%v) = %v, want %v", err, got, tc.refused)
+			}
+		})
+	}
+	// Input refused before anything is sent posted nothing either.
+	p, _ := okPoster(t)
+	if _, err := p.PostReview(context.Background(), PostInput{PRID: "PR_1", CommitOID: "c", Event: "DISMISS"}); !IsRefused(err) {
+		t.Errorf("a bad event: IsRefused(%v) = false", err)
+	}
+	if IsRefused(nil) || IsRefused(errors.New("x")) {
+		t.Error("nil or a plain error counted as refused")
 	}
 }
