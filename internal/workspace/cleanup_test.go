@@ -89,11 +89,13 @@ func TestGitHardensEveryCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A shell alias reports what a non-fetch command sees.
-	out, err := Git(context.Background(), s.clone, "-c", `alias.probe=!printf '%s|%s' "$GIT_SSH_COMMAND" "$(git config core.hooksPath)"`, "probe")
+	out, err := Git(context.Background(), s.clone, "-c",
+		`alias.probe=!printf '%s|%s|%s|%s' "$GIT_SSH_COMMAND" "$(git config core.hooksPath)" "$(git config submodule.recurse)" "$GIT_LFS_SKIP_SMUDGE"`, "probe")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := string(out), "ssh -o BatchMode=yes|/dev/null"; got != want {
+	// A PR's .gitmodules or .lfsconfig must not make a checkout fetch.
+	if got, want := string(out), "ssh -o BatchMode=yes|/dev/null|false|1"; got != want {
 		t.Fatalf("probe = %q, want %q", got, want)
 	}
 	if _, err := Git(context.Background(), s.clone, "diff", "--quiet"); err != nil {

@@ -218,7 +218,7 @@ func TestBuildEnv(t *testing.T) {
 	}
 	const batch = "GIT_SSH_COMMAND=ssh -o BatchMode=yes"
 	env := buildEnv([]string{"A=1"}, false)
-	if !has(env, "GIT_TERMINAL_PROMPT=0") || !has(env, batch) || !has(env, "A=1") {
+	if !has(env, "GIT_TERMINAL_PROMPT=0") || !has(env, "GIT_LFS_SKIP_SMUDGE=1") || !has(env, batch) || !has(env, "A=1") {
 		t.Fatalf("plain: %v", env)
 	}
 	if env := buildEnv([]string{"GIT_SSH_COMMAND=my-ssh"}, false); has(env, batch) {

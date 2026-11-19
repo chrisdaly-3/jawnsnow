@@ -33,9 +33,11 @@ type Repo struct {
 // Git runs `git -C dir args...` and returns stdout. A failure carries
 // git's stderr. It never prompts for credentials, never runs hooks (a
 // relative core.hooksPath would resolve inside a worktree, which holds the
-// PR's files) and never uses a shell. Every call gets this, not just fetch.
+// PR's files), never recurses into submodules or smudges LFS files (a PR's
+// .gitmodules or .lfsconfig would make a checkout fetch from hosts it
+// names) and never uses a shell. Every call gets this, not just fetch.
 func Git(ctx context.Context, dir string, args ...string) ([]byte, error) {
-	full := append([]string{"-C", dir, "-c", "core.hooksPath=/dev/null"}, args...)
+	full := append([]string{"-C", dir, "-c", "core.hooksPath=/dev/null", "-c", "submodule.recurse=false"}, args...)
 	cmd := exec.CommandContext(ctx, "git", full...)
 	cmd.Env = buildEnv(os.Environ(), sshCommandConfigured(ctx, dir))
 	// A killed git can leave a child (ssh, git-remote-https) holding the
@@ -49,11 +51,11 @@ func Git(ctx context.Context, dir string, args ...string) ([]byte, error) {
 	return stdout.Bytes(), nil
 }
 
-// buildEnv returns environ with prompts disabled. When no ssh command is
-// configured anywhere, ssh is told never to prompt, so it cannot grab
-// /dev/tty.
+// buildEnv returns environ with prompts and LFS smudging disabled. When no
+// ssh command is configured anywhere, ssh is told never to prompt, so it
+// cannot grab /dev/tty.
 func buildEnv(environ []string, sshCommandConfigured bool) []string {
-	env := append(environ[:len(environ):len(environ)], "GIT_TERMINAL_PROMPT=0")
+	env := append(environ[:len(environ):len(environ)], "GIT_TERMINAL_PROMPT=0", "GIT_LFS_SKIP_SMUDGE=1")
 	if sshCommandConfigured {
 		return env
 	}
