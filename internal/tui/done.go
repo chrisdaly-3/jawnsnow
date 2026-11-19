@@ -25,6 +25,7 @@ const (
 	// since, and the plan 2 and 3 column. The PR column takes the rest.
 	colAuthor = 14
 	colStatus = 10
+	colReason = 19 // "no longer in a feed"
 	colWhen   = 8
 	colClaude = 26
 	cellPad   = 2 // the table's cell style pads each side by one
@@ -153,7 +154,8 @@ func (m doneModel) update(msg tea.Msg, prs []tracker.Tracked) (doneModel, tea.Cm
 	case "k", "up":
 		m.cursor[pane] = max(cur-1, 0)
 	case "x":
-		// Only the waiting table has anything to bring back, hidden or stale.
+		// Only the waiting table has anything to bring back, hidden or stale. A no-feed row
+		// is refused in apply.
 		if pane == paneWaiting && len(rows) > 0 {
 			return m, nil, actionUnhide{ID: rows[cur].PR.ID}
 		}
@@ -241,18 +243,26 @@ func (m doneModel) section(pane int, rows []tracker.Tracked, width, h int, th th
 }
 
 func (m doneModel) columns(pane, width int) []table.Column {
-	last, status, when := "Claude reviews / your cost", "Status", "Done"
+	last, status, when, statusW := "Claude reviews / your cost", "Status", "Done", colStatus
 	if pane == paneWaiting {
-		last, status, when = "Latest Claude verdict", "Reason", "Since"
+		last, status, when, statusW = "Latest Claude verdict", "Reason", "Since", colReason
 	}
-	pr := max(width-cellPad*5-colAuthor-colStatus-colWhen-colClaude, 10)
+	pr := max(width-cellPad*5-colAuthor-statusW-colWhen-colClaude, 10)
 	return []table.Column{
 		{Title: "PR", Width: pr},
 		{Title: "Author", Width: colAuthor},
-		{Title: status, Width: colStatus},
+		{Title: status, Width: statusW},
 		{Title: when, Width: colWhen},
 		{Title: last, Width: colClaude},
 	}
+}
+
+// waitLabel is a waiting reason as the table shows it.
+func waitLabel(r tracker.WaitReason) string {
+	if r == tracker.WaitNoFeed {
+		return "no longer in a feed"
+	}
+	return string(r)
 }
 
 // cells is one row.
@@ -260,7 +270,7 @@ func (m doneModel) cells(pane int, t tracker.Tracked, th theme.Theme) table.Row 
 	pr := clean(t.PR.Repo+"#"+strconv.Itoa(t.PR.Number)) + " " + clean(t.PR.Title)
 	author := clean(t.PR.Author)
 	if pane == paneWaiting {
-		return table.Row{pr, author, string(t.WaitReason), sinceAge(t.WaitingSince, m.now), m.verdicts[t.PR.ID]}
+		return table.Row{pr, author, waitLabel(t.WaitReason), sinceAge(t.WaitingSince, m.now), m.verdicts[t.PR.ID]}
 	}
 	return table.Row{pr, author, th.ChipLine(string(t.Status.Status)), doneDate(t.DoneAt, m.loc), reviewCostText(m.stats[t.PR.ID])}
 }

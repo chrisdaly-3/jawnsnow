@@ -669,6 +669,11 @@ func (m Model) apply(a action) (Model, tea.Cmd) {
 	case actionHide:
 		return m.updatePR(a.ID, tracker.Hide)
 	case actionUnhide:
+		// Moving it would only be undone at the next poll.
+		if t, ok := m.prs[a.ID]; ok && t.Place == tracker.PlaceWaiting && t.WaitReason == tracker.WaitNoFeed {
+			m.notice = "no current feed finds this PR — add one that does"
+			return m, nil
+		}
 		return m.updatePR(a.ID, tracker.Unhide)
 	case actionOpen:
 		if a.URL == "" {

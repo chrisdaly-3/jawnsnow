@@ -26,6 +26,8 @@ type WaitReason string
 const (
 	WaitHidden WaitReason = "hidden"
 	WaitStale  WaitReason = "stale"
+	// WaitNoFeed is a PR that only feeds no longer in the config found.
+	WaitNoFeed WaitReason = "no-feed"
 )
 
 // defaultSince applies to a feed that is no longer in the config.
@@ -136,9 +138,28 @@ func place(t Tracked, in PollInput, cfg config.Config) Tracked {
 		t.DoneAt = time.Time{}
 	}
 
-	if t.Place == PlaceWaiting &&
+	inFeed := inCurrentFeed(t.Feeds, cfg)
+
+	// A no-feed PR comes back only when a current feed has found it. Apply
+	// has already added the feeds that found it this poll, so that is Feeds
+	// naming a current feed again, including one the user has just restored
+	// in the config. New commits and comments must not return it: no feed
+	// would be refreshing it, and the next poll would move it off again.
+	if t.Place == PlaceWaiting && t.WaitReason == WaitNoFeed {
+		if inFeed {
+			t = Unhide(t, in.Now)
+		}
+	} else if t.Place == PlaceWaiting &&
 		(t.PR.HeadOID != t.WaitingHead || OthersActivityAt(t.PR, in.Viewer).After(t.WaitingSince)) {
 		t = Unhide(t, in.Now)
+	}
+
+	// A PR with no recorded feeds is left alone rather than guessed at.
+	if t.Place == PlaceWall && len(t.Feeds) > 0 && !inFeed {
+		t.Place = PlaceWaiting
+		t.WaitReason = WaitNoFeed
+		t.WaitingSince = in.Now
+		t.WaitingHead = t.PR.HeadOID
 	}
 
 	if t.Place == PlaceWall {
@@ -154,6 +175,11 @@ func place(t Tracked, in PollInput, cfg config.Config) Tracked {
 		}
 	}
 	return t
+}
+
+// inCurrentFeed reports whether any of feeds is a [[feeds]] name in cfg.
+func inCurrentFeed(feeds []string, cfg config.Config) bool {
+	return slices.ContainsFunc(cfg.Feeds, func(f config.Feed) bool { return slices.Contains(feeds, f.Name) })
 }
 
 func expired(t Tracked, now time.Time, keepFor time.Duration) bool {

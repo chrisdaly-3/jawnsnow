@@ -337,3 +337,35 @@ func TestDoneShowsReviewCost(t *testing.T) {
 		t.Errorf("after a review finished:\n%s", out)
 	}
 }
+
+func TestDoneShowsNoFeedReason(t *testing.T) {
+	prs := []tracker.Tracked{waitingCard("n1", "chainguard-dev/mono", 85400, "feat: old feed work", "gina", tracker.WaitNoFeed, t0.Add(-time.Hour))}
+	out := ansi.Strip(renderDone(t, testDone(120, 20, 1), 120, 20, prs))
+	if !strings.Contains(out, "no longer in a feed") || strings.Contains(out, "no-feed") {
+		t.Errorf("waiting table should say %q:\n%s", "no longer in a feed", out)
+	}
+}
+
+func TestDoneUnhideNoFeedPRSetsNotice(t *testing.T) {
+	nf := wallPR("1")
+	nf.Place, nf.WaitReason, nf.WaitingSince = tracker.PlaceWaiting, tracker.WaitNoFeed, t0.Add(-time.Hour)
+	hidden := tracker.Hide(wallPR("2"), t0.Add(-2*time.Hour))
+	h := newHarness(t, opts{}, nf, hidden)
+
+	h.press(t, "2", "tab", "x") // Waiting table, newest first: the no-feed PR
+	if p := h.m.prs["1"]; p.Place != tracker.PlaceWaiting || p.WaitReason != tracker.WaitNoFeed {
+		t.Errorf("x moved the no-feed PR: %+v", p)
+	}
+	if want := "no current feed finds this PR — add one that does"; h.m.notice != want {
+		t.Errorf("notice = %q, want %q", h.m.notice, want)
+	}
+
+	h.m.notice = ""
+	h.press(t, "j", "x") // the hidden PR still unhides
+	if p := h.m.prs["2"]; p.Place != tracker.PlaceWall {
+		t.Errorf("x on a hidden row left PR 2 at %q", p.Place)
+	}
+	if h.m.notice != "" {
+		t.Errorf("notice = %q, want none", h.m.notice)
+	}
+}

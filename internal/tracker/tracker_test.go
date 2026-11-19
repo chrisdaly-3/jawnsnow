@@ -116,10 +116,12 @@ func TestApplyMultiFeedUsesLongestSince(t *testing.T) {
 }
 
 func TestApplyUnknownFeedCountsAsDefault(t *testing.T) {
+	// A feed that is gone from the config no longer keeps a PR on the wall,
+	// but it still sets the window when another current feed shares the PR.
 	s := snap("A", func(s *github.Snapshot) { s.UpdatedAt = now.Add(-days(10)) })
-	next, _ := Apply(nil, poll(now, map[string][]string{"A": {"gone"}}, s), testConfig())
+	next, _ := Apply(nil, poll(now, map[string][]string{"A": {"gone", "short"}}, s), testConfig())
 	if next["A"].Place != PlaceWall {
-		t.Errorf("10d old with unknown feed should stay on wall (14d default)")
+		t.Errorf("10d old with an unknown feed beside a current one should stay on wall (14d default)")
 	}
 	s2 := snap("B", func(s *github.Snapshot) { s.UpdatedAt = now.Add(-days(15)) })
 	next, _ = Apply(nil, poll(now, nil, s2), testConfig())
@@ -320,5 +322,99 @@ func TestOthersActivityAt(t *testing.T) {
 	})
 	if got := OthersActivityAt(s, viewer); !got.Equal(now.Add(-2 * time.Hour)) {
 		t.Errorf("got %v", got)
+	}
+}
+
+func wallWithFeeds(feeds ...string) Tracked {
+	return Tracked{
+		PR: snap("A"), Feeds: feeds, Place: PlaceWall,
+		FirstSeen: now.Add(-days(1)), LastSeen: now.Add(-time.Hour), HeadSeenAt: now.Add(-days(1)),
+	}
+}
+
+func noFeedPR() Tracked {
+	t := waitingPR(WaitNoFeed)
+	t.Feeds = []string{"old"}
+	return t
+}
+
+func TestApplyMovesPRNoCurrentFeedFindsOffTheWall(t *testing.T) {
+	cfg := testConfig() // feeds: short, long
+	for _, tc := range []struct {
+		name  string
+		feeds []string
+		want  Place
+	}{
+		{"only removed feeds", []string{"old"}, PlaceWaiting},
+		{"a current feed too", []string{"old", "long"}, PlaceWall},
+		{"no recorded feeds", nil, PlaceWall},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			next, _ := Apply(map[string]Tracked{"A": wallWithFeeds(tc.feeds...)}, poll(now, nil, snap("A")), cfg)
+			got := next["A"]
+			if got.Place != tc.want {
+				t.Fatalf("Place = %s, want %s", got.Place, tc.want)
+			}
+			if tc.want == PlaceWaiting && (got.WaitReason != WaitNoFeed || !got.WaitingSince.Equal(now) || got.WaitingHead != "H1") {
+				t.Errorf("got %+v", got)
+			}
+		})
+	}
+}
+
+func TestApplyNoFeedPRIgnoresNewActivity(t *testing.T) {
+	prev := map[string]Tracked{"A": noFeedPR()}
+	s := snap("A", func(s *github.Snapshot) {
+		s.HeadOID = "H2"
+		s.Comments = []github.Comment{{Author: "them", At: now.Add(-time.Minute)}}
+	})
+	next, _ := Apply(prev, poll(now, nil, s), testConfig())
+	if got := next["A"]; got.Place != PlaceWaiting || got.WaitReason != WaitNoFeed {
+		t.Fatalf("new head and comment: %+v", got)
+	}
+
+	// A current feed finding it returns it to the wall.
+	next, _ = Apply(next, poll(now.Add(time.Minute), map[string][]string{"A": {"short"}}, s), testConfig())
+	got := next["A"]
+	if got.Place != PlaceWall || got.WaitReason != "" || !got.ReturnedAt.Equal(now.Add(time.Minute)) || !slices.Equal(got.Feeds, []string{"old", "short"}) {
+		t.Errorf("found by a current feed: %+v", got)
+	}
+}
+
+// The user removes a feed, the PR leaves the wall, then they add the feed
+// back. No search has found the PR yet, but Feeds names a current feed
+// again, so the PR returns at the next poll rather than waiting for a find.
+func TestApplyNoFeedPRReturnsWhenFeedIsRestored(t *testing.T) {
+	prev := map[string]Tracked{"A": wallWithFeeds("long")}
+	cfg := testConfig()
+	cfg.Feeds = cfg.Feeds[:1] // drop "long"
+	next, _ := Apply(prev, poll(now, nil), cfg)
+	if next["A"].WaitReason != WaitNoFeed {
+		t.Fatalf("after removing the feed: %+v", next["A"])
+	}
+	next, _ = Apply(next, poll(now.Add(time.Minute), nil), testConfig())
+	if got := next["A"]; got.Place != PlaceWall || !got.ReturnedAt.Equal(now.Add(time.Minute)) {
+		t.Errorf("after restoring the feed: %+v", got)
+	}
+}
+
+func TestApplyReopenedPRWithOnlyRemovedFeedsIsNoFeed(t *testing.T) {
+	done := Tracked{
+		PR: snap("A"), Feeds: []string{"old"}, Place: PlaceDone,
+		DoneAt: now.Add(-days(2)), FirstSeen: now.Add(-days(5)),
+	}
+	next, _ := Apply(map[string]Tracked{"A": done}, poll(now, nil, snap("A")), testConfig())
+	got := next["A"]
+	if got.Place != PlaceWaiting || got.WaitReason != WaitNoFeed || !got.DoneAt.IsZero() {
+		t.Errorf("got %+v", got)
+	}
+}
+
+func TestApplyNoFeedPRExpiresAfterKeepFor(t *testing.T) {
+	old := noFeedPR()
+	old.WaitingSince = now.Add(-days(31))
+	next, removed := Apply(map[string]Tracked{"A": old}, poll(now, nil), testConfig())
+	if !slices.Equal(removed, []string{"A"}) || len(next) != 0 {
+		t.Errorf("next = %v removed = %v", next, removed)
 	}
 }
