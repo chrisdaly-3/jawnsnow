@@ -67,7 +67,7 @@ The summary is the review's body. It starts empty, since it is your own text: th
 
 `e` writes the current summary to a temporary file, `tmp/post-<review id>.md` in the data directory, readable only by you, and opens it in `$VISUAL`, else `$EDITOR`, else `vi`. The value is split on spaces and run without a shell, so `code -w` works. When the editor exits, snow reads the file back, trims trailing newlines, and deletes the file.
 
-The checked unanchored findings are added to the body under an "Other notes" heading, one list item per finding, each starting with its path in code formatting. They come after your text, or make up the whole body when you wrote none.
+The checked unanchored findings are added to the body after a bold `**Other notes**` line, one list item per finding, each starting with its path in code formatting. They come after your text, or make up the whole body when you wrote none.
 
 Rules on the body:
 

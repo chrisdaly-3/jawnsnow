@@ -28,7 +28,7 @@ Auto mode looks at every PR on the Wall every 30 seconds, after each poll, and a
 
 The backoff counts failed reviews in a row at the same head: after 1 failure snow waits 1 minute, after 2 it waits 5 minutes, after 3 it waits 30 minutes, and after 4 it stops trying that head until you press `space`. A new head, a review that succeeds, or a restart resets the count. A cancelled review is not a failure.
 
-`space` and `c` start a review of the selected PR now, in either mode, skipping every rule above except the daily budget: over budget they ask `Over today's $250 budget — review anyway? y/n`. They work on any PR on the Wall, whatever its status, and always run a full pass. When `review.max_in_flight` reviews are already running, the review waits in a queue (`review queued: N already running`) and starts when one finishes. Manual reviews don't count toward the per-PR daily cap.
+`space` and `c` start a review of the selected PR now, in either mode, skipping every rule above except the daily budget and rule 1 (they do nothing for a PR whose review is already running or queued): over budget they ask `Over today's $250 budget — review anyway? y/n`. They work on any PR on the Wall, whatever its status, and always run a full pass. When `review.max_in_flight` reviews are already running, the review waits in a queue (`review queued: N already running`) and starts when one finishes. Manual reviews don't count toward the per-PR daily cap.
 
 | Rule | Auto mode | `space` / `c` |
 | --- | --- | --- |
@@ -196,7 +196,7 @@ Cleanup:
 
 - When a PR leaves the Wall (merged, closed, hidden, stale or no longer tracked), snow cancels its running review, deletes its `refs/jawnsnow/<N>/` refs and its review-file directories, and frees its slot. Stored reviews and cost rows stay in the database.
 - Every 10 minutes snow removes the worktrees of free slots unused for longer than `review.worktree_idle`.
-- At startup, for each repo with a PR on the Wall that has a mapped path or an existing clone, snow marks every slot free (no review survives a restart), removes slots whose directory is gone, removes worktrees and directories under the repo's pool directory that no slot owns, and deletes `refs/jawnsnow/<N>/` refs for PRs it no longer tracks. Reviews wait for this to finish.
+- At startup, for each repo with a PR on the Wall that has a mapped path or an existing clone, snow marks every slot free (no review survives a restart), removes slots whose directory is gone, removes worktrees and directories under the repo's pool directory that no slot owns, and deletes `refs/jawnsnow/<N>/` refs for every PR not on the Wall, hidden and stale ones included. Reviews wait for this to finish.
 
 snow only removes what it made: worktrees under its pool directories and refs under `refs/jawnsnow/`. It never runs `git worktree prune` or `git gc`, because both act on the whole repository, and prune would also drop your own worktrees whose directories are missing.
 

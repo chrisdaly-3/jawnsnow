@@ -68,4 +68,4 @@ Run it from the repo root. The tape builds `cmd/snowdemo` to `/tmp/snowdemo`, wa
 
 ## Credits
 
-The review prompt in `internal/review/prompt` is adapted from Dispatch ([github.com/kbsteere/dispatch](https://github.com/kbsteere/dispatch)), MIT. The license notice is in [`internal/review/prompt/LICENSE-dispatch`](../internal/review/prompt/LICENSE-dispatch). No Dispatch Go code is copied.
+The review prompt in `internal/review/prompt` is adapted from Dispatch ([github.com/kbsteere/dispatch](https://github.com/kbsteere/dispatch)), MIT. The license notice is in [`internal/review/prompt/LICENSE-dispatch`](https://github.com/chrisdaly-3/jawnsnow/blob/main/internal/review/prompt/LICENSE-dispatch). No Dispatch Go code is copied.

@@ -61,12 +61,12 @@ One directory per review, named by the review's ID, with the files written for t
 
 ### The lock file
 
-`jawnsnow.lock` holds an exclusive `flock` while snow runs. Only the snow holding it runs reviews, prunes and sweeps worktrees, and posts. Two snows sharing a data directory would otherwise free each other's busy worktree slots, and the double-post guard needs the posting process's memory. A second snow still shows the interface and polls, with:
+`jawnsnow.lock` holds an exclusive `flock` while snow runs. Only the snow holding it runs reviews and prunes and sweeps worktrees. Two snows sharing a data directory would otherwise free each other's busy worktree slots. Posting is turned off only when another snow holds the lock, since the double-post guard needs the posting process's memory. A second snow still shows the interface and polls, with:
 
 - `reviews off: another snow is running reviews on this machine`;
 - `posting unavailable: another snow is running on this machine — post from that window` when you press `P`.
 
-The lock goes away when the process exits, however it exits, so a stale `jawnsnow.lock` file is harmless. If snow can't take the lock for another reason, reviews are off with `can't lock the data directory: <error>`.
+The lock goes away when the process exits, however it exits, so a stale `jawnsnow.lock` file is harmless. If snow can't take the lock for another reason, reviews are off with `can't lock the data directory: <error>`, but posting stays on.
 
 ## What is safe to delete
 
@@ -84,10 +84,21 @@ Quit snow first. With snow not running:
 To reset snow completely:
 
 1. Quit snow.
-2. In each repository you mapped with `repos.<name>.path`, remove snow's worktrees and refs. `git worktree list` shows snow's worktrees under the data directory's `worktrees/`; remove each with `git worktree remove --force <path>`. Then delete the refs under `refs/jawnsnow/`:
+2. In each repository you mapped with `repos.<name>.path`, remove snow's worktrees and refs. Run this inside the repository; it removes only worktrees under snow's pool directory, using the same data-directory rule as snow:
 
    ```sh
-   git for-each-ref --format='%(refname)' refs/jawnsnow/ | xargs -n 1 git update-ref -d
+   data="${XDG_DATA_HOME:-$HOME/.local/share}/jawnsnow/worktrees/"
+   git worktree list --porcelain | sed -n 's/^worktree //p' | while IFS= read -r p; do
+     case "$p" in "$data"*) git worktree remove --force "$p" ;; esac
+   done
+   ```
+
+   snow registers its worktrees under the data directory's path with symlinks resolved. If that path goes through a symlink, the loop above matches nothing; set `data` to the resolved path instead. Don't run `git worktree prune`: it also drops your own worktrees whose directories are missing.
+
+   Then delete the refs under `refs/jawnsnow/`, in one atomic update:
+
+   ```sh
+   git for-each-ref --format='delete %(refname)' refs/jawnsnow/ | git update-ref --stdin
    ```
 
 3. Delete the data directory.

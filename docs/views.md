@@ -72,7 +72,7 @@ A card has four lines:
    Waiting on CI  ✦ Claude: 2 blocking
 ```
 
-1. A spinner while the status is in progress or a review runs, or `✗` for CI failed; then the repo's short name and the PR number.
+1. A spinner while the status is in progress (or while a review runs, if the status has a spinner), or `✗` for CI failed; then the repo's short name and the PR number.
 2. The title.
 3. The author, the age of the head commit (`45m`, `2h`, `3d`), and lines added and removed.
 4. The status chip, then the Claude badge. When both don't fit, the badge takes the chip's place.
@@ -110,7 +110,7 @@ Each PR has exactly one status. The rules are checked in this order and the firs
 | 8 | `CI_WAITING` | `Waiting on CI` | `214` | `dot` | you haven't reviewed, and a check that counts is pending at the head |
 | 9 | `READY_FOR_REVIEW` | `Ready for you` | `39` | none | you haven't reviewed, and CI is green or there are no checks |
 
-Labels, colours and spinners can be changed in [`[theme.status]`](configuration.md#themestatusstatus). A running review makes any card spin, whatever its status.
+Labels, colours and spinners can be changed in [`[theme.status]`](configuration.md#themestatusstatus). A running review spins the card's own spinner only when its status has one (by default `CI_WAITING` and `NEW_CHANGES`); otherwise the running review shows only in the badge, `⣾ Claude reviewing…`.
 
 How checks are rolled up:
 
@@ -179,7 +179,7 @@ PRs you hid with `x`, and PRs that went stale (no update for longer than their f
 | Since | how long it has waited, like `3d` |
 | Latest Claude verdict | the latest review's badge, as on the Wall |
 
-snow checks these PRs every `github.idle_poll_interval`. A PR goes back to the Wall when its head commit changes, or when someone other than you comments or reviews after it started waiting. If it merges or closes, it moves to "Merged & closed". If nothing happens for `done.keep_for`, snow stops tracking it. `x` on a row puts it back on the Wall now.
+snow checks these PRs every `github.idle_poll_interval`. A PR goes back to the Wall when its head commit changes, or when someone other than you comments or reviews after it started waiting. If it merges or closes, it moves to "Merged & closed". A merged or closed PR that is reopened goes back to the Wall. If nothing happens for `done.keep_for`, snow stops tracking it. `x` on a row puts it back on the Wall now.
 
 ## The Reviews view
 
@@ -198,7 +198,7 @@ A log of every Claude review in the database, newest first, up to the latest 500
 
 On a narrow terminal columns are dropped in this order: Tier · model · effort, Cost, Posted, Verdict, Findings.
 
-The title shows the count, `Reviews (42)`, and the active filters as chips: `[PR mono#85180]`, `[outcome failed]`, `[/ oidc]`. `/` filters by text in the repo, number, title or author; `o` cycles the outcome; `esc` clears them all. Empty states: `Loading…`, `No reviews match`, `No Claude reviews yet`.
+The title shows the count, `Reviews (42)`, and the active filters as chips: `[PR acme/api#412]`, `[outcome failed]`, `[/ oidc]`. `/` filters by text in the repo, number, title or author; `o` cycles the outcome; `esc` clears them all. Empty states: `Loading…`, `No reviews match`, `No Claude reviews yet`.
 
 `enter` opens the drawer on that review's PR at that pass. For a PR snow no longer tracks, it shows `that PR is no longer tracked` instead; the review is still listed here and counted in the Cost view.
 
@@ -257,7 +257,7 @@ Queued (0)
 e edit config.toml in vi
 ```
 
-- `claude`: the path, version and login of the `claude` CLI found at startup, or why it can't be used (`claude not found on PATH`, `claude is not working: <error>`, `claude is not logged in — run "claude auth login"`).
+- `claude`: what startup detection found. It is `<path> · <version> · logged in · <method>` (the method only when `claude` reports one) or `<path> · <version> · not logged in`, followed by ` · <error>` when a detection command failed. With no `claude` on the `PATH` it is `claude not found on PATH`, and `not checked` when detection didn't run. It doesn't show why reviews are off for other reasons, such as the lock or the `gh` login; the `reviews off:` banner does.
 - `Tiers`: each tier's model and effort from the config. A session pick replaces them and is marked `(session pick)`. Picks last until you quit; `x` clears one.
 - `Selected PR`: for the card under the Wall's cursor, its tier, which override matches (`override 2 of 3 matches` or `no override matches`) and the model and effort a review would use. `(path rules not checked)` follows when any override has `paths`, since the changed files aren't known until a review starts. `no PR selected on the Wall` when there is none.
 - `Spend`: today's spend against `review.budget.daily_usd`.

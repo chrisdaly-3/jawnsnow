@@ -91,7 +91,7 @@ default = "watcher"
 
 The mode snow starts in. In watcher mode snow polls and shows statuses, and a review runs only when you press `space` or `c`. Auto mode also starts reviews in the background, within the limits in [`[review]`](#review). [reviews.md](reviews.md#watcher-mode-and-auto-mode) covers both.
 
-Press `m` to switch modes for the current session; the file isn't changed. snow starts in watcher mode instead of auto when reviews can't run (no `gh` login, no usable `claude`, or another snow already running reviews), and shows `auto mode unavailable — reviews off: <reason>`.
+Press `m` to switch modes for the current session; the file isn't changed. snow starts in watcher mode instead of auto when reviews can't run (no `gh` login, no usable `claude`, or another snow already running reviews), and shows `auto mode unavailable — reviews off: <reason>`. With no `gh` login that banner is left out, and only the `⚠ No gh login found …` warning shows.
 
 ## `[github]`
 
@@ -161,7 +161,7 @@ since = "7d"
 team = true
 ```
 
-Each search returns at most 100 PRs, the most recently updated first. A feed whose search fails is skipped for that poll and named in a banner; the other feeds still run.
+Each search returns at most 100 PRs, the most recently updated first. A feed whose search fails is skipped for that poll and named in a banner; the other feeds still run. A search that hits GitHub's rate limit is different: it ends the whole poll.
 
 ### `feeds.name`
 
@@ -492,7 +492,7 @@ The Agent view's and `c` picker's choices change only the model and effort, neve
 
 ## `[theme]`
 
-Colours are xterm-256 palette indices from 16 to 255, or hex `#rrggbb`. Indices 0 to 15 are rejected, because terminal themes remap them. snow picks black (`16`) or white (`231`) text for each filled chip, whichever contrasts better with its colour. Set the `NO_COLOR` environment variable to any value to turn colour off: chips and banners become plain text.
+Colours are xterm-256 palette indices from 16 to 255, or hex `#rrggbb`. Indices 0 to 15 are rejected, because terminal themes remap them. snow picks black (`16`) or white (`231`) text for each filled chip, whichever contrasts better with its colour. Set the `NO_COLOR` environment variable to any non-empty value to turn colour off: chips and banners become plain text.
 
 ```toml
 [theme]

@@ -37,7 +37,7 @@ The token expired or was revoked. Log in again with `gh auth login`. Polls go on
 
 ## Reviews off
 
-`reviews off: <reason>` (or `auto mode unavailable — reviews off: <reason>` when `mode.default = "auto"`) means no review can run, so snow is in watcher mode. Pressing `space` or `m` shows `reviews unavailable: <reason>`. The Agent view's `claude` line shows the same.
+`reviews off: <reason>` (or `auto mode unavailable — reviews off: <reason>` when `mode.default = "auto"`) means no review can run, so snow is in watcher mode. Pressing `space` or `m` shows `reviews unavailable: <reason>`.
 
 | Reason | Fix |
 | --- | --- |
@@ -58,7 +58,7 @@ Nothing on the wall. Feeds: review-requested · press R to poll
 ```
 
 - Before the first poll finishes, the top line says `polling…`. Wait, or press `R`.
-- The default feed only finds open, non-draft PRs where your review is requested, updated in the last 14 days. A PR where a team you're on is requested isn't found unless you add a feed like `team-review-requested:my-org/my-team`.
+- The default feed only finds open, non-draft PRs where your review is requested, updated in the last 14 days. To see only PRs where you were asked directly, not through a team, use `user-review-requested:@me`.
 - Drafts are left out unless the feed sets `include_drafts = true`.
 - Try the feed's `query` in GitHub's search box. snow adds `draft:false`, `updated:>=<date>` and `sort:updated-desc` to it.
 - Each feed returns at most 100 PRs, the most recently updated first.
@@ -159,7 +159,7 @@ A common refusal is an inline comment on a line that is no longer in the PR's di
 | `could not open the browser: <error>` | snow opens links the way `gh` does: `$GH_BROWSER`, then `gh`'s `browser` setting, then `$BROWSER`, then the system default |
 | `could not run the editor: <error>` | set `$VISUAL` or `$EDITOR` to a command on your `PATH` |
 | `could not save PRs: <error>`, `could not read reviews: <error>` | a database read or write failed; check disk space and the data directory |
-| `could not clean up after a review: <error>`, `could not prune idle worktrees: <error>` | a git cleanup step failed; the next idle prune (every 10 minutes) and the startup sweep remove what is left |
+| `could not clean up after a review: <error>`, `could not prune idle worktrees: <error>` | a git cleanup step failed; the startup sweep removes leftover worktrees and refs, and the idle prune (every 10 minutes) removes idle slots, but a leftover directory under `reviews/` stays until you delete it, which is [safe](files.md#what-is-safe-to-delete) |
 | `worktree cleanup: <error>` | the startup sweep failed for a repo, often a `repos.<name>.path` that isn't a repository |
 | `config reload is off: <error>` | edits to the config need a restart |
 | `cancelling N running reviews…` | quitting; snow waits up to 5 seconds for them to save |
@@ -169,4 +169,4 @@ A common refusal is an inline comment on a line that is no longer in the PR's di
 - To bring back one PR you hid, press `x` on it in the Done view.
 - To forget the session's model picks, press `x` on each tier in the Agent view, or restart.
 - To start fresh, follow [the reset steps in files.md](files.md#what-is-safe-to-delete): quit snow, remove snow's worktrees and `refs/jawnsnow/` refs from each mapped repo, then delete the data directory. This loses every stored review, post and cost row.
-- To get the default config back, delete `~/.config/jawnsnow/config.toml` and start snow, or run `snow config default` and compare.
+- To get the default config back, move `~/.config/jawnsnow/config.toml` aside (for example to `config.toml.bak`) and start snow, or run `snow config default` and compare.
