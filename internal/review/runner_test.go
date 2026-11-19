@@ -199,9 +199,12 @@ func TestRunTimeoutKillsProcessGroup(t *testing.T) {
 	t.Setenv("GO_CHILD_PIDFILE", pidFile)
 	s.Timeout = 300 * time.Millisecond
 	start := time.Now()
-	_, err := Run(context.Background(), s, "p", nil)
+	res, err := Run(context.Background(), s, "p", nil)
 	if err == nil {
 		t.Fatal("expected error on timeout")
+	}
+	if !res.CostUnknown || res.CostUSD != 0 {
+		t.Errorf("killed run: CostUnknown %v cost %v, want unknown and no number", res.CostUnknown, res.CostUSD)
 	}
 	if time.Since(start) > 5*time.Second {
 		t.Errorf("took %v", time.Since(start))
@@ -231,8 +234,8 @@ func TestRunCancelKeepsResultSeen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("err = %v", err)
 	}
-	if res.CostUSD != 0.42 {
-		t.Errorf("cost = %v", res.CostUSD)
+	if res.CostUSD != 0.42 || res.CostUnknown {
+		t.Errorf("cost = %v, unknown %v", res.CostUSD, res.CostUnknown)
 	}
 }
 

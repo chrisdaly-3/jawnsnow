@@ -280,6 +280,15 @@ func TestDrawerCheckNotesKeepTheirLines(t *testing.T) {
 	}
 }
 
+func TestDrawerShowsCostUnknown(t *testing.T) {
+	r := drawerReview()
+	r.Outcome, r.CostUSD, r.CostUnknown = "failed", 0, true
+	d, c := openDrawer(t, 160, 40, r)
+	if plain := ansi.Strip(d.view(d.width(), 40, c)); !strings.Contains(plain, "cost unknown") || strings.Contains(plain, "$0.00") {
+		t.Errorf("drawer for a run with no reported cost:\n%s", plain)
+	}
+}
+
 func TestDrawerCleansText(t *testing.T) {
 	r := drawerReview()
 	r.Findings[1].Body = "Bad \x1b]0;pwned\x07\x1b[31mred\x1b[0m text\x1b[2J\n\n- item one\n- item two\x07"

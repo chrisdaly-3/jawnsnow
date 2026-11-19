@@ -36,6 +36,7 @@ type Review struct {
 	Error                                 string
 	Raw                                   json.RawMessage `json:",omitempty"` // omitempty keeps a nil Raw from becoming "null"
 	CostUSD                               float64         // sum over the review's runs
+	CostUnknown                           bool            // a run ended with no reported cost; CostUSD leaves it out
 	StartedAt, EndedAt                    time.Time
 	Findings                              []Finding `json:"-"` // stored in the findings table
 }
@@ -44,6 +45,7 @@ type CostRow struct {
 	At                                                                         time.Time
 	ReviewID, PRID, Repo, Author, Tier, PassKind, Mode, Model, Effort, Outcome string
 	CostUSD                                                                    float64
+	CostUnknown                                                                bool // the run ended with no result line, so CostUSD is not its cost
 	TokensIn, TokensOut, TokensCached                                          int
 	Duration                                                                   time.Duration
 }

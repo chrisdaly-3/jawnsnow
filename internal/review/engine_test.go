@@ -699,6 +699,30 @@ func TestEngineRunErrorIsFailed(t *testing.T) {
 	}
 }
 
+// A run killed before its result line has spent an unknown amount; the
+// ledger says so rather than recording $0.
+func TestEngineKilledRunCostIsUnknown(t *testing.T) {
+	env := newEngineEnv(t)
+	env.cfg.Review.RunTimeout.Duration = 300 * time.Millisecond
+	t.Setenv("GO_WAIT_FILE", filepath.Join(t.TempDir(), "never"))
+	env.claude.script(fakeRun{Reads: readAll, Output: output(nil, nil), Cost: 0.3})
+
+	rv, err := env.run(t, Request{Mode: ModeAuto})
+	if err == nil || rv.Outcome != "failed" {
+		t.Fatalf("err %v outcome %s, want a failed review", err, rv.Outcome)
+	}
+	if !rv.CostUnknown || rv.CostUSD != 0 {
+		t.Errorf("review CostUnknown %v cost %v", rv.CostUnknown, rv.CostUSD)
+	}
+	rows := env.costRows(t)
+	if len(rows) != 1 || rows[0].Outcome != "failed" || !rows[0].CostUnknown || rows[0].CostUSD != 0 {
+		t.Errorf("cost rows = %+v, want one failed row with cost unknown", rows)
+	}
+	if saved := env.stored(t); len(saved) != 1 || !saved[0].CostUnknown {
+		t.Errorf("stored = %+v, want CostUnknown kept", saved)
+	}
+}
+
 func TestEngineCancelledContextFails(t *testing.T) {
 	env := newEngineEnv(t)
 	env.claude.script(fakeRun{Reads: readAll, Output: output(nil, nil), Cost: 0.3})

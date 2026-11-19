@@ -80,6 +80,9 @@ type RunResult struct {
 	Duration                                 time.Duration
 	Reads                                    []string // file_path of every Read call, in order
 	Searched                                 []string // path of every Grep/Glob call
+	// CostUnknown is set when claude ran but ended, killed or not, with no
+	// result line: it spent something, and nothing says how much.
+	CostUnknown bool
 }
 
 type streamLine struct {
@@ -157,6 +160,7 @@ func Run(ctx context.Context, s Session, prompt string, onEvent func(Event)) (Ru
 	waitErr := cmd.Wait()
 	close(done)
 	<-killed
+	res.CostUnknown = !sawResult
 
 	switch {
 	case sawResult:

@@ -372,7 +372,7 @@ func (m drawerModel) layout(c drawerCtx) (lines []string, anchors []int) {
 		return lines, nil
 	}
 
-	meta := []string{cleanLine(r.Tier), cleanLine(r.Model), cleanLine(r.Effort), fmt.Sprintf("$%.2f", r.CostUSD)}
+	meta := []string{cleanLine(r.Tier), cleanLine(r.Model), cleanLine(r.Effort), costText(*r)}
 	if !r.StartedAt.IsZero() {
 		meta = append(meta, ago(c.Now.Sub(r.StartedAt))+" ago")
 	}
@@ -548,6 +548,19 @@ func (m drawerModel) bottomLine(c drawerCtx, inner int) string {
 		return th.Accent().Render(m.flash)
 	}
 	return th.Muted().Render(ansi.Truncate("j/k scroll · n/p finding · </> pass · y copy · O open line", inner, "…"))
+}
+
+// costText is a review's cost, saying so when a run's cost was never
+// reported rather than showing a number that leaves it out.
+func costText(r store.Review) string {
+	switch {
+	case !r.CostUnknown:
+		return fmt.Sprintf("$%.2f", r.CostUSD)
+	case r.CostUSD > 0:
+		return fmt.Sprintf("$%.2f + cost unknown", r.CostUSD)
+	default:
+		return "cost unknown"
+	}
 }
 
 // cleanLine is clean for text that belongs on one line.

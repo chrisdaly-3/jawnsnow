@@ -306,6 +306,7 @@ func (e *Engine) review(ctx context.Context, req Request, rv *store.Review, onEv
 		// run's own cost is what the total grew by.
 		runCost := max(res.CostUSD-rv.CostUSD, 0)
 		rv.CostUSD = max(rv.CostUSD, res.CostUSD)
+		rv.CostUnknown = rv.CostUnknown || res.CostUnknown
 		seen.Reads = append(seen.Reads, res.Reads...)
 		seen.Searched = append(seen.Searched, res.Searched...)
 		var parsed Output
@@ -466,7 +467,7 @@ func (e *Engine) addCost(ctx context.Context, rv *store.Review, res RunResult, c
 	err := e.Store.AddCost(context.WithoutCancel(ctx), store.CostRow{
 		At: e.now(), ReviewID: rv.ID, PRID: rv.PRID, Repo: rv.Repo, Author: rv.Author,
 		Tier: rv.Tier, PassKind: rv.PassKind, Mode: rv.Mode, Model: rv.Model, Effort: rv.Effort,
-		Outcome: outcome, CostUSD: cost,
+		Outcome: outcome, CostUSD: cost, CostUnknown: res.CostUnknown,
 		TokensIn: res.TokensIn, TokensOut: res.TokensOut, TokensCached: res.TokensCached,
 		Duration: d,
 	})
