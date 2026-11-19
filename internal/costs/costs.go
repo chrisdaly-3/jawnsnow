@@ -60,7 +60,8 @@ type TopPR struct {
 }
 
 // Summary totals only rows with a known cost. Unknown counts the rows whose
-// cost is unknown; they add nothing to the USD fields but still count as Reviews.
+// cost is unknown; they add nothing to the USD fields but still count as
+// Reviews. AvgPerReview is over the reviews with at least one known cost.
 type Summary struct {
 	Total, AvgPerReview, FirstPass, FollowUp float64
 	Reviews, Unknown                         int
@@ -251,12 +252,14 @@ func Aggregate(rows []store.CostRow, q Query) ([]Series, Summary) {
 
 func summarise(rows []store.CostRow) Summary {
 	var s Summary
-	reviews := map[string]bool{}
+	reviews, priced := map[string]bool{}, map[string]bool{}
 	perPR := map[string]*TopPR{}
 	for _, r := range rows {
 		reviews[r.ReviewID] = true
 		if r.CostUnknown {
 			s.Unknown++
+		} else {
+			priced[r.ReviewID] = true
 		}
 		c := usd(r)
 		s.Total += c
@@ -274,8 +277,8 @@ func summarise(rows []store.CostRow) Summary {
 		p.USD += c
 	}
 	s.Reviews = len(reviews)
-	if s.Reviews > 0 {
-		s.AvgPerReview = s.Total / float64(s.Reviews)
+	if len(priced) > 0 {
+		s.AvgPerReview = s.Total / float64(len(priced))
 	}
 	top := make([]TopPR, 0, len(perPR))
 	for _, p := range perPR {

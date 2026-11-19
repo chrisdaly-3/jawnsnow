@@ -200,8 +200,10 @@ func TestSummaryCountsUnknownCost(t *testing.T) {
 	if sum.Total != 2 || sum.FirstPass != 2 || sum.FollowUp != 0 {
 		t.Errorf("summary = %+v", sum)
 	}
-	if math.Abs(sum.AvgPerReview-2.0/3) > 1e-9 {
-		t.Errorf("avg = %v", sum.AvgPerReview)
+	// The average is over the one review with a known cost: the two with
+	// none would pull it toward zero.
+	if math.Abs(sum.AvgPerReview-2) > 1e-9 {
+		t.Errorf("avg = %v, want 2", sum.AvgPerReview)
 	}
 	for _, p := range series[0].Points {
 		if p.USD > 2 {
@@ -318,4 +320,24 @@ func TestGroupsFoldIntoOther(t *testing.T) {
 		names, _, _ := run([]string{"a", "b", "c", "d", "e", "f"})
 		same(t, names, []string{"a", "b", "c", "d", "e", "f"})
 	})
+}
+
+// A review with a known run and an unknown one counts toward the average;
+// one with only unknown runs does not.
+func TestAvgPerReviewCountsReviewsWithAKnownRun(t *testing.T) {
+	at := time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC)
+	rows := []store.CostRow{
+		{At: at, ReviewID: "1", PRID: "p", CostUSD: 3},
+		{At: at, ReviewID: "1", PRID: "p", CostUnknown: true},
+		{At: at, ReviewID: "2", PRID: "p", CostUSD: 0}, // a real $0
+		{At: at, ReviewID: "3", PRID: "p", CostUnknown: true},
+	}
+	_, sum := Aggregate(rows, Query{Filter: store.CostFilter{From: at.Add(-time.Hour), To: at.Add(time.Hour)}, Bucket: "hour"})
+	if sum.Reviews != 3 || math.Abs(sum.AvgPerReview-1.5) > 1e-9 {
+		t.Errorf("reviews/avg = %d/%v, want 3/1.5", sum.Reviews, sum.AvgPerReview)
+	}
+	_, sum = Aggregate(rows[3:], Query{Filter: store.CostFilter{From: at.Add(-time.Hour), To: at.Add(time.Hour)}, Bucket: "hour"})
+	if sum.AvgPerReview != 0 || math.IsNaN(sum.AvgPerReview) {
+		t.Errorf("all unknown: avg = %v, want 0", sum.AvgPerReview)
+	}
 }
