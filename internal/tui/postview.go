@@ -9,8 +9,6 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
-
-	"github.com/chrisdaly-3/jawnsnow/internal/post"
 )
 
 // The post flow's modal, drawn over the view, and its footer.
@@ -112,7 +110,7 @@ func (m Model) postFrame(width, height int) (top, body []string, cursorRow, rows
 		return top, nil, 0, rows
 	}
 
-	_, pv, err := post.Build(p.review, p.review.PRID, p.sel)
+	pv, err := p.built.pv, p.built.err
 	event, commit := string(p.sel.Event), shortCommit(p.review.HeadOID)
 	if err == nil {
 		event, commit = string(pv.Event), pv.Commit

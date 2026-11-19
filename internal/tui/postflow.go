@@ -117,6 +117,23 @@ type postFlow struct {
 	holdOn    bool
 	err       string // the last post or editor failure
 	result    string // postResult's text
+	// built is post.Build over review and sel, made whenever sel changes,
+	// so the view doesn't build on every frame.
+	built postBuild
+}
+
+type postBuild struct {
+	in  github.PostInput
+	pv  post.Preview
+	err error
+}
+
+// buildPost is post.Build; tests count its calls.
+var buildPost = post.Build
+
+// rebuild builds the payload for the current selection.
+func (p *postFlow) rebuild() {
+	p.built.in, p.built.pv, p.built.err = buildPost(p.review, p.review.PRID, p.sel)
 }
 
 type (
@@ -221,6 +238,7 @@ func (m Model) updatePost(msg tea.Msg) (_ Model, _ tea.Cmd, ok bool) {
 			p.err = "could not run the editor: " + msg.Err.Error()
 		} else {
 			p.sel.Body, p.err = strings.TrimRight(msg.Body, "\n"), ""
+			p.rebuild()
 		}
 		p.previewAt = m.now()
 		m.post = &p
@@ -280,6 +298,7 @@ func (m Model) postKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		case "enter":
 			p.sel.Event, p.stage, p.scroll, p.err = postEvents[p.pick].event, postPreview, 0, ""
 			p.previewAt = m.now()
+			p.rebuild()
 		case "esc":
 			m.post = nil
 			return m, nil
@@ -317,6 +336,7 @@ func (m Model) previewKey(p postFlow, k string) (Model, tea.Cmd) {
 			}
 			p.sel.Include[id] = !included(p.sel, id)
 			p.previewAt = m.now()
+			p.rebuild()
 		}
 	case "m":
 		p.raw = !p.raw
@@ -336,7 +356,7 @@ func (m Model) previewKey(p postFlow, k string) (Model, tea.Cmd) {
 			p.previewAt, p.holdOn = m.now(), true
 			break
 		}
-		in, pv, err := post.Build(p.review, p.review.PRID, p.sel)
+		in, pv, err := p.built.in, p.built.pv, p.built.err
 		if err != nil {
 			break // the preview shows why
 		}

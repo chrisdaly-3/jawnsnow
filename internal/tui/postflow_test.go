@@ -18,6 +18,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/chrisdaly-3/jawnsnow/internal/github"
+	"github.com/chrisdaly-3/jawnsnow/internal/post"
 	"github.com/chrisdaly-3/jawnsnow/internal/store"
 )
 
@@ -907,5 +908,40 @@ func TestEditorReturnRestartsConfirmWait(t *testing.T) {
 	h.press(t, "enter")
 	if len(h.poster.posts) != 1 || h.poster.posts[0].Body != "New summary." {
 		t.Errorf("posts = %+v, want one with the edited summary", h.poster.posts)
+	}
+}
+
+// The preview builds the payload when the selection changes, not on every
+// frame: the drawer redraws on each spinner tick.
+func TestPreviewBuildsOncePerSelection(t *testing.T) {
+	n := 0
+	old := buildPost
+	buildPost = func(r store.Review, prID string, sel post.Selection) (github.PostInput, post.Preview, error) {
+		n++
+		return old(r, prID, sel)
+	}
+	t.Cleanup(func() { buildPost = old })
+	h := newPostHarness(t, postReview(), opts{})
+	h.press(t, "P", "k", "enter")
+	before := n
+	if before == 0 {
+		t.Fatal("the preview never built the payload")
+	}
+	for range 10 {
+		_ = h.m.View()
+	}
+	h.press(t, "j", "m", "m")
+	if n != before {
+		t.Errorf("drawing and moving built %d more times, want 0", n-before)
+	}
+	h.press(t, "space")
+	if n != before+1 {
+		t.Errorf("a toggle built %d times, want 1", n-before)
+	}
+	got := modalText(h.m)
+	h.wait()
+	h.press(t, "enter")
+	if len(h.poster.posts) != 1 || !strings.Contains(got, "pkg/policy/decision.go:12") {
+		t.Errorf("posts = %d; preview:\n%s", len(h.poster.posts), got)
 	}
 }
