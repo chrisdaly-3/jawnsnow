@@ -26,8 +26,14 @@ func isolate(t *testing.T) string {
 	t.Setenv("XDG_DATA_HOME", filepath.Join(home, "data"))
 	// An empty PATH keeps startup from finding, and running, the real claude.
 	t.Setenv("PATH", t.TempDir())
+	// Never build the real poster.
+	old := newPoster
+	newPoster = func() (github.Poster, error) { return fakePoster{}, nil }
+	t.Cleanup(func() { newPoster = old })
 	return home
 }
+
+type fakePoster struct{ github.Poster }
 
 func noClient() (github.Client, error) { return nil, nil }
 
@@ -530,5 +536,55 @@ func TestNoGHLoginWarnsOnceInAutoMode(t *testing.T) {
 	}
 	if hasBanner(deps.Banners, "auto mode unavailable") || hasBanner(deps.Banners, "reviews off") {
 		t.Errorf("banners repeat the login warning: %q", deps.Banners)
+	}
+}
+
+func TestBuildDepsWiresPoster(t *testing.T) {
+	isolate(t)
+	deps, cleanup, err := buildDeps(os.Getenv, withClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	if deps.Poster == nil || deps.PostOff != "" {
+		t.Fatalf("poster=%v off=%q", deps.Poster, deps.PostOff)
+	}
+}
+
+func TestBuildDepsNoGhNoPoster(t *testing.T) {
+	isolate(t)
+	deps, cleanup, err := buildDeps(os.Getenv, noClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	if deps.Poster != nil || deps.PostOff != "gh is not logged in" {
+		t.Fatalf("poster=%v off=%q", deps.Poster, deps.PostOff)
+	}
+}
+
+func TestBuildDepsPosterErrorTurnsPostingOff(t *testing.T) {
+	isolate(t)
+	newPoster = func() (github.Poster, error) { return nil, errors.New("boom") }
+	deps, cleanup, err := buildDeps(os.Getenv, withClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	if deps.Poster != nil || deps.PostOff != "could not set up posting: boom" {
+		t.Fatalf("poster=%v off=%q", deps.Poster, deps.PostOff)
+	}
+}
+
+// The post flow's temp files go in the data dir the review engine uses.
+func TestBuildDepsSetsDataDir(t *testing.T) {
+	isolate(t)
+	deps, cleanup, err := buildDeps(os.Getenv, withClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	if want := filepath.Dir(store.DataPath()); deps.DataDir != want || want == "" {
+		t.Fatalf("DataDir = %q, want %q", deps.DataDir, want)
 	}
 }

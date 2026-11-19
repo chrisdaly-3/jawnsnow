@@ -102,6 +102,10 @@ func newGHClient() (github.Client, error) {
 	return github.NewGHClient()
 }
 
+// newPoster builds the GitHub poster; tests replace it so they never build
+// the real one.
+var newPoster = github.NewGHPoster
+
 // buildDeps assembles the TUI's dependencies. The returned cleanup closes
 // the config watcher, then the store, then releases the data dir lock; it
 // is safe to call even when err is non-nil (it is then a no-op).
@@ -160,6 +164,19 @@ func buildDeps(getenv func(string) string, newClient func() (github.Client, erro
 		deps.Client = client
 	}
 
+	// The poster is the tool's only GitHub write; it needs the same gh
+	// login as the client.
+	switch {
+	case deps.Client == nil:
+		deps.PostOff = "gh is not logged in"
+	default:
+		if p, err := newPoster(); err != nil {
+			deps.PostOff = fmt.Sprintf("could not set up posting: %v", err)
+		} else {
+			deps.Poster = p
+		}
+	}
+
 	// A missing config directory means creating the file failed, which the
 	// banner above already explains, so it is not an error.
 	stopTee := func() {}
@@ -171,6 +188,7 @@ func buildDeps(getenv func(string) string, newClient func() (github.Client, erro
 	}
 
 	dataDir := filepath.Dir(store.DataPath())
+	deps.DataDir = dataDir
 	unlockData, lockOff := lockDataDir(dataDir)
 	var engine *review.Engine
 	deps.Claude, deps.ReviewsOff = detectClaude()
