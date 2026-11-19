@@ -22,17 +22,22 @@ var htmlComment = regexp.MustCompile(`(?s)<!--.*?(?:-->|$)`)
 
 var parserFor = goldmark.New(goldmark.WithExtensions(extension.GFM)).Parser()
 
-// HiddenContent names what a rendered view hides or acts on: HTML comments,
-// other raw HTML, images, link reference definitions (which render as
-// nothing) and @mentions (which notify people). It reads goldmark's syntax
-// tree, so code spans, fences and indented code are skipped by construction
-// and nesting in lists or quotes cannot fool it.
+// HiddenContent names what a rendered view hides or acts on: character
+// references that decode to control or invisible characters, HTML
+// comments, other raw HTML, images, link reference definitions (which
+// render as nothing) and @mentions (which notify people). It reads
+// goldmark's syntax tree, so code spans, fences and indented code are
+// skipped by construction and nesting in lists or quotes cannot fool it.
+// References are the exception: the renderer decodes them inside code
+// spans too, so only fenced and indented code, which it shows literally,
+// is skipped for them.
 func HiddenContent(md string) []string {
 	src := []byte(md)
 	pc := parser.NewContext()
 	root := parserFor.Parse(text.NewReader(src), parser.WithContext(pc))
 
 	var comment, html, image bool
+	var literal []text.Segment // fenced and indented code lines
 	var logins []string
 	seen := map[string]bool{}
 
@@ -75,6 +80,12 @@ func HiddenContent(md string) []string {
 			raw(n.Segments.Value(src))
 		case *ast.CodeSpan:
 			return ast.WalkSkipChildren, nil
+		case *ast.FencedCodeBlock, *ast.CodeBlock:
+			lines := n.Lines()
+			for i := range lines.Len() {
+				literal = append(literal, lines.At(i))
+			}
+			return ast.WalkSkipChildren, nil
 		case *ast.Image:
 			image = true
 		case *ast.Text:
@@ -92,6 +103,9 @@ func HiddenContent(md string) []string {
 	})
 
 	var out []string
+	if encodedControl(src, literal) {
+		out = append(out, "encoded control character")
+	}
 	if comment {
 		out = append(out, "HTML comment")
 	}
@@ -112,4 +126,25 @@ func HiddenContent(md string) []string {
 
 func isWordByte(b byte) bool {
 	return b == '_' || b >= '0' && b <= '9' || b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z'
+}
+
+// encodedControl reports whether src has a control reference outside the
+// literal segments.
+func encodedControl(src []byte, literal []text.Segment) bool {
+	for _, loc := range charRef.FindAllIndex(src, -1) {
+		if !controlRef(string(src[loc[0]:loc[1]])) {
+			continue
+		}
+		inLiteral := false
+		for _, seg := range literal {
+			if loc[0] >= seg.Start && loc[1] <= seg.Stop {
+				inLiteral = true
+				break
+			}
+		}
+		if !inLiteral {
+			return true
+		}
+	}
+	return false
 }

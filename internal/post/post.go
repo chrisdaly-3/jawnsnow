@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
-	"unicode"
 
 	"github.com/chrisdaly-3/jawnsnow/internal/github"
 	"github.com/chrisdaly-3/jawnsnow/internal/store"
@@ -184,18 +183,18 @@ var (
 
 // Sanitize strips what could drive a terminal or hide text: control
 // characters other than newline and tab, and ANSI CSI/OSC sequences whole.
+// A character reference that decodes to one of those becomes U+FFFD; that
+// runs last, so stripping can't join the pieces of a new one.
 func Sanitize(s string) string {
 	s = oscSeq.ReplaceAllString(s, "")
 	s = csiSeq.ReplaceAllString(s, "")
-	return strings.Map(func(r rune) rune {
-		if r == '\n' || r == '\t' {
-			return r
-		}
-		if unicode.IsControl(r) || invisible(r) {
+	s = strings.Map(func(r rune) rune {
+		if stripped(r) {
 			return -1
 		}
 		return r
 	}, s)
+	return ReplaceControlRefs(s)
 }
 
 // invisible reports zero-width and bidi format characters, which can hide or
