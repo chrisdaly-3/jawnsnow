@@ -153,7 +153,7 @@ Draft PRs are left out unless the feed sets `include_drafts = true`.
 
 ## The drawer
 
-`enter` on a card, a Done row or a Reviews row slides the drawer in from the right. It takes 45% of the terminal's width. `esc` slides it out. `tab` moves focus into it, and its left edge is in the accent colour when it has focus.
+`enter` on a card, a Done row or a Reviews row slides the drawer in from the right. It takes 45% of the terminal's width. `esc` slides it out. Opening the drawer focuses it; `tab` moves focus between it and the view beside it, and its left edge is in the accent colour when it has focus.
 
 ![The review drawer](assets/drawer.png)
 

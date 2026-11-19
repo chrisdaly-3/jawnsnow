@@ -40,12 +40,10 @@ Sleep 600ms
 Type "k"
 Sleep 1s
 
-# 3. Open the drawer on a reviewed PR, focus it, scroll and step through
-# the findings.
+# 3. Open the drawer on a reviewed PR (enter focuses it), scroll and step
+# through the findings.
 Enter
 Sleep 1500ms
-Tab
-Sleep 500ms
 Type "jj"
 Sleep 1s
 Type "n"
@@ -68,8 +66,6 @@ Sleep 4s
 # Nothing is posted: esc backs out of the preview and the picker.
 Enter
 Sleep 1500ms
-Tab
-Sleep 500ms
 Type "P"
 Sleep 1500ms
 Enter

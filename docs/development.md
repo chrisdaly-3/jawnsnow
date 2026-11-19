@@ -64,7 +64,7 @@ The README's GIF and the screenshots in `docs/assets/` are recorded from it with
 vhs docs/demo/demo.tape
 ```
 
-Run it from the repo root. The tape builds `cmd/snowdemo` to `/tmp/snowdemo`, waits for the Wall, and then types keys, so it depends on the demo's card order (it moves with `j`, `j`, `l`, `k` to reach a reviewed PR) and on `tab` moving focus into the drawer before drawer keys such as `n` and `P`. If you change the demo data or those keys, check the recording. It writes `docs/assets/demo.gif`, `wall.png`, `drawer.png`, `post-preview.png` and `cost.png`.
+Run it from the repo root. The tape builds `cmd/snowdemo` to `/tmp/snowdemo`, waits for the Wall, and then types keys, so it depends on the demo's card order (it moves with `j`, `j`, `l`, `k` to reach a reviewed PR) and on `enter` focusing the drawer it opens, so drawer keys such as `n` and `P` follow it directly, with `tab` going back to the Wall. If you change the demo data or those keys, check the recording. It writes `docs/assets/demo.gif`, `wall.png`, `drawer.png`, `post-preview.png` and `cost.png`.
 
 ## Credits
 

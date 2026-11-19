@@ -89,7 +89,7 @@ Move with `h` and `l` between lanes and `j` and `k` between cards. `o` opens the
 ## Your first review
 
 1. Select a PR on the Wall and press `space`. The card's badge changes to `Claude reviewing…`.
-2. Press `enter` to open the drawer beside the Wall, and `tab` to move focus into it. While the review runs, the drawer's bottom line shows what the reviewer is reading.
+2. Press `enter` to open the drawer beside the Wall. Focus moves into it, and `tab` moves focus back to the Wall. While the review runs, the drawer's bottom line shows what the reviewer is reading.
 3. When it finishes, the badge shows `✦ Claude: clean` or `✦ Claude: 2 blocking`, and the drawer shows the verdict, the findings and the cost. `n` and `p` step through findings; `u` and `a` show the reviewer's understanding of the change and its assumptions.
 
 ![The review drawer](assets/drawer.png)

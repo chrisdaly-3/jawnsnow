@@ -6,7 +6,7 @@ Posting is the only thing snow writes to GitHub, and it happens only when you as
 
 ## Opening the flow
 
-Open the drawer on a PR (`enter`), move focus into it (`tab`), go to the pass you want with `<` and `>`, and press `P`.
+Open the drawer on a PR (`enter`, which also focuses it), go to the pass you want with `<` and `>`, and press `P`.
 
 - A failed review can't be posted: the drawer says `a failed review can't be posted`. Complete and incomplete reviews can.
 - When posting isn't available, `P` shows `posting unavailable: <reason>`. The reasons are `gh is not logged in`, `could not set up posting: <error>`, and `another snow is running on this machine — post from that window`.

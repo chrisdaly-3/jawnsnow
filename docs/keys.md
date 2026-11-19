@@ -54,7 +54,7 @@ More on these:
 
 ## Drawer
 
-These work when the drawer has focus (`tab` into it).
+These work when the drawer has focus. Opening it with `enter` focuses it, and `tab` moves between it and the view beside it.
 
 | Key | Does |
 | --- | --- |
