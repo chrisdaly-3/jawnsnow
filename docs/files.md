@@ -4,7 +4,7 @@ snow keeps its config in one file and everything else in one data directory. Thi
 
 ## The config file
 
-`$HOME/.config/jawnsnow/config.toml`. snow writes it once, with the commented defaults, when it doesn't exist, and never writes to it after that. It doesn't read `$XDG_CONFIG_HOME`. [configuration.md](configuration.md) covers its contents.
+`$XDG_CONFIG_HOME/jawnsnow/config.toml` when `XDG_CONFIG_HOME` is set to an absolute path and that file exists, otherwise `$HOME/.config/jawnsnow/config.toml`. If neither exists, snow writes the commented defaults to the first path that applies, once, and never writes to the file after that. [configuration.md](configuration.md#the-config-file) has the lookup order and the file's contents.
 
 ## The data directory
 

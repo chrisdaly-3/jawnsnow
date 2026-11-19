@@ -169,4 +169,4 @@ A common refusal is an inline comment on a line that is no longer in the PR's di
 - To bring back one PR you hid, press `x` on it in the Done view.
 - To forget the session's model picks, press `x` on each tier in the Agent view, or restart.
 - To start fresh, follow [the reset steps in files.md](files.md#what-is-safe-to-delete): quit snow, remove snow's worktrees and `refs/jawnsnow/` refs from each mapped repo, then delete the data directory. This loses every stored review, post and cost row.
-- To get the default config back, move `~/.config/jawnsnow/config.toml` aside (for example to `config.toml.bak`) and start snow, or run `snow config default` and compare.
+- To get the default config back, move the config file aside (its path is in [configuration.md](configuration.md#the-config-file); `~/.config/jawnsnow/config.toml` by default) (for example to `config.toml.bak`) and start snow, or run `snow config default` and compare.

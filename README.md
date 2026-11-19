@@ -37,7 +37,7 @@ go install ./cmd/snow
 
 ## Quickstart
 
-Run `snow`. The first run writes `~/.config/jawnsnow/config.toml` with commented defaults, which watch the open PRs where your review is requested. `snow config default` prints the same defaults.
+Run `snow`. The first run writes `~/.config/jawnsnow/config.toml` (or under `$XDG_CONFIG_HOME`, see [docs/configuration.md](docs/configuration.md#the-config-file)) with commented defaults, which watch the open PRs where your review is requested. `snow config default` prints the same defaults.
 
 The keys to start with:
 
@@ -67,7 +67,7 @@ The demo and screenshots use made-up PRs.
 
 ## Configuration
 
-Every option is commented in `~/.config/jawnsnow/config.toml`, and snow reloads the file when you save it. `snow config default` prints the defaults. [docs/configuration.md](docs/configuration.md) describes every key.
+Every option is commented in the config file, and snow reloads the file when you save it. `snow config default` prints the defaults. [docs/configuration.md](docs/configuration.md) describes every key.
 
 ## Documentation
 

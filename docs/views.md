@@ -28,7 +28,8 @@ Banners are the lines under the top line. They show, in this order:
 | `auto mode unavailable — reviews off: <reason>` | The same, when `mode.default = "auto"`. snow starts in watcher mode. |
 | `worktree cleanup: <error>` | The startup cleanup of worktrees and refs failed for a repo. Shown only when it finishes within 2 seconds of starting. |
 | `could not load saved PRs: <error> — not saving this session` | The database read failed. snow polls but saves no PR changes until restart. |
-| `Created ~/.config/jawnsnow/config.toml with the defaults — edit it any time; snow reloads on save.` | First run. Cleared by the first good reload. |
+| `config: XDG_CONFIG_HOME is not an absolute path ("<value>"), so it was ignored` | `XDG_CONFIG_HOME` is relative, so snow used `$HOME/.config` instead. See [configuration.md](configuration.md#the-config-file). |
+| `Created ~/.config/jawnsnow/config.toml with the defaults — edit it any time; snow reloads on save.` | First run. The path shown is wherever the config was created. Cleared by the first good reload. |
 | `No config at ~/.config/jawnsnow/config.toml — using defaults (could not create it: <error>). Run "snow config default" to start one.` | The default config couldn't be written. |
 | `config error: <error> — using last good config` | A reload with a mistake. Cleared by the next good reload. |
 | `config warning: unknown key "<key>"` | An unknown key found by a reload. |

@@ -34,7 +34,7 @@ Both put `snow` in `$(go env GOPATH)/bin` (or `$GOBIN`). The commands:
 
 ## The first run
 
-Run `snow`. On the first run it writes the commented defaults to `~/.config/jawnsnow/config.toml` and shows:
+Run `snow`. On the first run it writes the commented defaults to `~/.config/jawnsnow/config.toml` (or under `$XDG_CONFIG_HOME`; see [configuration.md](configuration.md#the-config-file)) and shows:
 
 ```
 Created ~/.config/jawnsnow/config.toml with the defaults — edit it any time; snow reloads on save.

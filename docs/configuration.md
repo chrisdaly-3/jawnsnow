@@ -1,12 +1,15 @@
 # Configuration
 
-snow reads one TOML file, `~/.config/jawnsnow/config.toml`. This page lists every section and key in it, with its type, default, valid values, and what it changes. The [All keys](#all-keys) table at the end is the short version.
+snow reads one TOML file, `config.toml`, found as [described below](#the-config-file). This page lists every section and key in it, with its type, default, valid values, and what it changes. The [All keys](#all-keys) table at the end is the short version.
 
 ## The config file
 
-The path is always `$HOME/.config/jawnsnow/config.toml`. snow does not read `$XDG_CONFIG_HOME`.
+snow looks for the file in this order and uses the first one that exists:
 
-On the first run, when no file exists at that path, snow writes the commented defaults there and shows this banner:
+1. `$XDG_CONFIG_HOME/jawnsnow/config.toml`, when `XDG_CONFIG_HOME` is set to an absolute path. A relative value is ignored, as the XDG Base Directory spec says, and snow shows a banner saying so.
+2. `$HOME/.config/jawnsnow/config.toml`.
+
+On the first run, when neither file exists, snow writes the commented defaults to the first path that applies (the `XDG_CONFIG_HOME` one when it is set and absolute, otherwise the `$HOME` one) and shows this banner. The banner names the path, `~/.config/jawnsnow/config.toml` in this example:
 
 ```
 Created ~/.config/jawnsnow/config.toml with the defaults — edit it any time; snow reloads on save.
@@ -21,7 +24,7 @@ No config at ~/.config/jawnsnow/config.toml — using defaults (could not create
 `snow config default` prints the same commented defaults to standard output. Use it to start a file by hand, or to see what a newer snow ships:
 
 ```sh
-snow config default > ~/.config/jawnsnow/config.toml
+snow config default > "${XDG_CONFIG_HOME:-$HOME/.config}/jawnsnow/config.toml"
 ```
 
 Every key is optional. A key you leave out keeps its default. A `[[feeds]]` list is the one exception to merging: if the file has any `[[feeds]]` block, those blocks replace the default feed instead of adding to it.
