@@ -35,7 +35,7 @@ type Review struct {
 	Outcome                               string // "complete" | "incomplete" | "failed"
 	Error                                 string
 	Raw                                   json.RawMessage `json:",omitempty"` // omitempty keeps a nil Raw from becoming "null"
-	CostUSD                               float64         // sum over the review's runs
+	CostUSD                               float64         // the session's final reported total
 	CostUnknown                           bool            // a run ended with no reported cost; CostUSD leaves it out
 	StartedAt, EndedAt                    time.Time
 	Findings                              []Finding `json:"-"` // stored in the findings table
