@@ -1,10 +1,12 @@
 package tui
 
 import (
+	"os/exec"
 	"slices"
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/chrisdaly-3/jawnsnow/internal/config"
 	"github.com/chrisdaly-3/jawnsnow/internal/review"
 )
@@ -145,5 +147,25 @@ func TestEditorCommandSplitsArgs(t *testing.T) {
 	want := []string{"code", "--wait", config.Path()}
 	if !slices.Equal(got, want) {
 		t.Errorf("Args = %v, want %v", got, want)
+	}
+}
+
+func TestAgentEditUsesConfigPath(t *testing.T) {
+	t.Setenv("VISUAL", "")
+	t.Setenv("EDITOR", "my-editor")
+	h := newHarness(t, opts{reviews: true, claude: claudeOK})
+	h.m.configPath = "/tmp/xdg/jawnsnow/config.toml"
+	var got *exec.Cmd
+	h.m.execProcess = func(c *exec.Cmd, fn tea.ExecCallback) tea.Cmd {
+		got = c
+		return func() tea.Msg { return nil }
+	}
+	h.press(t, "5")
+	_, cmd := update(t, h.m, key("e"))
+	if cmd == nil || got == nil {
+		t.Fatal("e did not start the editor")
+	}
+	if last := got.Args[len(got.Args)-1]; last != "/tmp/xdg/jawnsnow/config.toml" {
+		t.Errorf("editor opened %q, want the loaded config path", last)
 	}
 }

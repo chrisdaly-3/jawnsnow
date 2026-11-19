@@ -71,8 +71,11 @@ type Deps struct {
 	// ConfigBanner is a note about the config file, cleared by the first
 	// good reload.
 	ConfigBanner string
-	Reloads      <-chan config.Reload
-	Now          func() time.Time
+	// ConfigPath is the config file snow loaded or created; the Agent
+	// view's e key edits it. Empty means the default lookup.
+	ConfigPath string
+	Reloads    <-chan config.Reload
+	Now        func() time.Time
 	// Reviewer runs Claude reviews. It is nil when reviews are unavailable,
 	// for the reason in ReviewsOff.
 	Reviewer   Reviewer
@@ -164,6 +167,8 @@ type Model struct {
 	poster  github.Poster
 	postOff string
 	dataDir string
+	// configPath is the file e edits.
+	configPath string
 	// post is the open post flow, or nil.
 	post *postFlow
 	// pollAgain asks for a poll as soon as the one in flight finishes.
@@ -260,7 +265,7 @@ func New(d Deps) Model {
 		banners: d.Banners, loginWarning: d.LoginWarning, configBanner: d.ConfigBanner, reloads: d.Reloads, now: now, tick: tea.Tick,
 		open:   func(url string) error { return browser.New("", io.Discard, io.Discard).Browse(url) },
 		launch: func(c tea.Cmd) tea.Cmd { return c }, reviews: newReviews(d.Reviewer, d.ReviewsOff),
-		execProcess: tea.ExecProcess, poster: d.Poster, postOff: d.PostOff, dataDir: dataDir,
+		execProcess: tea.ExecProcess, poster: d.Poster, postOff: d.PostOff, dataDir: dataDir, configPath: d.ConfigPath,
 		prs: map[string]tracker.Tracked{}, wall: newWall(), done: newDone(), cost: newCost(), reviewLog: newReviewLog(), drawer: newDrawer(), dirty: map[string]bool{}, deleted: map[string]bool{},
 		mode: mode, width: 80, height: 24,
 	}

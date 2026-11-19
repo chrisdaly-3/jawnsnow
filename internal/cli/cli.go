@@ -46,8 +46,13 @@ With no command, snow starts the interface.
 
 commands:
   config default  print the commented default config
+
   version         print the version
   help            print this help
+
+The config file is $XDG_CONFIG_HOME/jawnsnow/config.toml when it exists (the
+variable must be an absolute path), else $HOME/.config/jawnsnow/config.toml.
+snow creates the first of those that applies when neither exists.
 `
 
 // Run executes the snow command with args (excluding the program name) and
@@ -114,7 +119,13 @@ func buildDeps(getenv func(string) string, newClient func() (github.Client, erro
 	var banners []string
 	var configBanner string
 
-	path := config.Path()
+	path, _, ignoredXDG := config.Resolve(getenv, func(p string) bool {
+		_, err := os.Stat(p)
+		return err == nil
+	})
+	if ignoredXDG != "" {
+		banners = append(banners, fmt.Sprintf("config: XDG_CONFIG_HOME is not an absolute path (%q), so it was ignored", ignoredXDG))
+	}
 	shown := tildePath(path, getenv("HOME"))
 	created, createErr := config.WriteDefaultIfMissing(path)
 	switch {
@@ -148,7 +159,7 @@ func buildDeps(getenv func(string) string, newClient func() (github.Client, erro
 		return tui.Deps{}, noop, err
 	}
 
-	deps := tui.Deps{Config: cfg, Theme: th, Store: st, ConfigBanner: configBanner, Now: time.Now}
+	deps := tui.Deps{Config: cfg, Theme: th, Store: st, ConfigBanner: configBanner, ConfigPath: path, Now: time.Now}
 	var watcher *config.Watcher
 	cur := &currentConfig{cfg: cfg}
 

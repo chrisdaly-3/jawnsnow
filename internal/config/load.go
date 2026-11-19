@@ -8,13 +8,48 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-// Path returns the config file location, $HOME/.config/jawnsnow/config.toml.
+// Path returns the config file snow would use now: the first of
+// $XDG_CONFIG_HOME/jawnsnow/config.toml and $HOME/.config/jawnsnow/config.toml
+// that exists, or the first-run location when neither does. See Resolve.
 func Path() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return filepath.Join(".config", "jawnsnow", "config.toml")
+	path, _, _ := Resolve(os.Getenv, func(p string) bool {
+		_, err := os.Stat(p)
+		return err == nil
+	})
+	return path
+}
+
+// Resolve picks the config file. It looks at
+// $XDG_CONFIG_HOME/jawnsnow/config.toml first, when XDG_CONFIG_HOME is set
+// to an absolute path, then at $HOME/.config/jawnsnow/config.toml. found is
+// false when neither exists, and path is then where to create the default:
+// the XDG location when it's valid, else the home one. ignoredXDG is the
+// XDG_CONFIG_HOME value that was skipped for not being absolute, which the
+// XDG spec says to ignore.
+func Resolve(getenv func(string) string, exists func(string) bool) (path string, found bool, ignoredXDG string) {
+	var candidates []string
+	if x := getenv("XDG_CONFIG_HOME"); x != "" {
+		if filepath.IsAbs(x) {
+			candidates = append(candidates, filepath.Join(x, "jawnsnow", "config.toml"))
+		} else {
+			ignoredXDG = x
+		}
 	}
-	return filepath.Join(home, ".config", "jawnsnow", "config.toml")
+	home := getenv("HOME")
+	if home == "" {
+		home, _ = os.UserHomeDir()
+	}
+	if home == "" {
+		candidates = append(candidates, filepath.Join(".config", "jawnsnow", "config.toml"))
+	} else {
+		candidates = append(candidates, filepath.Join(home, ".config", "jawnsnow", "config.toml"))
+	}
+	for _, c := range candidates {
+		if exists(c) {
+			return c, true, ignoredXDG
+		}
+	}
+	return candidates[0], false, ignoredXDG
 }
 
 // Load reads the config file at path over Defaults(). A missing file returns

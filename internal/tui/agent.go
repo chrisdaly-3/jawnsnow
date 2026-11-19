@@ -67,7 +67,7 @@ func (m Model) agentKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	case "x":
 		m = m.setSessionPick(tier, nil)
 	case "e":
-		return m, m.execProcess(editorCommand(config.Path()), func(err error) tea.Msg { return editedMsg{err: err} })
+		return m, m.execProcess(editorCommand(m.editPath()), func(err error) tea.Msg { return editedMsg{err: err} })
 	}
 	return m, nil
 }
@@ -120,7 +120,7 @@ func (m Model) agentBody(width, height int) string {
 		line("  %s", q)
 	}
 	line("")
-	line("%s", th.Muted().Render("e edit config.toml in "+editorCommand(config.Path()).Args[0]))
+	line("%s", th.Muted().Render("e edit config.toml in "+editorCommand(m.editPath()).Args[0]))
 
 	return strings.Join(fit(strings.TrimRight(b.String(), "\n"), width, height), "\n")
 }
@@ -201,4 +201,12 @@ func (m Model) agentQueues() (running, queued []string) {
 		queued = append(queued, name(q.id))
 	}
 	return running, queued
+}
+
+// editPath is the config file the e key opens.
+func (m Model) editPath() string {
+	if m.configPath != "" {
+		return m.configPath
+	}
+	return config.Path()
 }

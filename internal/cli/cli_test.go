@@ -24,6 +24,7 @@ func isolate(t *testing.T) string {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_DATA_HOME", filepath.Join(home, "data"))
+	t.Setenv("XDG_CONFIG_HOME", "")
 	// An empty PATH keeps startup from finding, and running, the real claude.
 	t.Setenv("PATH", t.TempDir())
 	// Never build the real poster.
@@ -596,5 +597,67 @@ func TestBuildDepsSetsDataDir(t *testing.T) {
 	defer cleanup()
 	if want := filepath.Dir(store.DataPath()); deps.DataDir != want || want == "" {
 		t.Fatalf("DataDir = %q, want %q", deps.DataDir, want)
+	}
+}
+
+func TestStartupCreatesConfigUnderXDG(t *testing.T) {
+	home := isolate(t)
+	xdg := filepath.Join(t.TempDir(), "xdgcfg")
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	deps, cleanup, err := buildDeps(os.Getenv, noClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	want := filepath.Join(xdg, "jawnsnow", "config.toml")
+	got, err := os.ReadFile(want)
+	if err != nil || !bytes.Equal(got, config.DefaultTOML()) {
+		t.Fatalf("default config not created at %s: %v", want, err)
+	}
+	if !strings.HasPrefix(deps.ConfigBanner, "Created "+want) {
+		t.Errorf("ConfigBanner = %q, want it to name %s", deps.ConfigBanner, want)
+	}
+	if deps.ConfigPath != want {
+		t.Errorf("ConfigPath = %q, want %q", deps.ConfigPath, want)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".config")); err == nil {
+		t.Errorf("created a config under HOME too")
+	}
+}
+
+func TestStartupXDGSetLoadsHomeFile(t *testing.T) {
+	home := isolate(t)
+	xdg := filepath.Join(t.TempDir(), "xdgcfg")
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	writeConfig(t, home, "[github]\npoll_interval = \"2m\"\n")
+	deps, cleanup, err := buildDeps(os.Getenv, noClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	if deps.Config.GitHub.PollInterval.Duration != 2*time.Minute {
+		t.Errorf("poll interval = %v, want 2m from the home file", deps.Config.GitHub.PollInterval)
+	}
+	if _, err := os.Stat(xdg); err == nil {
+		t.Errorf("created %s although the home file exists", xdg)
+	}
+	if want := filepath.Join(home, ".config", "jawnsnow", "config.toml"); deps.ConfigPath != want {
+		t.Errorf("ConfigPath = %q, want %q", deps.ConfigPath, want)
+	}
+}
+
+func TestStartupRelativeXDGIsReported(t *testing.T) {
+	home := isolate(t)
+	t.Setenv("XDG_CONFIG_HOME", "cfg")
+	deps, cleanup, err := buildDeps(os.Getenv, noClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	if !hasBanner(deps.Banners, `config: XDG_CONFIG_HOME is not an absolute path ("cfg"), so it was ignored`) {
+		t.Errorf("banners = %q", deps.Banners)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".config", "jawnsnow", "config.toml")); err != nil {
+		t.Errorf("config not created under HOME: %v", err)
 	}
 }
