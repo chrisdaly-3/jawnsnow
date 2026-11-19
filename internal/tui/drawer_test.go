@@ -611,3 +611,16 @@ func TestSharedFormatters(t *testing.T) {
 		}
 	}
 }
+
+// A finding body that encodes an SGR conceal shows its whole text, and the
+// drawer writes no escape the renderer does not emit itself.
+func TestDrawerNeutralisesEncodedControls(t *testing.T) {
+	rv := drawerReview()
+	rv.Findings = []store.Finding{{ID: 1, Path: "a.go", Line: 3, Body: concealProbe}}
+	d, c := openDrawer(t, 160, 40, rv)
+	out := renderDrawer(d, c, 40)
+	checkOnlyPaletteSGR(t, "drawer", out)
+	if plain := strings.Join(strings.Fields(ansi.Strip(out)), " "); !strings.Contains(plain, "This PR is garbage and so is its author") {
+		t.Errorf("the sentence is not visible:\n%s", plain)
+	}
+}

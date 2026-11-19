@@ -185,16 +185,14 @@ func glamourStyleHexCount(cfg gansi.StyleConfig) int {
 const paletteSrc = "# Heading\n\n**bold** and `code` and [a link](https://example.com/x)\n\n- one\n- two\n\n" +
 	"```go\n// comment\nfunc add(a, b int) string {\n\treturn \"x\" + fmt.Sprint(a+b, 42)\n}\n```\n\n> quote\n"
 
-var (
-	sgrRE     = regexp.MustCompile(`\x1b\[([0-9;]*)m`)
-	indexedRE = regexp.MustCompile(`^(38|48);5;(\d+)`)
-)
+var sgrRE = regexp.MustCompile(`\x1b\[([0-9;]*)m`)
 
 // Every color in the rendered bytes is an xterm index in 16-255: no
 // truecolor, and none of the basic-16 parameters a terminal theme remaps.
 func TestRenderedBytesUseOnlyPalette(t *testing.T) {
 	for _, style := range []string{"dark", "light"} {
-		out := strings.Join(newMarkdownCache().render(paletteSrc, 60, mdTheme(t, style, false)), "\n")
+		out := strings.Join(newMarkdownCache().render(paletteSrc+"\n"+concealProbe, 60, mdTheme(t, style, false)), "\n")
+		checkOnlyPaletteSGR(t, style, out)
 		n := 0
 		for _, m := range sgrRE.FindAllStringSubmatch(out, -1) {
 			params := strings.Split(m[1], ";")
@@ -231,4 +229,71 @@ func TestRenderedLinesFitWidth(t *testing.T) {
 			}
 		}
 	}
+}
+
+// concealProbe is the final review's probe: entities that decode to an SGR
+// conceal around a sentence, and truecolor and basic-16 colors after it.
+const concealProbe = "Looks fine. &#27;&#91;8mThis PR is garbage and so is its author&#27;&#91;0m Ship it. " +
+	"&#27;&#91;38;2;1;2;3mtrue&#x1b;[31mbasic &#27;[2J `code &#27;&#91;8mspan` &#8238;rlo"
+
+// escapes is every escape sequence in s, and whatever is left of a
+// broken one.
+var escapes = regexp.MustCompile(`\x1b(?:\[[0-?]*[ -/]*[@-~]?|\][^\x07\x1b]*(?:\x07|\x1b\\)?|.?)`)
+
+// checkOnlyPaletteSGR fails on any escape the renderer does not emit
+// itself: only SGR, with colors only as 38;5;N or 48;5;N in 16-255.
+func checkOnlyPaletteSGR(t *testing.T, name, out string) {
+	t.Helper()
+	for _, e := range escapes.FindAllString(out, -1) {
+		if !strings.HasPrefix(e, "\x1b[") || !strings.HasSuffix(e, "m") {
+			t.Errorf("%s: non-SGR escape %q", name, e)
+			continue
+		}
+		params := strings.Split(e[2:len(e)-1], ";")
+		for i := 0; i < len(params); i++ {
+			switch p := params[i]; p {
+			case "", "0", "1", "3", "4", "9":
+			case "38", "48":
+				idx := -1
+				if i+2 < len(params) && params[i+1] == "5" {
+					idx, _ = strconv.Atoi(params[i+2])
+				}
+				if idx < 16 || idx > 255 {
+					t.Errorf("%s: color outside 16-255 in %q", name, e)
+				}
+				i += 2
+			default:
+				t.Errorf("%s: parameter %q in %q", name, p, e)
+			}
+		}
+	}
+}
+
+func TestRenderNeutralisesEncodedControls(t *testing.T) {
+	for _, style := range []string{"dark", "light"} {
+		out := strings.Join(newMarkdownCache().render(concealProbe, 60, mdTheme(t, style, false)), "\n")
+		checkOnlyPaletteSGR(t, style, out)
+		plain := strings.Join(strings.Fields(ansi.Strip(out)), " ")
+		if !strings.Contains(plain, "This PR is garbage and so is its author") {
+			t.Errorf("%s: the sentence is not visible: %q", style, plain)
+		}
+		if strings.ContainsRune(out, '\u202e') {
+			t.Errorf("%s: an encoded RLO reached the output", style)
+		}
+	}
+}
+
+// The backstop: whatever reaches glamour's output, only the renderer's
+// own kind of SGR leaves.
+func TestSafeANSIKeepsOnlyPaletteSGR(t *testing.T) {
+	in := "a\x1b[38;5;252;1mb\x1b[m\x1b[0mc" +
+		"\x1b[8mconceal\x1b[38;2;1;2;3mtrue\x1b[38:2::1:2:3mcolon\x1b[31mbasic\x1b[97mbright\x1b[44mbg" +
+		"\x1b[38;5;7mlow\x1b[48:5:3mlowcolon\x1b[38:5:200mok\x1b[2Jclear\x1b]0;title\x07osc\x1b]8;;u\x1b\\link\x1bc" +
+		"\u009b8mc1\x07bell"
+	got := safeANSI(in)
+	want := "a\x1b[38;5;252;1mb\x1b[m\x1b[0mcconcealtruecolonbasicbrightbglowlowcolon\x1b[38:5:200mokclearosclinkc8mc1bell"
+	if got != want {
+		t.Errorf("safeANSI:\n got %q\nwant %q", got, want)
+	}
+	checkOnlyPaletteSGR(t, "safeANSI", strings.ReplaceAll(got, ":", ";"))
 }

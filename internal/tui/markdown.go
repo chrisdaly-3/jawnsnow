@@ -4,10 +4,11 @@ import (
 	"fmt"
 	"image/color"
 	"reflect"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
+	"unicode"
+	"unicode/utf8"
 
 	"charm.land/glamour/v2"
 	gansi "charm.land/glamour/v2/ansi"
@@ -16,6 +17,7 @@ import (
 	chromastyles "github.com/alecthomas/chroma/v2/styles"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/chrisdaly-3/jawnsnow/internal/post"
 	"github.com/chrisdaly-3/jawnsnow/internal/theme"
 )
 
@@ -70,14 +72,18 @@ func (c *markdownCache) renderUncached(src string, key mdKey) []string {
 		}
 		c.renderers[key] = r
 	}
-	out, err := r.Render(src)
+	// Markdown decodes character references, so "&#27;" would reach the
+	// terminal as a raw ESC, even inside a code span.
+	out, err := r.Render(post.ReplaceControlRefs(src))
 	if err != nil {
 		return plain()
 	}
 	// Glamour writes a link as an OSC 8 hyperlink around its URL, and has no
 	// option to turn that off. Claude controls the text and the URL, so the
 	// terminal must not get a clickable link; the URL stays visible as text.
-	out = osc8.ReplaceAllString(out, "")
+	// safeANSI drops it along with anything else glamour should not have
+	// passed through.
+	out = safeANSI(out)
 	lines := strings.Split(strings.Trim(out, "\n"), "\n")
 	for i, l := range lines {
 		lines[i] = strings.TrimRight(l, " ")
@@ -85,8 +91,84 @@ func (c *markdownCache) renderUncached(src string, key mdKey) []string {
 	return lines
 }
 
-// osc8 matches the start and end of an OSC 8 hyperlink.
-var osc8 = regexp.MustCompile("\x1b\\]8;[^\x07\x1b]*(\x07|\x1b\\\\)")
+// safeANSI keeps only the escapes glamour itself writes: SGR sequences
+// whose colors are xterm indices in 16-255 and whose other parameters are
+// bold, italic, underline, strikethrough or their resets. Every other
+// escape, OSC included, and every other control character but newline and
+// tab is dropped, so text that got through as an escape can't conceal,
+// recolor or move anything.
+func safeANSI(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); {
+		switch {
+		case s[i] == 0x1b && i+1 < len(s) && s[i+1] == '[':
+			j := i + 2
+			for j < len(s) && s[j] >= 0x30 && s[j] <= 0x3f {
+				j++
+			}
+			params, inter := s[i+2:j], j
+			for j < len(s) && s[j] >= 0x20 && s[j] <= 0x2f {
+				j++
+			}
+			if j < len(s) && s[j] >= 0x40 && s[j] <= 0x7e {
+				if s[j] == 'm' && j == inter && paletteSGR(params) {
+					b.WriteString(s[i : j+1])
+				}
+				j++
+			}
+			i = j
+		case s[i] == 0x1b && i+1 < len(s) && s[i+1] == ']':
+			j := i + 2
+			for j < len(s) && s[j] != 0x07 && s[j] != 0x1b {
+				j++
+			}
+			switch {
+			case j < len(s) && s[j] == 0x07:
+				j++
+			case j+1 < len(s) && s[j] == 0x1b && s[j+1] == '\\':
+				j += 2
+			}
+			i = j
+		default:
+			r, size := utf8.DecodeRuneInString(s[i:])
+			if r == '\n' || r == '\t' || !unicode.IsControl(r) {
+				b.WriteString(s[i : i+size])
+			}
+			i += size
+		}
+	}
+	return b.String()
+}
+
+// paletteSGR reports whether an SGR's parameters, in semicolon or colon
+// form, are ones glamour writes with snow's styles.
+func paletteSGR(params string) bool {
+	ps := strings.Split(params, ";")
+	for i := 0; i < len(ps); i++ {
+		if sub := strings.Split(ps[i], ":"); len(sub) > 1 {
+			if len(sub) != 3 || (sub[0] != "38" && sub[0] != "48") || sub[1] != "5" || !paletteIndex(sub[2]) {
+				return false
+			}
+			continue
+		}
+		switch ps[i] {
+		case "", "0", "1", "3", "4", "9", "22", "23", "24", "29", "39", "49":
+		case "38", "48":
+			if i+2 >= len(ps) || ps[i+1] != "5" || !paletteIndex(ps[i+2]) {
+				return false
+			}
+			i += 2
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func paletteIndex(s string) bool {
+	n, err := strconv.Atoi(s)
+	return err == nil && n >= 16 && n <= 255
+}
 
 // glamourStyle is the markdown style: glow's own dark or light style, with
 // every color rewritten to an xterm-256 index. Glamour's styles color with

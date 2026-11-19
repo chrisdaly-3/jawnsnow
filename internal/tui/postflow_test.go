@@ -696,3 +696,15 @@ func TestCtrlCWarningClearsWhenPostEnds(t *testing.T) {
 		}
 	}
 }
+
+// The preview shows an entity-encoded conceal's text in full, and writes
+// no escape the renderer does not emit itself.
+func TestPreviewShowsConcealedText(t *testing.T) {
+	h := newPostHarness(t, markdownReview(concealProbe), opts{})
+	h.press(t, "P", "enter")
+	out := h.m.postBody(160, 56)
+	checkOnlyPaletteSGR(t, "preview", out)
+	if got := modalText(h.m); !strings.Contains(got, "This PR is garbage and so is its author") {
+		t.Errorf("the sentence is hidden in the preview:\n%s", got)
+	}
+}
