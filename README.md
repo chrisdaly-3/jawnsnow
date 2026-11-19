@@ -67,11 +67,11 @@ The demo and screenshots use made-up PRs.
 
 ## Configuration
 
-Every option is commented in `~/.config/jawnsnow/config.toml`, and snow reloads the file when you save it. `snow config default` prints the defaults. Guides to the options will live in [`docs/`](docs/).
+Every option is commented in `~/.config/jawnsnow/config.toml`, and snow reloads the file when you save it. `snow config default` prints the defaults. [docs/configuration.md](docs/configuration.md) describes every key.
 
 ## Documentation
 
-[`docs/`](docs/) holds the demo recording, and the guides once they are written.
+The guide is in [docs/](docs/README.md): start with [docs/getting-started.md](docs/getting-started.md), then [keys](docs/keys.md), [views](docs/views.md), [reviews](docs/reviews.md), [posting](docs/posting.md), [files](docs/files.md) and [troubleshooting](docs/troubleshooting.md).
 
 ## Development
 
