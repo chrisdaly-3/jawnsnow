@@ -95,6 +95,10 @@ func (c Config) Validate() error {
 		}
 	}
 
+	if m := c.Theme.Markdown; m != "" && m != "dark" && m != "light" {
+		bad("theme.markdown must be \"dark\" or \"light\", got %q", m)
+	}
+
 	keys := make([]string, 0, len(c.Theme.Status))
 	for k := range c.Theme.Status {
 		keys = append(keys, k)

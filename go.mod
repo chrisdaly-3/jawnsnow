@@ -8,6 +8,7 @@ require (
 	charm.land/glamour/v2 v2.0.2-0.20261015065741-010543cac1a0
 	charm.land/lipgloss/v2 v2.1.1
 	github.com/BurntSushi/toml v1.6.0
+	github.com/alecthomas/chroma/v2 v2.27.0
 	github.com/charmbracelet/harmonica v0.2.0
 	github.com/charmbracelet/x/ansi v0.11.9
 	github.com/cli/go-gh/v2 v2.17.0
@@ -17,7 +18,6 @@ require (
 )
 
 require (
-	github.com/alecthomas/chroma/v2 v2.27.0 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/aymerick/douceur v0.2.0 // indirect

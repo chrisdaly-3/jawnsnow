@@ -30,6 +30,7 @@ type Theme struct {
 	accentColor color.Color
 	mutedColor  color.Color
 	noColor     bool
+	markdown    string
 }
 
 type defaultStyle struct {
@@ -78,6 +79,10 @@ func New(cfg config.ThemeConfig) (Theme, error) {
 	t := Theme{
 		statuses: make(map[string]statusDef, len(statusOrder)),
 		noColor:  os.Getenv("NO_COLOR") != "",
+		markdown: "dark",
+	}
+	if cfg.Markdown == "light" {
+		t.markdown = "light"
 	}
 	for _, name := range statusOrder {
 		d := defaults[name]
@@ -238,3 +243,6 @@ func (t Theme) NoColor() bool { return t.noColor }
 // color strings rather than lipgloss styles.
 func (t Theme) AccentColor() color.Color { return t.accentColor }
 func (t Theme) MutedColor() color.Color  { return t.mutedColor }
+
+// Markdown is the markdown style for review text: "dark" or "light".
+func (t Theme) Markdown() string { return t.markdown }

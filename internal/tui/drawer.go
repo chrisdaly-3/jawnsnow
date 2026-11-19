@@ -4,18 +4,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"image/color"
 	"math"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"charm.land/glamour/v2"
-	gansi "charm.land/glamour/v2/ansi"
-	"charm.land/glamour/v2/styles"
 	"github.com/charmbracelet/harmonica"
 	"github.com/charmbracelet/x/ansi"
 
@@ -576,108 +571,4 @@ func cleanBlock(s string) string {
 		lines[i] = clean(l)
 	}
 	return strings.Join(lines, "\n")
-}
-
-// ---- markdown ----
-
-// markdownCache renders markdown with glamour and remembers the result. A
-// glamour renderer is slow to build and the drawer redraws on every spinner
-// frame, so both renderers and rendered text are kept. It is a pointer in
-// the model because the model is copied on every update; only the
-// Bubble Tea goroutine touches it.
-type markdownCache struct {
-	renderers map[mdKey]*glamour.TermRenderer
-	text      map[mdText][]string
-}
-
-type mdKey struct {
-	width         int
-	accent, muted string
-	plain         bool
-}
-
-type mdText struct {
-	mdKey
-	src string
-}
-
-func newMarkdownCache() *markdownCache {
-	return &markdownCache{renderers: map[mdKey]*glamour.TermRenderer{}, text: map[mdText][]string{}}
-}
-
-// render turns src, which must already be clean, into lines of at most
-// width cells.
-func (c *markdownCache) render(src string, width int, th theme.Theme) []string {
-	width = max(width, 10)
-	key := mdKey{width: width, accent: colorString(th.AccentColor()), muted: colorString(th.MutedColor()), plain: th.NoColor()}
-	if lines, ok := c.text[mdText{key, src}]; ok {
-		return lines
-	}
-	lines := c.renderUncached(src, key)
-	c.text[mdText{key, src}] = lines
-	return lines
-}
-
-func (c *markdownCache) renderUncached(src string, key mdKey) []string {
-	plain := func() []string { return strings.Split(ansi.Wrap(src, key.width, ""), "\n") }
-	r, ok := c.renderers[key]
-	if !ok {
-		var err error
-		r, err = glamour.NewTermRenderer(glamour.WithStyles(glamourStyle(key)), glamour.WithWordWrap(key.width))
-		if err != nil {
-			return plain()
-		}
-		c.renderers[key] = r
-	}
-	out, err := r.Render(src)
-	if err != nil {
-		return plain()
-	}
-	// Glamour writes a link as an OSC 8 hyperlink around its URL, and has no
-	// option to turn that off. Claude controls the text and the URL, so the
-	// terminal must not get a clickable link; the URL stays visible as text.
-	out = osc8.ReplaceAllString(out, "")
-	lines := strings.Split(strings.Trim(out, "\n"), "\n")
-	for i, l := range lines {
-		lines[i] = strings.TrimRight(l, " ")
-	}
-	return lines
-}
-
-// osc8 matches the start and end of an OSC 8 hyperlink.
-var osc8 = regexp.MustCompile("\x1b\\]8;[^\x07\x1b]*(\x07|\x1b\\\\)")
-
-// glamourStyle is the markdown style: glamour's ASCII style with the
-// theme's colors on top. Glamour's own dark and light styles are not used:
-// they color with hex values, which a 256-color terminal maps onto the
-// basic 16, the one range snow's colors never use.
-func glamourStyle(k mdKey) gansi.StyleConfig {
-	s := styles.ASCIIStyleConfig
-	zero := uint(0)
-	s.Document.BlockPrefix, s.Document.BlockSuffix, s.Document.Margin = "", "", &zero
-	if k.plain {
-		return s
-	}
-	accent, muted, yes := k.accent, k.muted, true
-	for _, h := range []*gansi.StyleBlock{&s.Heading, &s.H1, &s.H2, &s.H3, &s.H4, &s.H5, &s.H6} {
-		h.Color, h.Bold = &accent, &yes
-	}
-	s.Strong = gansi.StylePrimitive{Bold: &yes}
-	s.Emph = gansi.StylePrimitive{Italic: &yes}
-	s.Strikethrough = gansi.StylePrimitive{CrossedOut: &yes}
-	s.Code.StylePrimitive = gansi.StylePrimitive{Color: &muted}
-	s.CodeBlock.StyleBlock.StylePrimitive = gansi.StylePrimitive{Color: &muted}
-	s.BlockQuote.StylePrimitive = gansi.StylePrimitive{Color: &muted}
-	s.Link = gansi.StylePrimitive{Color: &accent, Underline: &yes}
-	s.LinkText = gansi.StylePrimitive{Color: &accent}
-	return s
-}
-
-// colorString is a color as glamour reads it: an xterm index, or #rrggbb.
-func colorString(c color.Color) string {
-	if i, ok := c.(ansi.IndexedColor); ok {
-		return strconv.Itoa(int(i))
-	}
-	r, g, b, _ := c.RGBA()
-	return fmt.Sprintf("#%02x%02x%02x", r>>8, g>>8, b>>8)
 }

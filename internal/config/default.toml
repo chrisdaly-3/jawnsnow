@@ -196,6 +196,11 @@ effort = "medium"
 # per_review_usd = 2
 
 # ─── Theme ────────────────────────────────────────────────────────────────────
+[theme]
+# Markdown style for review text in the drawer and the post preview: glow's
+# "dark" or "light" style. Pick the one that matches your terminal background.
+# markdown = "dark"
+
 # Override any status's label, color or spinner. Colors are xterm-256 indices
 # 16–255 (0–15 are rejected because terminal themes remap them) or hex. Spinner is
 # a bubbles spinner name ("dot", "line", "minidot", "pulse", "points", "meter") or

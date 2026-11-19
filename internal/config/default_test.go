@@ -139,3 +139,22 @@ func TestDefaultTOMLEveryAssignmentCommented(t *testing.T) {
 		t.Fatalf("found only %d assignments; the scan is broken", n)
 	}
 }
+
+// The markdown style is documented as a commented assignment under a [theme]
+// table, and the file still parses.
+func TestDefaultTOMLDocumentsMarkdown(t *testing.T) {
+	text := string(DefaultTOML())
+	i := strings.Index(text, "\n[theme]\n")
+	if i < 0 {
+		t.Fatal("default.toml has no [theme] table")
+	}
+	j := strings.Index(text[i:], `# markdown = "dark"`)
+	k := strings.Index(text, "[theme.status]")
+	if j < 0 || i+j > k {
+		t.Fatal(`default.toml lacks a commented # markdown = "dark" between [theme] and [theme.status]`)
+	}
+	var cfg Config
+	if _, err := toml.Decode(text, &cfg); err != nil {
+		t.Fatalf("default.toml does not parse: %v", err)
+	}
+}

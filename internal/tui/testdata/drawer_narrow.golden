@@ -16,7 +16,7 @@
 │                                        
 │     repo := r.Repo                     
 │                                        
-│   Check r first.                       
+│   Check  r  first.                     
 │                                        
 │   pkg/policy/decision.go:5-8           
 │   blocking  correctness  [fixed]       
@@ -27,7 +27,7 @@
 │   • log the miss                       
 │                                        
 │   pkg/policy/decision.go:12            
-│   nit: rename x to repoName.           
+│   nit: rename  x  to  repoName .       
 │                                        
 │   unanchored  [fixed]                  
 │   question: why not cache the lookup   

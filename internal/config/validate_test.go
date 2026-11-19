@@ -91,3 +91,19 @@ func TestValidateReportsAllProblems(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateMarkdownStyle(t *testing.T) {
+	for _, ok := range []string{"", "dark", "light"} {
+		c := Defaults()
+		c.Theme.Markdown = ok
+		if err := c.Validate(); err != nil {
+			t.Errorf("markdown %q: Validate() = %v", ok, err)
+		}
+	}
+	c := Defaults()
+	c.Theme.Markdown = "solarized"
+	err := c.Validate()
+	if err == nil || !strings.Contains(err.Error(), `theme.markdown must be "dark" or "light"`) {
+		t.Errorf("markdown solarized: Validate() = %v", err)
+	}
+}

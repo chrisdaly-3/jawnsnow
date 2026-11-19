@@ -200,3 +200,12 @@ func TestBannerFillsWithTheIndexAndContrastingText(t *testing.T) {
 		t.Errorf("NO_COLOR Banner = %q, want plain text", got)
 	}
 }
+
+func TestThemeMarkdownDefaultsDark(t *testing.T) {
+	if got := mustNew(t, config.ThemeConfig{}).Markdown(); got != "dark" {
+		t.Errorf("empty Markdown() = %q, want dark", got)
+	}
+	if got := mustNew(t, config.ThemeConfig{Markdown: "light"}).Markdown(); got != "light" {
+		t.Errorf("light Markdown() = %q, want light", got)
+	}
+}

@@ -95,10 +95,12 @@ type Match struct {
 	MaxLines int      `toml:"max_lines"`
 }
 
-// ThemeConfig overrides status labels and colors.
+// ThemeConfig overrides status labels and colors, and picks the markdown
+// style of review text.
 type ThemeConfig struct {
-	Status map[string]StatusStyle `toml:"status"`
-	Chrome Chrome                 `toml:"chrome"`
+	Markdown string                 `toml:"markdown"`
+	Status   map[string]StatusStyle `toml:"status"`
+	Chrome   Chrome                 `toml:"chrome"`
 }
 
 // StatusStyle restyles one status, keyed by its name such as "CI_WAITING".
