@@ -472,3 +472,22 @@ func TestQuestionMarkOpensCostFilterHelp(t *testing.T) {
 		t.Errorf("? again: help %v, picking %v; want the picker back", h.m.help, h.m.cost.picking)
 	}
 }
+
+// Two loads of the same range can land out of order; the older one must
+// not replace the newer.
+func TestCostDropsAnOlderLoad(t *testing.T) {
+	h := costHarness(t, opts{}, 120, 40, true)
+	h.press(t, "4")
+	m, first := h.m.loadCost()
+	older := costLoads(t, first)
+	seedCost(t, h.store, []store.CostRow{spend(0, 8, "r9", "PR_a", "acme/widgets", "alice", "opus", "first_pass", 5)}, nil)
+	m, second := m.loadCost()
+	newer := costLoads(t, second)
+	if len(older) != 1 || len(newer) != 1 {
+		t.Fatalf("loads: %d and %d", len(older), len(newer))
+	}
+	m, _ = settle(t, m, newer[0], older[0])
+	if n, want := len(m.cost.rows), len(newer[0].Rows); n != want || n == len(older[0].Rows) {
+		t.Errorf("rows = %d, want the newer load's %d (older had %d)", n, want, len(older[0].Rows))
+	}
+}

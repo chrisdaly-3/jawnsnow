@@ -23,6 +23,7 @@ var reviewLogOutcomes = []string{"", "complete", "incomplete", "failed"}
 // reviewLogLoadedMsg carries the reviews Filter matched. It is applied only
 // while Filter is still the one selected.
 type reviewLogLoadedMsg struct {
+	Seq     int // which load request this answers; see reviewLogModel.issued
 	Filter  store.LogFilter
 	Entries []store.LogEntry
 	// Posted is the IDs of the reviews that were posted to GitHub.
@@ -41,6 +42,9 @@ type reviewLogModel struct {
 	// answer arrives.
 	shown  store.LogFilter
 	loaded bool
+	// issued counts load requests; applied is the newest one whose answer
+	// was taken, so a slow older read can't replace a newer one.
+	issued, applied int
 
 	text, outcome string
 	// prID filters to one PR; label is the "repo#n" its chip shows.
@@ -86,18 +90,20 @@ func (m Model) loadReviewLog() (Model, tea.Cmd) { return m.loadReviewLogKeeping(
 // keep when the load still has it.
 func (m Model) loadReviewLogKeeping(keep string) (Model, tea.Cmd) {
 	st, f := m.store, m.reviewLog.filter()
+	m.reviewLog.issued++
+	seq := m.reviewLog.issued
 	return m, func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), inputsTimeout)
 		defer cancel()
 		es, err := st.ReviewLog(ctx, f)
 		if err != nil {
-			return reviewLogLoadedMsg{Filter: f, Err: err}
+			return reviewLogLoadedMsg{Seq: seq, Filter: f, Err: err}
 		}
 		posted, err := st.PostedReviewIDs(ctx)
 		if err != nil {
-			return reviewLogLoadedMsg{Filter: f, Err: err}
+			return reviewLogLoadedMsg{Seq: seq, Filter: f, Err: err}
 		}
-		return reviewLogLoadedMsg{Filter: f, Entries: es, Posted: posted, Keep: keep}
+		return reviewLogLoadedMsg{Seq: seq, Filter: f, Entries: es, Posted: posted, Keep: keep}
 	}
 }
 
@@ -119,9 +125,10 @@ func (m Model) updateReviewLog(msg tea.Msg) (_ Model, _ tea.Cmd, ok bool) {
 	switch msg := msg.(type) {
 	case reviewLogLoadedMsg:
 		r := m.reviewLog
-		if msg.Filter != r.filter() {
+		if msg.Filter != r.filter() || msg.Seq < r.applied {
 			return m, nil, true
 		}
+		r.applied = msg.Seq
 		r.loaded, r.shown, r.entries, r.posted, r.err = true, msg.Filter, msg.Entries, msg.Posted, ""
 		if msg.Err != nil {
 			r.entries, r.posted, r.err = nil, nil, "could not read reviews: "+msg.Err.Error()

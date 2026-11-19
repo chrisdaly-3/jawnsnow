@@ -275,3 +275,25 @@ func TestReviewLogReloadsAfterReviewAndPost(t *testing.T) {
 		t.Errorf("a review finishing outside the Reviews view reloaded its log %d times", n)
 	}
 }
+
+// Two loads with the same filter can land out of order; the older one
+// must not replace the newer.
+func TestReviewLogDropsAnOlderLoad(t *testing.T) {
+	h := logHarness(t, 120, 30, true)
+	h.press(t, "3")
+	m, first := h.m.loadReviewLog()
+	older := logLoads(t, first)
+	extra := store.Review{ID: "r5", PRID: "1", Repo: "acme/widgets", Number: 1, Outcome: "complete", StartedAt: t0}
+	if err := h.store.SaveReview(context.Background(), extra); err != nil {
+		t.Fatal(err)
+	}
+	m, second := m.loadReviewLog()
+	newer := logLoads(t, second)
+	if len(older) != 1 || len(newer) != 1 {
+		t.Fatalf("loads: %d and %d", len(older), len(newer))
+	}
+	m, _ = settle(t, m, newer[0], older[0])
+	if n := len(m.reviewLog.entries); n != 5 || m.reviewLog.entries[0].Review.ID != "r5" {
+		t.Errorf("entries = %d (first %q), want the newer load's 5 starting r5", n, m.reviewLog.entries[0].Review.ID)
+	}
+}

@@ -61,6 +61,7 @@ type (
 	// costLoadedMsg carries the ledger rows of [From, To) and the "repo#n"
 	// labels of their most expensive PRs.
 	costLoadedMsg struct {
+		Seq      int // which load request this answers; see costModel.issued
 		From, To time.Time
 		Rows     []store.CostRow
 		Labels   map[string]string
@@ -81,6 +82,9 @@ type costModel struct {
 	from, to time.Time
 	// loaded is set once rows for [from, to) arrive.
 	loaded bool
+	// issued counts load requests; applied is the newest one whose answer
+	// was taken, so a slow older read can't replace a newer one.
+	issued, applied int
 	rows   []store.CostRow
 	err    string
 	// labels maps PR IDs to "repo#n". A PR the store has no review for maps
@@ -216,15 +220,17 @@ func (m Model) enterCost() (Model, tea.Cmd) {
 // PRs that top it under the current filters.
 func (m Model) loadCost() (Model, tea.Cmd) {
 	st, from, to, q := m.store, m.cost.from, m.cost.to, m.cost.query()
+	m.cost.issued++
+	seq := m.cost.issued
 	return m, func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), inputsTimeout)
 		defer cancel()
 		rows, err := st.CostRows(ctx, store.CostFilter{From: from, To: to})
 		if err != nil {
-			return costLoadedMsg{From: from, To: to, Err: err}
+			return costLoadedMsg{Seq: seq, From: from, To: to, Err: err}
 		}
 		_, sum := costs.Aggregate(rows, q)
-		return costLoadedMsg{From: from, To: to, Rows: rows, Labels: topLabels(ctx, st, sum.Top)}
+		return costLoadedMsg{Seq: seq, From: from, To: to, Rows: rows, Labels: topLabels(ctx, st, sum.Top)}
 	}
 }
 
@@ -274,9 +280,10 @@ func (m Model) updateCost(msg tea.Msg) (_ Model, _ tea.Cmd, ok bool) {
 	switch msg := msg.(type) {
 	case costLoadedMsg:
 		c := m.cost
-		if !msg.From.Equal(c.from) || !msg.To.Equal(c.to) {
+		if !msg.From.Equal(c.from) || !msg.To.Equal(c.to) || msg.Seq < c.applied {
 			return m, nil, true
 		}
+		c.applied = msg.Seq
 		c.loaded, c.rows, c.err = true, msg.Rows, ""
 		if msg.Err != nil {
 			c.rows, c.err = nil, "could not read costs: "+msg.Err.Error()
