@@ -106,6 +106,11 @@ func TestSchemaDropsPostingFields(t *testing.T) {
 	if want := []string{"addressed", "outstanding", "answered"}; !slices.Equal(states, want) {
 		t.Errorf("ledger states = %v, want %v", states, want)
 	}
+	// An earlier finding's id is a number; a string id let the reviewer put a
+	// GitHub thread ID there (chainguard-dev/mono#85931).
+	if typ := iprops["id"].(map[string]any)["type"]; typ != "integer" {
+		t.Errorf("ledger id type = %v, want integer", typ)
+	}
 	if _, ok := props["verdict"]; !ok {
 		t.Error("verdict was dropped")
 	}
@@ -248,6 +253,20 @@ func TestPromptMarksPostedEarlierFindings(t *testing.T) {
 		if strings.HasPrefix(l, "11 ·") && strings.Contains(l, "posted as thread") {
 			t.Errorf("unposted finding marked posted: %q", l)
 		}
+	}
+}
+
+// TestPromptSaysWhenThereAreNoEarlierFindings: with nothing to reconcile, the
+// reviewer reconciled the PR's review threads instead (mono#85931).
+func TestPromptSaysWhenThereAreNoEarlierFindings(t *testing.T) {
+	in := testInput()
+	in.Earlier = nil
+	p := BuildPrompt(in)
+	if !strings.Contains(p, "## Earlier findings\n\nNone. Leave `ledger` empty.\n") {
+		t.Errorf("prompt doesn't say there are no earlier findings:\n%s", p)
+	}
+	if !strings.Contains(prompt.Reviewer(), "never a review thread ID") {
+		t.Error("step 7 doesn't say a ledger id is never a review thread ID")
 	}
 }
 

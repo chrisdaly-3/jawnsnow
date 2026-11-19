@@ -3,6 +3,7 @@ package review
 import (
 	"encoding/json"
 	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/chrisdaly-3/jawnsnow/internal/store"
@@ -57,12 +58,57 @@ func TestParseOutputErrors(t *testing.T) {
 		"null":         json.RawMessage(`null`),
 		"array":        json.RawMessage(`[]`),
 		"string":       json.RawMessage(`"x"`),
-		"bad ledger":   json.RawMessage(`{"ledger":[{"id":"abc","status":"addressed"}]}`),
 		"bad findings": json.RawMessage(`{"findings":"x"}`),
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := ParseOutput(raw); err == nil {
 				t.Fatal("want an error")
+			}
+		})
+	}
+}
+
+// TestParseOutputSkipsLedgerIDsThatAreNotFindings uses the ledger shape that
+// failed both reviews of chainguard-dev/mono#85931: the reviewer listed the
+// PR's GitHub review threads by thread ID. A ledger entry that can't name an
+// earlier finding is skipped and reported, never a reason to drop the review.
+func TestParseOutputSkipsLedgerIDsThatAreNotFindings(t *testing.T) {
+	raw := json.RawMessage(`{"findings":[],"verdict":"approve","ledger":[
+		{"id":"PRRT_kwDOGIaHbc65lRmx","status":"addressed"},
+		{"id":"12","status":"outstanding"},
+		{"id":7,"status":"addressed"},
+		{"id":"abc","status":"addressed"}]}`)
+	out, err := ParseOutput(raw)
+	if err != nil {
+		t.Fatalf("ParseOutput: %v", err)
+	}
+	if want := []LedgerEntry{{ID: 12, State: "outstanding"}, {ID: 7, State: "addressed"}}; !slices.Equal(out.Ledger, want) {
+		t.Errorf("Ledger = %v, want %v", out.Ledger, want)
+	}
+	if want := []string{"PRRT_kwDOGIaHbc65lRmx", "abc"}; !slices.Equal(out.BadLedgerIDs, want) {
+		t.Errorf("BadLedgerIDs = %v, want %v", out.BadLedgerIDs, want)
+	}
+	if out.Verdict != "approve" {
+		t.Errorf("Verdict = %q, want approve", out.Verdict)
+	}
+}
+
+func TestLedgerNote(t *testing.T) {
+	earlier := []store.Finding{{ID: 7}, {ID: 9}}
+	cases := []struct {
+		name string
+		out  Output
+		want string
+	}{
+		{"all match", Output{Ledger: []LedgerEntry{{ID: 7}, {ID: 9}}}, ""},
+		{"none given", Output{}, ""},
+		{"one unknown id", Output{Ledger: []LedgerEntry{{ID: 7}, {ID: 12}}}, "ignored 1 ledger entry that matches no earlier finding"},
+		{"thread ids and an unknown id", Output{Ledger: []LedgerEntry{{ID: 12}}, BadLedgerIDs: []string{"PRRT_a", "PRRT_b"}}, "ignored 3 ledger entries that match no earlier finding"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ledgerNote(earlier, tc.out); got != tc.want {
+				t.Errorf("ledgerNote = %q, want %q", got, tc.want)
 			}
 		})
 	}

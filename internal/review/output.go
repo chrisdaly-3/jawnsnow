@@ -30,8 +30,11 @@ type Examined struct{ Docs, Code, Usages, Tests []string }
 
 // Output is the reviewer's structured output, shaped by prompt/schema.json.
 type Output struct {
-	Findings               []OutFinding
-	Ledger                 []LedgerEntry
+	Findings []OutFinding
+	Ledger   []LedgerEntry
+	// BadLedgerIDs are ledger ids that aren't integers, such as a GitHub
+	// review thread ID. They name no earlier finding and are skipped.
+	BadLedgerIDs           []string
 	DesignRefs             []string
 	Note, Understanding    string
 	Assumptions            []store.Assumption
@@ -49,8 +52,8 @@ type rawOutput struct {
 		Category  string `json:"category"`
 	} `json:"findings"`
 	Ledger []struct {
-		ID     json.Number `json:"id"`
-		Status string      `json:"status"`
+		ID     json.RawMessage `json:"id"`
+		Status string          `json:"status"`
 	} `json:"ledger"`
 	DesignRefs  json.RawMessage `json:"design_refs"`
 	Note        string          `json:"note"`
@@ -69,8 +72,10 @@ type rawOutput struct {
 	} `json:"examined"`
 }
 
-// ParseOutput reads the reviewer's output. It fails on empty output, on
-// JSON that is not an object, and on a ledger id that is not an integer.
+// ParseOutput reads the reviewer's output. It fails on empty output and on
+// JSON that is not an object. A ledger id that is not an integer, written as
+// a number or a string, goes to BadLedgerIDs instead: one stray entry must
+// not throw away a finished review.
 // Fields the output omits stay zero; the schema, enforced by claude, is
 // what requires them.
 func ParseOutput(raw json.RawMessage) (Output, error) {
@@ -99,9 +104,15 @@ func ParseOutput(raw json.RawMessage) (Output, error) {
 		})
 	}
 	for _, l := range r.Ledger {
-		id, err := strconv.ParseInt(l.ID.String(), 10, 64)
+		text := string(bytes.TrimSpace(l.ID))
+		var s string
+		if json.Unmarshal(l.ID, &s) == nil {
+			text = s
+		}
+		id, err := strconv.ParseInt(text, 10, 64)
 		if err != nil {
-			return Output{}, fmt.Errorf("ledger id %q is not an integer", l.ID)
+			out.BadLedgerIDs = append(out.BadLedgerIDs, text)
+			continue
 		}
 		out.Ledger = append(out.Ledger, LedgerEntry{ID: id, State: l.Status})
 	}

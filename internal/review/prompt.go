@@ -116,9 +116,13 @@ func BuildPrompt(in PromptInput) string {
 		b.WriteString("\n")
 	}
 
-	if len(in.Earlier) > 0 {
-		b.WriteString("## Earlier findings\n\n")
-		b.WriteString("Format: id · path:line · blocking? · [posted as thread <id> ·] body\n\n")
+	b.WriteString("## Earlier findings\n\n")
+	if len(in.Earlier) == 0 {
+		// Told nothing, the reviewer reconciles the PR's review threads by
+		// thread ID instead (chainguard-dev/mono#85931).
+		b.WriteString("None. Leave `ledger` empty.\n\n")
+	} else {
+		b.WriteString("Format: <ledger id> · path:line · blocking? · [posted as thread <thread ID> ·] body\n\n")
 		for _, f := range in.Earlier {
 			sev := "non-blocking"
 			if f.Blocking {

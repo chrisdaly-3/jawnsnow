@@ -363,6 +363,9 @@ func (e *Engine) review(ctx context.Context, req Request, rv *store.Review, onEv
 	if stopped != "" {
 		notes = append(notes, stopped)
 	}
+	if n := ledgerNote(earlier, out); n != "" {
+		notes = append(notes, n)
+	}
 	rv.Verdict, rv.VerdictReason, rv.Understanding = out.Verdict, out.VerdictReason, out.Understanding
 	rv.Assumptions = out.Assumptions
 	if rv.Raw, err = withExamined(raw, VerifiedExamined(out.Examined, seen, worktree)); err != nil {
@@ -391,6 +394,25 @@ func openFindings(fs []store.Finding) []store.Finding {
 		}
 	}
 	return out
+}
+
+// ledgerNote reports ledger entries that name no earlier finding: ids that
+// aren't integers (such as a GitHub review thread ID) and integers that match
+// no finding in earlier. applyLedger ignores them; the note makes that visible.
+func ledgerNote(earlier []store.Finding, out Output) string {
+	n := len(out.BadLedgerIDs)
+	for _, l := range out.Ledger {
+		if !slices.ContainsFunc(earlier, func(f store.Finding) bool { return f.ID == l.ID }) {
+			n++
+		}
+	}
+	switch n {
+	case 0:
+		return ""
+	case 1:
+		return "ignored 1 ledger entry that matches no earlier finding"
+	}
+	return fmt.Sprintf("ignored %d ledger entries that match no earlier finding", n)
 }
 
 // applyLedger returns copies of earlier with the reviewer's ledger states,

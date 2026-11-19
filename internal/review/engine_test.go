@@ -699,6 +699,31 @@ func TestEngineRunErrorIsFailed(t *testing.T) {
 	}
 }
 
+// TestEngineKeepsReviewWithThreadIDLedger replays the output that failed both
+// reviews of chainguard-dev/mono#85931: a finished review whose ledger lists
+// the PR's GitHub review threads by thread ID. The review is kept, and a note
+// says the entries were ignored.
+func TestEngineKeepsReviewWithThreadIDLedger(t *testing.T) {
+	env := newEngineEnv(t)
+	out := output(nil, nil)
+	out["verdict"] = "approve"
+	out["ledger"] = []map[string]any{
+		{"id": "PRRT_kwDOGIaHbc65lRmx", "status": "addressed"},
+		{"id": "PRRT_kwDOGIaHbc65laOX", "status": "addressed"},
+	}
+	env.claude.script(fakeRun{Reads: readAll, Output: out, Cost: 0.35})
+	rv, err := env.run(t, Request{Mode: ModeManual})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if rv.Outcome == "failed" || rv.Verdict != "approve" {
+		t.Errorf("outcome %q verdict %q, want a kept approval", rv.Outcome, rv.Verdict)
+	}
+	if !strings.Contains(rv.Note, "ignored 2 ledger entries that match no earlier finding") {
+		t.Errorf("note = %q, want the ignored-ledger note", rv.Note)
+	}
+}
+
 // A run killed before its result line has spent an unknown amount; the
 // ledger says so rather than recording $0.
 func TestEngineKilledRunCostIsUnknown(t *testing.T) {

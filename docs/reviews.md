@@ -181,7 +181,7 @@ Each pass after the first gets the findings of the PR's latest complete or incom
 
 These findings are saved with the new review, after its new ones. The drawer sums them up as `2 fixed · 1 still open · 1 answered · 3 new` and tags each carried finding `[fixed]`, `[still open]` or `[answered]`. The Claude badge counts only blocking findings that are new or still open. When you post the new review, fixed and answered findings start unchecked.
 
-Findings you posted carry their GitHub thread ID, and the prompt marks them `posted as thread <id>`, so the reviewer can match them to the threads (with the author's replies) in the PR's text.
+Findings you posted carry their GitHub thread ID, and the prompt marks them `posted as thread <thread ID>`, so the reviewer can match them to the threads (with the author's replies) in the PR's text. A ledger entry names an earlier finding by the number at the start of its line, never by a thread ID. When there are no earlier findings, the prompt says `None. Leave ledger empty.` An entry that names no earlier finding, such as a thread ID, is ignored, and the review's check notes say `ignored N ledger entries that match no earlier finding`; it never fails the review.
 
 ## The workspace
 
