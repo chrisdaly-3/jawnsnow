@@ -189,7 +189,12 @@ func buildDeps(getenv func(string) string, newClient func() (github.Client, erro
 
 	dataDir := filepath.Dir(store.DataPath())
 	deps.DataDir = dataDir
-	unlockData, lockOff := lockDataDir(dataDir)
+	unlockData, lockOff, lockHeld := lockDataDir(dataDir)
+	// The post flow's double-post guard reads this process's memory as
+	// well as the store, so only the snow holding the lock may post.
+	if lockHeld && deps.Poster != nil {
+		deps.Poster, deps.PostOff = nil, "another snow is running on this machine — post from that window"
+	}
 	var engine *review.Engine
 	deps.Claude, deps.ReviewsOff = detectClaude()
 	switch {
@@ -263,25 +268,26 @@ func buildDeps(getenv func(string) string, newClient func() (github.Client, erro
 
 // lockDataDir takes the lock that lets one snow per data dir run reviews:
 // two would free each other's busy worktree slots. It returns the unlock
-// and, when the lock is not this process's, why reviews are off. The lock
-// is an flock, so it goes when the process does, however it exits.
-func lockDataDir(dir string) (func(), string) {
+// and, when the lock is not this process's, why reviews are off; held says
+// another snow has it. The lock is an flock, so it goes when the process
+// does, however it exits.
+func lockDataDir(dir string) (unlock func(), off string, held bool) {
 	noop := func() {}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return noop, fmt.Sprintf("can't lock the data directory: %v", err)
+		return noop, fmt.Sprintf("can't lock the data directory: %v", err), false
 	}
 	f, err := os.OpenFile(filepath.Join(dir, "jawnsnow.lock"), os.O_RDWR|os.O_CREATE, 0o600)
 	if err != nil {
-		return noop, fmt.Sprintf("can't lock the data directory: %v", err)
+		return noop, fmt.Sprintf("can't lock the data directory: %v", err), false
 	}
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		_ = f.Close()
 		if errors.Is(err, syscall.EWOULDBLOCK) {
-			return noop, "another snow is running reviews on this machine"
+			return noop, "another snow is running reviews on this machine", true
 		}
-		return noop, fmt.Sprintf("can't lock the data directory: %v", err)
+		return noop, fmt.Sprintf("can't lock the data directory: %v", err), false
 	}
-	return func() { _ = f.Close() }, ""
+	return func() { _ = f.Close() }, "", false
 }
 
 // detectClaude finds claude on PATH and asks whether it is usable. A missing

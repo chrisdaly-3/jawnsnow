@@ -345,6 +345,13 @@ func TestSecondSnowRunsNoReviews(t *testing.T) {
 	if second.Reviewer != nil || second.ReviewsOff != "another snow is running reviews on this machine" {
 		t.Errorf("second: reviewer=%v off=%q", second.Reviewer, second.ReviewsOff)
 	}
+	// Posting is off too: the first snow's post guard can't see this one.
+	if second.Poster != nil || second.PostOff != "another snow is running on this machine — post from that window" {
+		t.Errorf("second: poster=%v off=%q", second.Poster, second.PostOff)
+	}
+	if first.Poster == nil {
+		t.Error("first: no poster")
+	}
 	cleanupSecond()
 	cleanupFirst()
 
@@ -356,6 +363,9 @@ func TestSecondSnowRunsNoReviews(t *testing.T) {
 	defer cleanupThird()
 	if third.Reviewer == nil || third.ReviewsOff != "" {
 		t.Errorf("after the first quit: reviewer=%v off=%q", third.Reviewer, third.ReviewsOff)
+	}
+	if third.Poster == nil || third.PostOff != "" {
+		t.Errorf("after the first quit: poster=%v off=%q", third.Poster, third.PostOff)
 	}
 }
 
