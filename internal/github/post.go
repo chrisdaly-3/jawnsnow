@@ -17,7 +17,7 @@ const addReviewMutation = `mutation($input: AddPullRequestReviewInput!) {
     pullRequestReview {
       id
       url
-      comments(first: 100) { nodes { id path line } }
+      comments(first: 100) { nodes { id path line originalLine } }
     }
   }
 }`
@@ -48,9 +48,12 @@ type PostInput struct {
 	Threads                      []PostThread
 }
 
+// PostedComment is one comment of a posted review. Line is where it sits
+// at the PR's head, 0 when that line is gone; OriginalLine is the line it
+// was posted on, which is what a review of an older commit can match.
 type PostedComment struct {
-	ID, Path string
-	Line     int
+	ID, Path           string
+	Line, OriginalLine int
 }
 
 type PostResult struct {
@@ -115,9 +118,10 @@ func (p *poster) PostReview(ctx context.Context, in PostInput) (PostResult, erro
 				URL      string `json:"url"`
 				Comments struct {
 					Nodes []struct {
-						ID   string `json:"id"`
-						Path string `json:"path"`
-						Line *int   `json:"line"`
+						ID           string `json:"id"`
+						Path         string `json:"path"`
+						Line         *int   `json:"line"`
+						OriginalLine *int   `json:"originalLine"`
 					} `json:"nodes"`
 				} `json:"comments"`
 			} `json:"pullRequestReview"`
@@ -135,6 +139,9 @@ func (p *poster) PostReview(ctx context.Context, in PostInput) (PostResult, erro
 		c := PostedComment{ID: n.ID, Path: n.Path}
 		if n.Line != nil {
 			c.Line = *n.Line
+		}
+		if n.OriginalLine != nil {
+			c.OriginalLine = *n.OriginalLine
 		}
 		res.Comments = append(res.Comments, c)
 	}

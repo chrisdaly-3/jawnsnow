@@ -37,6 +37,9 @@ type Preview struct {
 	Commit string   // short OID
 	Parts  []Part   // the summary first (when non-blank), then each thread in payload order
 	Hidden []string // HiddenContent over every part, each prefixed "<label>: "
+	// ThreadFindings is the finding ID behind each of in.Threads, in the
+	// same order, so a posted comment can be traced back to its finding.
+	ThreadFindings []int64
 }
 
 const shortOIDLen = 7
@@ -103,6 +106,7 @@ func Build(r store.Review, prID string, sel Selection) (in github.PostInput, p P
 	}
 
 	var threads []github.PostThread
+	var threadFindings []int64
 	var notes []store.Finding
 	for _, f := range r.Findings {
 		if inc, ok := sel.Include[f.ID]; ok && !inc {
@@ -120,6 +124,7 @@ func Build(r store.Review, prID string, sel Selection) (in github.PostInput, p P
 			t.StartLine = f.StartLine
 		}
 		threads = append(threads, t)
+		threadFindings = append(threadFindings, f.ID)
 	}
 
 	own := Sanitize(sel.Body)
@@ -143,7 +148,7 @@ func Build(r store.Review, prID string, sel Selection) (in github.PostInput, p P
 	}
 
 	in = github.PostInput{PRID: prID, CommitOID: r.HeadOID, Event: string(sel.Event), Body: body, Threads: threads}
-	p = Preview{Event: sel.Event, Commit: shortOID(r.HeadOID)}
+	p = Preview{Event: sel.Event, Commit: shortOID(r.HeadOID), ThreadFindings: threadFindings}
 	add := func(label, md string) {
 		p.Parts = append(p.Parts, Part{Label: label, Markdown: md})
 		for _, h := range HiddenContent(md) {

@@ -380,3 +380,26 @@ func TestSanitize(t *testing.T) {
 		t.Errorf("got %q", got)
 	}
 }
+
+func TestPreviewThreadFindingsLineUpWithThreads(t *testing.T) {
+	left := anchored(2, "a.go", 5, "left out")
+	r := review(anchored(1, "a.go", 3, "one"), left, unanchored(3, "b.go", "note"),
+		anchored(4, "a.go", 3, "same line"), anchored(5, "c.go", 9, "three"))
+	in, p, err := Build(r, "PR_node", Selection{Event: Comment, Include: map[int64]bool{2: false}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []int64{1, 4, 5}; !reflect.DeepEqual(p.ThreadFindings, want) {
+		t.Fatalf("ThreadFindings = %v, want %v", p.ThreadFindings, want)
+	}
+	byID := map[int64]store.Finding{}
+	for _, f := range r.Findings {
+		byID[f.ID] = f
+	}
+	for i, th := range in.Threads {
+		f := byID[p.ThreadFindings[i]]
+		if th.Path != f.Path || th.Line != f.Line || th.Body != f.Body {
+			t.Errorf("thread %d %+v is not finding %+v", i, th, f)
+		}
+	}
+}

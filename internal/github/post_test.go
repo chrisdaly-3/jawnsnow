@@ -49,8 +49,10 @@ func TestPostReviewSendsExactInput(t *testing.T) {
 	assertEq(t, res.ReviewID, "PRR_1")
 	assertEq(t, res.URL, "https://github.com/o/r/pull/1#pullrequestreview-1")
 	assertEq(t, len(res.Comments), 2)
-	assertEq(t, res.Comments[0], PostedComment{ID: "PRRC_1", Path: "a.go", Line: 12})
-	assertEq(t, res.Comments[1].Line, 0) // null line
+	assertEq(t, res.Comments[0], PostedComment{ID: "PRRC_1", Path: "a.go", Line: 12, OriginalLine: 12})
+	// A comment on an older commit can have no line at head, but keeps the
+	// line it was posted on.
+	assertEq(t, res.Comments[1], PostedComment{ID: "PRRC_2", Path: "b.go", Line: 0, OriginalLine: 7})
 }
 
 func TestPostReviewRangeThread(t *testing.T) {
@@ -189,7 +191,8 @@ func TestPostReviewKeepsEveryThread(t *testing.T) {
 }
 
 func TestQueryTextMatchesVariables(t *testing.T) {
-	for _, s := range []string{"$input: AddPullRequestReviewInput!", "addPullRequestReview(input: $input)"} {
+	for _, s := range []string{"$input: AddPullRequestReviewInput!", "addPullRequestReview(input: $input)",
+		"nodes { id path line originalLine }"} {
 		if !strings.Contains(addReviewMutation, s) {
 			t.Errorf("mutation lacks %q", s)
 		}
