@@ -155,8 +155,8 @@ func TestMigratesV6Database(t *testing.T) {
 	}
 	defer s.Close()
 	var v int
-	if err := s.db.QueryRow(`SELECT version FROM schema_version`).Scan(&v); err != nil || v != 7 {
-		t.Fatalf("schema version = %d err=%v, want 7", v, err)
+	if err := s.db.QueryRow(`SELECT version FROM schema_version`).Scan(&v); err != nil || v != len(migrations) {
+		t.Fatalf("schema version = %d err=%v, want %d", v, err, len(migrations))
 	}
 	for tbl, want := range map[string]int{"reviews": 1, "findings": 1, "cost_ledger": 1, "posted_reviews": 0} {
 		var n int

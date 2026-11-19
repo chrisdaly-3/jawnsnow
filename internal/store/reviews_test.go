@@ -276,7 +276,7 @@ func TestMigratesV1Database(t *testing.T) {
 		t.Fatalf("schema version = %d err=%v, want %d", v, err, len(migrations))
 	}
 	for _, idx := range []struct{ table, cols string }{
-		{"findings", "review_id"}, {"reviews", "pr_id,started_at"}, {"cost_ledger", "at"},
+		{"findings", "review_id"}, {"reviews", "pr_id,started_at"}, {"cost_ledger", "at,review_id"},
 	} {
 		var cols []string
 		rows, err := s.db.Query(`SELECT ii.name FROM sqlite_master m, pragma_index_info(m.name) ii

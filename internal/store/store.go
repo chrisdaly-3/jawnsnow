@@ -60,6 +60,8 @@ var migrations = []string{
 		data TEXT
 	);
 	CREATE INDEX posted_reviews_review_id ON posted_reviews (review_id)`,
+	// Each review's cost runs, counted on every review read.
+	`CREATE INDEX cost_ledger_review_id ON cost_ledger (review_id)`,
 }
 
 type Store struct {

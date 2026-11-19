@@ -233,3 +233,43 @@ func TestPRReviewStats(t *testing.T) {
 		}
 	}
 }
+
+// A review's cost reads "$X.XX", "$X.XX+?" or "?" by how many of its
+// ledger rows reported a cost, so reads carry the counts.
+func TestReviewsCarryCostRuns(t *testing.T) {
+	s, _ := openTemp(t)
+	ctx := context.Background()
+	for _, r := range []Review{sampleReview("r1", "pr1", t0, 0), sampleReview("r2", "pr1", t0.Add(time.Hour), 0)} {
+		if err := s.SaveReview(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, c := range []CostRow{
+		{At: t0, ReviewID: "r1", PRID: "pr1", CostUSD: 0}, // a real $0
+		{At: t0, ReviewID: "r1", PRID: "pr1", CostUnknown: true},
+		{At: t0, ReviewID: "r1", PRID: "pr1", CostUSD: 1},
+	} {
+		if err := s.AddCost(ctx, c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want := map[string]CostRuns{"r1": {Known: 2, Unknown: 1}, "r2": {}}
+	rs, err := s.Reviews(ctx, "pr1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range rs {
+		if r.CostRuns != want[r.ID] {
+			t.Errorf("Reviews: %s runs = %+v, want %+v", r.ID, r.CostRuns, want[r.ID])
+		}
+	}
+	es, err := s.ReviewLog(ctx, LogFilter{})
+	if err != nil || len(es) != 2 {
+		t.Fatalf("ReviewLog = %d, %v", len(es), err)
+	}
+	for _, e := range es {
+		if e.Review.CostRuns != want[e.Review.ID] {
+			t.Errorf("ReviewLog: %s runs = %+v, want %+v", e.Review.ID, e.Review.CostRuns, want[e.Review.ID])
+		}
+	}
+}

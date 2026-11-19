@@ -39,7 +39,17 @@ type Review struct {
 	CostUnknown                           bool            // a run ended with no reported cost; CostUSD leaves it out
 	StartedAt, EndedAt                    time.Time
 	Findings                              []Finding `json:"-"` // stored in the findings table
+	// CostRuns counts the review's ledger rows; reads fill it in.
+	CostRuns CostRuns `json:"-"`
 }
+
+// CostRuns is how many of a review's runs reported a cost, a real $0
+// included, and how many ended with none.
+type CostRuns struct{ Known, Unknown int }
+
+// costRunsSQL counts the ledger rows of the review whose ID is r.id.
+const costRunsSQL = `(SELECT COALESCE(SUM(COALESCE(json_extract(c.data, '$.CostUnknown'), 0) = 0), 0) FROM cost_ledger c WHERE c.review_id = r.id),
+	(SELECT COALESCE(SUM(COALESCE(json_extract(c.data, '$.CostUnknown'), 0) != 0), 0) FROM cost_ledger c WHERE c.review_id = r.id)`
 
 type CostRow struct {
 	At                                                                         time.Time
@@ -102,7 +112,7 @@ func (s *Store) SaveReview(ctx context.Context, r Review) error {
 
 // Reviews returns prID's reviews with their findings, newest StartedAt first.
 func (s *Store) Reviews(ctx context.Context, prID string) ([]Review, error) {
-	return s.queryReviews(ctx, `SELECT data FROM reviews WHERE pr_id = ? ORDER BY started_at DESC, id`, prID)
+	return s.queryReviews(ctx, `SELECT r.data, `+costRunsSQL+` FROM reviews r WHERE r.pr_id = ? ORDER BY r.started_at DESC, r.id`, prID)
 }
 
 // ReviewIDsOf returns the IDs of every review of PR number in repo, sorted.
@@ -130,17 +140,17 @@ func (s *Store) ReviewIDsOf(ctx context.Context, repo string, number int) ([]str
 // LatestCompleted returns prID's newest review whose outcome is complete or
 // incomplete; failed runs are skipped.
 func (s *Store) LatestCompleted(ctx context.Context, prID string) (Review, bool, error) {
-	rs, err := s.queryReviews(ctx, `SELECT data FROM reviews
-		WHERE pr_id = ? AND outcome IN ('complete', 'incomplete')
-		ORDER BY started_at DESC, id LIMIT 1`, prID)
+	rs, err := s.queryReviews(ctx, `SELECT r.data, `+costRunsSQL+` FROM reviews r
+		WHERE r.pr_id = ? AND r.outcome IN ('complete', 'incomplete')
+		ORDER BY r.started_at DESC, r.id LIMIT 1`, prID)
 	if err != nil || len(rs) == 0 {
 		return Review{}, false, err
 	}
 	return rs[0], true, nil
 }
 
-// queryReviews decodes the reviews the query selects, then loads their
-// findings. The reviews are read to completion first: the pool holds one
+// queryReviews decodes the reviews the query selects, as data and the two
+// costRunsSQL counts, then loads their findings. The reviews are read to completion first: the pool holds one
 // connection, so a second query can't run while rows are open.
 func (s *Store) queryReviews(ctx context.Context, query string, args ...any) ([]Review, error) {
 	rows, err := s.db.QueryContext(ctx, query, args...)
@@ -150,7 +160,8 @@ func (s *Store) queryReviews(ctx context.Context, query string, args ...any) ([]
 	var out []Review
 	for rows.Next() {
 		var data string
-		if err := rows.Scan(&data); err != nil {
+		var runs CostRuns
+		if err := rows.Scan(&data, &runs.Known, &runs.Unknown); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -159,6 +170,7 @@ func (s *Store) queryReviews(ctx context.Context, query string, args ...any) ([]
 			rows.Close()
 			return nil, fmt.Errorf("decode review: %w", err)
 		}
+		r.CostRuns = runs
 		out = append(out, r)
 	}
 	err = rows.Err()

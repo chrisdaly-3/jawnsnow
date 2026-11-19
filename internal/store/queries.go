@@ -115,7 +115,8 @@ func (s *Store) ReviewLog(ctx context.Context, f LogFilter) ([]LogEntry, error) 
 	args = append(args, limit)
 	rows, err := s.db.QueryContext(ctx, `SELECT r.data, COALESCE(json_extract(p.data, '$.PR.Title'), ''),
 			(SELECT COUNT(*) FROM findings f WHERE f.review_id = r.id),
-			(SELECT COUNT(*) FROM findings f WHERE f.review_id = r.id AND json_extract(f.data, '$.Blocking') = 1)
+			(SELECT COUNT(*) FROM findings f WHERE f.review_id = r.id AND json_extract(f.data, '$.Blocking') = 1),
+			`+costRunsSQL+`
 		FROM reviews r LEFT JOIN prs p ON p.id = r.pr_id
 		WHERE `+strings.Join(where, ` AND `)+`
 		ORDER BY r.started_at DESC, r.id LIMIT ?`, args...)
@@ -127,12 +128,14 @@ func (s *Store) ReviewLog(ctx context.Context, f LogFilter) ([]LogEntry, error) 
 	for rows.Next() {
 		var data string
 		var e LogEntry
-		if err := rows.Scan(&data, &e.Title, &e.Findings, &e.Blocking); err != nil {
+		var runs CostRuns
+		if err := rows.Scan(&data, &e.Title, &e.Findings, &e.Blocking, &runs.Known, &runs.Unknown); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(data), &e.Review); err != nil {
 			return nil, fmt.Errorf("decode review: %w", err)
 		}
+		e.Review.CostRuns = runs
 		out = append(out, e)
 	}
 	return out, rows.Err()
