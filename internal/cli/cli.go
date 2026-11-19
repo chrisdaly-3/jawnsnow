@@ -153,9 +153,9 @@ func buildDeps(getenv func(string) string, newClient func() (github.Client, erro
 	client, err := newClient()
 	switch {
 	case err != nil:
-		banners = append(banners, fmt.Sprintf("gh client: %v; polling is off", err))
+		deps.LoginWarning = fmt.Sprintf(`gh client failed: %v — snow can't poll GitHub or run reviews. Run "gh auth login", then restart snow.`, err)
 	case client == nil:
-		banners = append(banners, `gh is not logged in — run "gh auth login"; polling is off`)
+		deps.LoginWarning = `No gh login found — snow can't poll GitHub or run reviews. Run "gh auth login", then restart snow.`
 	default:
 		deps.Client = client
 	}
@@ -188,6 +188,9 @@ func buildDeps(getenv func(string) string, newClient func() (github.Client, erro
 	}
 	switch {
 	case deps.ReviewsOff == "":
+	case deps.LoginWarning != "":
+		// The warning already says it; the Agent view and space still show
+		// ReviewsOff.
 	case cfg.Mode.Default == "auto":
 		// The TUI starts in watcher mode instead.
 		banners = append(banners, "auto mode unavailable — reviews off: "+deps.ReviewsOff)

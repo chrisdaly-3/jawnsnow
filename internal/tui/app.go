@@ -63,6 +63,9 @@ type Deps struct {
 	Store   *store.Store  // required
 	Viewer  string        // the gh user; when empty the model looks it up
 	Banners []string
+	// LoginWarning is shown above every other banner: snow can't do
+	// anything useful without a gh login.
+	LoginWarning string
 	// ConfigBanner is a note about the config file, cleared by the first
 	// good reload.
 	ConfigBanner string
@@ -179,6 +182,9 @@ type Model struct {
 	quitting bool
 
 	configBanner string
+	// loginWarning is the startup warning, or one set when GitHub rejects
+	// the login; a successful poll clears it.
+	loginWarning string
 	warnings     []string
 	notice       string
 
@@ -212,7 +218,7 @@ func New(d Deps) Model {
 	}
 	return Model{
 		cfg: d.Config, claude: d.Claude, theme: d.Theme, client: d.Client, store: d.Store, viewer: d.Viewer,
-		banners: d.Banners, configBanner: d.ConfigBanner, reloads: d.Reloads, now: now, tick: tea.Tick,
+		banners: d.Banners, loginWarning: d.LoginWarning, configBanner: d.ConfigBanner, reloads: d.Reloads, now: now, tick: tea.Tick,
 		open:   func(url string) error { return browser.New("", io.Discard, io.Discard).Browse(url) },
 		launch: func(c tea.Cmd) tea.Cmd { return c }, reviews: newReviews(d.Reviewer, d.ReviewsOff),
 		prs: map[string]tracker.Tracked{}, wall: newWall(), done: newDone(), drawer: newDrawer(), dirty: map[string]bool{}, deleted: map[string]bool{},
@@ -652,6 +658,8 @@ func (m Model) finishPoll(res poll.Result) (Model, tea.Cmd) {
 	var save, release, load tea.Cmd
 	m.failNote = ""
 	switch {
+	case github.IsUnauthorized(res.Err):
+		m = m.rejectLogin()
 	case github.IsRateLimited(res.Err):
 		// The paced note in the banner explains this; the raw error doesn't.
 		m.quota.ObserveRateLimited(github.RateLimitReset(res.Err, m.now()))
@@ -665,7 +673,7 @@ func (m Model) finishPoll(res poll.Result) (Model, tea.Cmd) {
 	default:
 		now := m.now()
 		m.quota.ObserveSuccess()
-		m.lastErr, m.lastPoll = nil, now
+		m.lastErr, m.lastPoll, m.loginWarning = nil, now, ""
 		m.feedNote = feedNote(res.FeedErrs)
 		if m.pollIdle {
 			m.lastIdlePoll = m.pollStarted

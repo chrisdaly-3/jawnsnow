@@ -72,7 +72,11 @@ func (m Model) tabs() string {
 // trouble, rate-limit pacing, a poll that reached nothing, skipped feeds,
 // unreachable PRs and failed saves or opens.
 func (m Model) bannerLines(width int) []string {
-	texts := append([]string(nil), m.banners...)
+	var texts []string
+	if m.loginWarning != "" {
+		texts = append(texts, "")
+	}
+	texts = append(texts, m.banners...)
 	if m.configBanner != "" {
 		texts = append(texts, m.configBanner)
 	}
@@ -86,9 +90,23 @@ func (m Model) bannerLines(width int) []string {
 	}
 	lines := make([]string, len(texts))
 	for i, t := range texts {
-		lines[i] = ansi.Truncate(" "+m.theme.Accent().Render(t), max(width, 0), "…")
+		style := m.theme.Accent()
+		if i == 0 && m.loginWarning != "" {
+			style, t = m.theme.StatusFg("CI_FAILED").Bold(true), "⚠ "+m.loginWarning
+		}
+		lines[i] = ansi.Truncate(" "+style.Render(t), max(width, 0), "…")
 	}
 	return lines
+}
+
+// unauthorizedNote is what a 401 from GitHub shows instead of a failed poll.
+const unauthorizedNote = `GitHub rejected the gh login (401) — snow can't poll GitHub or run reviews. Run "gh auth login", then restart snow.`
+
+// rejectLogin turns a 401 into the login warning. It isn't a failed poll:
+// polls keep their schedule, and the next good one clears the warning.
+func (m Model) rejectLogin() Model {
+	m.loginWarning, m.lastErr = unauthorizedNote, nil
+	return m
 }
 
 func (m Model) footer(width int) string {

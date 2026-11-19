@@ -1286,3 +1286,61 @@ func TestTinyWindowDoesNotPanic(t *testing.T) {
 func (f *fakeClient) ReviewContext(context.Context, string) (github.PRContext, github.RateLimit, error) {
 	return github.PRContext{}, github.RateLimit{}, nil
 }
+
+func TestLoginWarningIsFirstBanner(t *testing.T) {
+	st, err := store.Open(t.TempDir() + "/db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	th, _ := theme.New(config.ThemeConfig{})
+	const warn = "No gh login found — snow can't poll GitHub or run reviews."
+	m := New(Deps{
+		Config: config.Defaults(), Theme: th, Store: st, Now: func() time.Time { return t0 },
+		LoginWarning: warn, Banners: []string{"first note", "second note"},
+	})
+	lines := m.bannerLines(120)
+	if len(lines) != 3 {
+		t.Fatalf("bannerLines = %q, want 3 lines", lines)
+	}
+	if first := ansi.Strip(lines[0]); !strings.Contains(first, "⚠ "+warn) {
+		t.Errorf("first banner = %q, want the warning with its ⚠ prefix", first)
+	}
+	if !strings.Contains(ansi.Strip(lines[1]), "first note") || !strings.Contains(ansi.Strip(lines[2]), "second note") {
+		t.Errorf("the other banners are out of order: %q", lines[1:])
+	}
+}
+
+func TestUnauthorizedPollSetsLoginWarning(t *testing.T) {
+	unauthorized := &api.HTTPError{StatusCode: 401, Message: "Bad credentials"}
+	h := newHarness(t, opts{noViewer: true, viewerErrs: []error{unauthorized}}, wallPR("1"))
+	h.finishPoll(t)
+	if !strings.Contains(h.m.loginWarning, "GitHub rejected the gh login (401)") || !strings.Contains(h.m.loginWarning, "gh auth login") {
+		t.Errorf("loginWarning = %q", h.m.loginWarning)
+	}
+	if h.m.failNote != "" {
+		t.Errorf("failNote = %q, want it empty for a 401", h.m.failNote)
+	}
+	if c := ansi.Strip(content(h.m)); strings.Contains(c, "poll failed") {
+		t.Errorf("a 401 shows as a generic failed poll:\n%s", c)
+	}
+
+	h.m, _ = settle(t, h.m, pollTickMsg{gen: h.m.pollGen})
+	if h.m.loginWarning != "" {
+		t.Errorf("loginWarning = %q after a good lookup and poll, want it cleared", h.m.loginWarning)
+	}
+}
+
+func TestUnauthorizedPollResultSetsLoginWarning(t *testing.T) {
+	h := newHarness(t, opts{}) // nothing tracked, so every feed search failing reaches nothing
+	h.client.err = &api.HTTPError{StatusCode: 401, Message: "Bad credentials"}
+	h.finishPoll(t)
+	if !strings.Contains(h.m.loginWarning, "(401)") || h.m.failNote != "" {
+		t.Errorf("loginWarning = %q, failNote = %q", h.m.loginWarning, h.m.failNote)
+	}
+	h.client.err = nil
+	h.press(t, "R")
+	if h.m.loginWarning != "" {
+		t.Errorf("loginWarning = %q after a good poll, want it cleared", h.m.loginWarning)
+	}
+}

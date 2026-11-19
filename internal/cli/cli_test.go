@@ -94,8 +94,8 @@ func TestStartupCreatesDefaultConfig(t *testing.T) {
 	if deps.Config.Mode.Default != config.Defaults().Mode.Default || len(deps.Config.Feeds) != len(config.Defaults().Feeds) {
 		t.Fatalf("config is not the defaults: %+v", deps.Config)
 	}
-	if !hasBanner(deps.Banners, `gh is not logged in — run "gh auth login"; polling is off`) {
-		t.Fatalf("missing gh banner in %q", deps.Banners)
+	if !strings.Contains(deps.LoginWarning, "No gh login found") {
+		t.Fatalf("LoginWarning = %q", deps.LoginWarning)
 	}
 	if deps.Client != nil || deps.Reloads == nil || deps.Store == nil || deps.Now == nil {
 		t.Fatalf("unexpected deps: client=%v reloads=%v store=%v", deps.Client, deps.Reloads, deps.Store)
@@ -478,5 +478,41 @@ func TestShutdownWaitsThenClosesInOrder(t *testing.T) {
 	}
 	if d := time.Since(start); d < 50*time.Millisecond || d > 2*time.Second {
 		t.Fatalf("shutdown took %v, want about the 50ms wait", d)
+	}
+}
+
+func TestNoGHLoginWarns(t *testing.T) {
+	isolate(t)
+	deps, cleanup, err := buildDeps(os.Getenv, noClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	for _, want := range []string{"can't poll GitHub", "gh auth login"} {
+		if !strings.Contains(deps.LoginWarning, want) {
+			t.Errorf("LoginWarning = %q, want it to contain %q", deps.LoginWarning, want)
+		}
+	}
+	if hasBanner(deps.Banners, "polling is off") || hasBanner(deps.Banners, "reviews off") || hasBanner(deps.Banners, "auto mode unavailable") {
+		t.Errorf("banners repeat the login warning: %q", deps.Banners)
+	}
+	if deps.ReviewsOff == "" {
+		t.Error("ReviewsOff is empty, want a reason kept for the Agent view")
+	}
+}
+
+func TestGHClientErrorWarns(t *testing.T) {
+	isolate(t)
+	deps, cleanup, err := buildDeps(os.Getenv, func() (github.Client, error) { return nil, errors.New("boom") })
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	want := `gh client failed: boom — snow can't poll GitHub or run reviews. Run "gh auth login", then restart snow.`
+	if deps.LoginWarning != want {
+		t.Errorf("LoginWarning = %q, want %q", deps.LoginWarning, want)
+	}
+	if hasBanner(deps.Banners, "polling is off") || hasBanner(deps.Banners, "reviews off") {
+		t.Errorf("banners repeat the login warning: %q", deps.Banners)
 	}
 }
