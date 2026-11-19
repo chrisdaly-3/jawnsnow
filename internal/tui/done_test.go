@@ -163,9 +163,8 @@ func TestDoneEnterOpensDrawerThroughRootModel(t *testing.T) {
 	if got := h.m.paneCount(); got != 3 {
 		t.Errorf("panes with the drawer open = %d, want 3", got)
 	}
-	h.press(t, "tab")
 	if !h.m.drawerCtx().Focused {
-		t.Errorf("tab did not focus the drawer (focus %d)", h.m.focus)
+		t.Errorf("enter did not focus the drawer (focus %d)", h.m.focus)
 	}
 	h.press(t, "esc")
 	if h.m.drawer.isOpen() || h.m.focus != 0 {

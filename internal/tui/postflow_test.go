@@ -95,7 +95,7 @@ func newPostHarness(t *testing.T, rv store.Review, o opts) *postH {
 		return nil
 	}
 	h.m, _ = settle(t, h.m, tea.WindowSizeMsg{Width: 160, Height: 60})
-	h.press(t, "enter", "tab")
+	h.press(t, "enter")
 	settleDrawer(t, h.harness)
 	return h
 }

@@ -692,6 +692,8 @@ func (m Model) apply(a action) (Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.drawerView = m.view
 		m.drawer, cmd = m.drawer.show(a.ID, m.width)
+		// Opening the drawer focuses it, so its keys work at once.
+		m.focus = m.drawerPane()
 		m, load := m.loadDrawer(a.ID)
 		return m, tea.Batch(cmd, load)
 	case actionOpenReview:
@@ -702,6 +704,7 @@ func (m Model) apply(a action) (Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.drawerView = m.view
 		m.drawer, cmd = m.drawer.showReview(a.PRID, a.ReviewID, m.width)
+		m.focus = m.drawerPane()
 		m, load := m.loadDrawer(a.PRID)
 		return m, tea.Batch(cmd, load)
 	case actionCopy:

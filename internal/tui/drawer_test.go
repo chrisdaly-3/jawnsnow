@@ -411,15 +411,18 @@ func TestDrawerTabMovesFocus(t *testing.T) {
 	if got := h.m.paneCount(); got != 2 {
 		t.Fatalf("panes with the drawer open = %d, want 2", got)
 	}
-	h.press(t, "tab")
 	if h.m.focus != 1 {
-		t.Errorf("tab: focus %d, want the drawer (1)", h.m.focus)
+		t.Errorf("enter: focus %d, want the drawer (1)", h.m.focus)
 	}
 	h.press(t, "tab")
 	if h.m.focus != 0 {
-		t.Errorf("tab again: focus %d, want the wall (0)", h.m.focus)
+		t.Errorf("tab: focus %d, want the wall (0)", h.m.focus)
 	}
-	h.press(t, "tab", "esc")
+	h.press(t, "tab")
+	if h.m.focus != 1 {
+		t.Errorf("tab again: focus %d, want the drawer (1)", h.m.focus)
+	}
+	h.press(t, "esc")
 	if h.m.drawer.isOpen() || h.m.focus != 0 {
 		t.Errorf("esc: open %v focus %d, want closed and focus on the wall", h.m.drawer.isOpen(), h.m.focus)
 	}
@@ -464,7 +467,6 @@ func TestDrawerSpaceAndCActOnTheDrawersPR(t *testing.T) {
 	h := drawerHarness(t, opts{reviews: true})
 	h.press(t, "enter")
 	id := h.m.drawer.prID
-	h.press(t, "tab") // focus the drawer
 	h.press(t, "space")
 	h.runReviews(t)
 	if ids := h.reviewer.requestedIDs(); len(ids) != 1 || ids[0] != id {
@@ -483,7 +485,7 @@ func TestDrawerYCopiesToTheClipboard(t *testing.T) {
 	if err := h.store.SaveReview(context.Background(), rv); err != nil {
 		t.Fatal(err)
 	}
-	h.press(t, "enter", "tab")
+	h.press(t, "enter")
 	m, cmd := update(t, h.m, key("y"))
 	h.m = m
 	if cmd == nil {
@@ -559,6 +561,8 @@ func TestDrawerSeqIncrementsPerLoad(t *testing.T) {
 	h := drawerHarness(t, opts{})
 	h.press(t, "enter")
 	first := h.m.drawer.issued
+	// Back to the wall, whose enter opens the drawer again.
+	h.press(t, "shift+tab")
 	h.m, _ = settle(t, h.m, key("enter"))
 	if first < 1 || h.m.drawer.issued <= first {
 		t.Errorf("issued %d then %d, want it to grow with each load", first, h.m.drawer.issued)
@@ -714,4 +718,32 @@ func TestDrawerDefinitionListsDecodeNothing(t *testing.T) {
 			t.Errorf("%s: the sentence is not visible:\n%s", name, plain)
 		}
 	}
+}
+
+// enter opens the drawer with focus in it, in every view that opens one,
+// so its keys work without a tab first.
+func TestEnterFocusesDrawer(t *testing.T) {
+	t.Run("wall", func(t *testing.T) {
+		h := drawerHarness(t, opts{})
+		h.press(t, "enter")
+		if !h.m.drawer.isOpen() || !h.m.drawerCtx().Focused {
+			t.Errorf("enter: open %v, focus %d, want the drawer open and focused", h.m.drawer.isOpen(), h.m.focus)
+		}
+	})
+	t.Run("done", func(t *testing.T) {
+		hidden := tracker.Hide(wallPR("1"), t0.Add(-time.Minute))
+		h := newHarness(t, opts{}, hidden, wallPR("2"))
+		h.finishPoll(t)
+		h.press(t, "2", "tab", "enter")
+		if !h.m.drawer.isOpen() || !h.m.drawerCtx().Focused {
+			t.Errorf("enter: open %v, focus %d, want the drawer open and focused", h.m.drawer.isOpen(), h.m.focus)
+		}
+	})
+	t.Run("reviews", func(t *testing.T) {
+		h := logHarness(t, 120, 30, true)
+		h.press(t, "3", "enter")
+		if !h.m.drawer.isOpen() || !h.m.drawerCtx().Focused {
+			t.Errorf("enter: open %v, focus %d, want the drawer open and focused", h.m.drawer.isOpen(), h.m.focus)
+		}
+	})
 }
