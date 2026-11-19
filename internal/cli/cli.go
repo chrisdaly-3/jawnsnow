@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -102,8 +103,8 @@ func newGHClient() (github.Client, error) {
 }
 
 // buildDeps assembles the TUI's dependencies. The returned cleanup closes
-// the config watcher and then the store; it is safe to call even when err
-// is non-nil (it is then a no-op).
+// the config watcher, then the store, then releases the data dir lock; it
+// is safe to call even when err is non-nil (it is then a no-op).
 func buildDeps(getenv func(string) string, newClient func() (github.Client, error)) (tui.Deps, func(), error) {
 	noop := func() {}
 	var banners []string
@@ -170,9 +171,12 @@ func buildDeps(getenv func(string) string, newClient func() (github.Client, erro
 	}
 
 	dataDir := filepath.Dir(store.DataPath())
+	unlockData, lockOff := lockDataDir(dataDir)
 	var engine *review.Engine
 	deps.Claude, deps.ReviewsOff = detectClaude()
 	switch {
+	case lockOff != "":
+		deps.ReviewsOff = lockOff
 	case deps.ReviewsOff != "":
 	case deps.Client == nil:
 		deps.ReviewsOff = `reviews need a gh login — run "gh auth login"`
@@ -183,13 +187,19 @@ func buildDeps(getenv func(string) string, newClient func() (github.Client, erro
 		}
 	}
 
+	// The sweep frees every stored slot, so it is only safe for the snow
+	// holding the lock.
 	sweepCtx, stopSweep := context.WithCancel(context.Background())
 	sweepDone := make(chan struct{})
 	var sweepErr error
-	go func() {
-		defer close(sweepDone)
-		sweepErr = sweepStartup(sweepCtx, st, cur.get, dataDir)
-	}()
+	if lockOff == "" {
+		go func() {
+			defer close(sweepDone)
+			sweepErr = sweepStartup(sweepCtx, st, cur.get, dataDir)
+		}()
+	} else {
+		close(sweepDone)
+	}
 	if engine != nil {
 		deps.Reviewer = &sweepGated{Engine: engine, ready: sweepDone}
 	}
@@ -214,11 +224,35 @@ func buildDeps(getenv func(string) string, newClient func() (github.Client, erro
 					_ = watcher.Close()
 				}
 			},
-			func() { _ = st.Close() })
+			func() { _ = st.Close() },
+			unlockData)
 	}
 
 	deps.Banners = banners
 	return deps, cleanup, nil
+}
+
+// lockDataDir takes the lock that lets one snow per data dir run reviews:
+// two would free each other's busy worktree slots. It returns the unlock
+// and, when the lock is not this process's, why reviews are off. The lock
+// is an flock, so it goes when the process does, however it exits.
+func lockDataDir(dir string) (func(), string) {
+	noop := func() {}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return noop, fmt.Sprintf("can't lock the data directory: %v", err)
+	}
+	f, err := os.OpenFile(filepath.Join(dir, "jawnsnow.lock"), os.O_RDWR|os.O_CREATE, 0o600)
+	if err != nil {
+		return noop, fmt.Sprintf("can't lock the data directory: %v", err)
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		_ = f.Close()
+		if errors.Is(err, syscall.EWOULDBLOCK) {
+			return noop, "another snow is running reviews on this machine"
+		}
+		return noop, fmt.Sprintf("can't lock the data directory: %v", err)
+	}
+	return func() { _ = f.Close() }, ""
 }
 
 // detectClaude finds claude on PATH and asks whether it is usable. A missing

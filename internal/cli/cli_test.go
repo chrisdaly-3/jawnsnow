@@ -316,6 +316,40 @@ func TestBuildDepsNoGHTurnsReviewsOff(t *testing.T) {
 	}
 }
 
+// Two snows on one data dir would free each other's busy worktree slots
+// and race on review saves, so only the first runs reviews.
+func TestSecondSnowRunsNoReviews(t *testing.T) {
+	isolate(t)
+	fakeClaude(t, true)
+	first, cleanupFirst, err := buildDeps(os.Getenv, withClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Reviewer == nil || first.ReviewsOff != "" {
+		t.Fatalf("first: reviewer=%v off=%q", first.Reviewer, first.ReviewsOff)
+	}
+	second, cleanupSecond, err := buildDeps(os.Getenv, withClient)
+	if err != nil {
+		cleanupFirst()
+		t.Fatal(err)
+	}
+	if second.Reviewer != nil || second.ReviewsOff != "another snow is running reviews on this machine" {
+		t.Errorf("second: reviewer=%v off=%q", second.Reviewer, second.ReviewsOff)
+	}
+	cleanupSecond()
+	cleanupFirst()
+
+	// The lock goes with the first snow's shutdown.
+	third, cleanupThird, err := buildDeps(os.Getenv, withClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanupThird()
+	if third.Reviewer == nil || third.ReviewsOff != "" {
+		t.Errorf("after the first quit: reviewer=%v off=%q", third.Reviewer, third.ReviewsOff)
+	}
+}
+
 func TestAutoDefaultFallsBackWithoutClaude(t *testing.T) {
 	home := isolate(t)
 	writeConfig(t, home, "[mode]\ndefault = \"auto\"\n")
