@@ -27,8 +27,9 @@ const (
 	ByTier   GroupBy = "tier"
 )
 
-// maxGroups matches the 6-color series palette; groups past it fold into other.
-const maxGroups = 6
+// maxSeries matches the 6-color series palette. With more groups than that,
+// the maxSeries-1 biggest spenders stay and the rest fold into "other".
+const maxSeries = 6
 
 const otherName = "other"
 
@@ -204,11 +205,11 @@ func Aggregate(rows []store.CostRow, q Query) ([]Series, Summary) {
 		return names[i] < names[j]
 	})
 	folded := map[string]bool{}
-	if len(names) > maxGroups {
-		for _, n := range names[maxGroups:] {
+	if len(names) > maxSeries {
+		for _, n := range names[maxSeries-1:] {
 			folded[n] = true
 		}
-		names = names[:maxGroups]
+		names = names[:maxSeries-1]
 	}
 	sort.Strings(names)
 	if len(folded) > 0 {

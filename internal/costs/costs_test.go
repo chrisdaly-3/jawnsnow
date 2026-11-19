@@ -278,30 +278,44 @@ func TestAggregateEdgeCases(t *testing.T) {
 func TestGroupsFoldIntoOther(t *testing.T) {
 	ny := useNY(t)
 	at := time.Date(2026, 11, 2, 12, 0, 0, 0, ny)
-	var rows []store.CostRow
-	// Authors a..h cost 1..8; the two cheapest (a, b) fold into other.
-	for i, a := range []string{"a", "b", "c", "d", "e", "f", "g", "h"} {
-		rows = append(rows, store.CostRow{At: at, ReviewID: a, Author: a, CostUSD: float64(i + 1)})
+	run := func(authors []string) ([]string, []Series, Summary) {
+		var rows []store.CostRow
+		for i, a := range authors {
+			rows = append(rows, store.CostRow{At: at, ReviewID: a, Author: a, CostUSD: float64(i + 1)})
+		}
+		q := Query{Filter: store.CostFilter{From: at.Add(-time.Hour), To: at.Add(time.Hour)}, Bucket: "day", GroupBy: "author"}
+		series, sum := Aggregate(rows, q)
+		var names []string
+		for _, s := range series {
+			names = append(names, s.Name)
+		}
+		return names, series, sum
 	}
-	q := Query{Filter: store.CostFilter{From: at.Add(-time.Hour), To: at.Add(time.Hour)}, Bucket: "day", GroupBy: "author"}
-	series, sum := Aggregate(rows, q)
-	var names []string
-	for _, s := range series {
-		names = append(names, s.Name)
-	}
-	want := []string{"c", "d", "e", "f", "g", "h", "other"}
-	if len(names) != len(want) {
-		t.Fatalf("names = %v", names)
-	}
-	for i := range want {
-		if names[i] != want[i] {
-			t.Fatalf("names = %v, want %v", names, want)
+	same := func(t *testing.T, got, want []string) {
+		t.Helper()
+		if len(got) != len(want) {
+			t.Fatalf("names = %v, want %v", got, want)
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Fatalf("names = %v, want %v", got, want)
+			}
 		}
 	}
-	if got := series[6].Points[0].USD; got != 3 {
-		t.Errorf("other = %v, want 3", got)
-	}
-	if sum.Total != 36 {
-		t.Errorf("total = %v", sum.Total)
-	}
+
+	t.Run("eight groups", func(t *testing.T) {
+		// Authors a..h cost 1..8; the three cheapest (a, b, c) fold into other.
+		names, series, sum := run([]string{"a", "b", "c", "d", "e", "f", "g", "h"})
+		same(t, names, []string{"d", "e", "f", "g", "h", "other"})
+		if got := series[5].Points[0].USD; got != 6 {
+			t.Errorf("other = %v, want 6", got)
+		}
+		if sum.Total != 36 {
+			t.Errorf("total = %v", sum.Total)
+		}
+	})
+	t.Run("exactly six groups", func(t *testing.T) {
+		names, _, _ := run([]string{"a", "b", "c", "d", "e", "f"})
+		same(t, names, []string{"a", "b", "c", "d", "e", "f"})
+	})
 }
