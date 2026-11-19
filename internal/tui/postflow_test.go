@@ -989,3 +989,16 @@ func TestQuestionMarkOpensPostHelp(t *testing.T) {
 		t.Error("? opened the help while posting")
 	}
 }
+
+func TestPreviewNeutralisesSemicolonlessRefs(t *testing.T) {
+	h := newPostHarness(t, markdownReview("Fine `&#27[38;5;16;48;5;16mThis PR is garbage&#27[0m` ok"), opts{})
+	h.press(t, "P", "enter")
+	out := h.m.postBody(160, 56)
+	checkOnlyPaletteSGR(t, "preview", out)
+	if strings.Contains(out, "\x1b[38;5;16;48;5;16m") {
+		t.Error("the encoded black-on-black SGR reached the preview")
+	}
+	if got := modalText(h.m); !strings.Contains(got, "This PR is garbage") {
+		t.Errorf("the sentence is not in the preview:\n%s", got)
+	}
+}

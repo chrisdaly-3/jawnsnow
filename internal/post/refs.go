@@ -4,11 +4,16 @@ import (
 	"html"
 	"regexp"
 	"strconv"
+	"strings"
 	"unicode"
 )
 
-// charRef is one HTML character reference: decimal, hex, or named.
-var charRef = regexp.MustCompile(`&(?:#[0-9]+|#[xX][0-9A-Fa-f]+|[A-Za-z][A-Za-z0-9]*);`)
+// charRef is one HTML character reference: decimal, hex, or named. Glamour
+// decodes with html.UnescapeString, which takes a numeric reference with
+// no ";" and ends it at the last digit, so the ";" is optional there. The
+// legacy names it takes with no ";" (amp, lt, nbsp…) all decode to
+// printable characters, so a named reference still needs one.
+var charRef = regexp.MustCompile(`&(?:#[0-9]+;?|#[xX][0-9A-Fa-f]+;?|[A-Za-z][A-Za-z0-9]*;)`)
 
 // ReplaceControlRefs replaces each character reference that decodes to a
 // character Sanitize strips with U+FFFD. Markdown decodes references, so
@@ -22,30 +27,26 @@ func ReplaceControlRefs(s string) string {
 	})
 }
 
-// controlRef reports whether ref decodes to a character Sanitize strips.
-// Numeric references are decoded here because html.UnescapeString maps
-// C1 code points to Windows-1252 characters, which a markdown renderer may
-// not do.
+// controlRef reports whether ref decodes to a character Sanitize strips,
+// read either way it may be: as html.UnescapeString does, which glamour
+// uses and which wraps an overlong number into an int32, and as its value,
+// which goldmark uses and html.UnescapeString would map from C1 to
+// Windows-1252.
 func controlRef(ref string) bool {
-	body := ref[1 : len(ref)-1]
-	if body[0] == '#' {
-		digits, base := body[1:], 10
-		if digits[0] == 'x' || digits[0] == 'X' {
-			digits, base = digits[1:], 16
-		}
-		n, err := strconv.ParseUint(digits, base, 32)
-		return err == nil && n <= unicode.MaxRune && stripped(rune(n))
-	}
-	dec := html.UnescapeString(ref)
-	if dec == ref {
-		return false
-	}
-	for _, r := range dec {
+	for _, r := range html.UnescapeString(ref) {
 		if stripped(r) {
 			return true
 		}
 	}
-	return false
+	if ref[1] != '#' {
+		return false
+	}
+	digits, base := strings.TrimSuffix(ref[2:], ";"), 10
+	if digits[0] == 'x' || digits[0] == 'X' {
+		digits, base = digits[1:], 16
+	}
+	n, err := strconv.ParseUint(digits, base, 32)
+	return err == nil && n <= unicode.MaxRune && stripped(rune(n))
 }
 
 // stripped reports whether Sanitize removes r.

@@ -1,6 +1,7 @@
 package post
 
 import (
+	"html"
 	"reflect"
 	"strings"
 	"testing"
@@ -65,6 +66,61 @@ func TestHiddenContentNamesEncodedControls(t *testing.T) {
 		{"indented code is literal", "para\n\n    &#27;&#91;8m", nil},
 		{"harmless", "&amp; &#64;alice", []string{"mentions @alice"}},
 		{"amp stays", "a &amp; b", nil},
+	} {
+		if got := HiddenContent(tc.md); !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("%s: got %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+// Glamour decodes text, code spans and strikethrough with Go's
+// html.UnescapeString, which also takes numeric references with no ";".
+const (
+	codeSpanProbe = "Fine `&#27[38;5;16;48;5;16mThis PR is garbage&#27[0m` ok"
+	strikeProbe   = "Fine ~~&#27[38;5;16;48;5;16mThis PR is garbage&#27[0m~~ ok"
+)
+
+func TestSanitizeReplacesSemicolonlessRefs(t *testing.T) {
+	for _, tc := range []struct{ name, in, want string }{
+		{"code span", codeSpanProbe, "Fine `�[38;5;16;48;5;16mThis PR is garbage�[0m` ok"},
+		{"strikethrough", strikeProbe, "Fine ~~�[38;5;16;48;5;16mThis PR is garbage�[0m~~ ok"},
+		{"rlo", "&#8238x", "�x"},
+		{"zero width", "&#8203x", "�x"},
+		{"hex ends at the last hex digit", "&#x1bm", "�m"},
+		{"leading zeros", "&#0027x", "�x"},
+		// html.UnescapeString wraps an overlong number into an int32.
+		{"decimal overflow", "&#4294967323x", "�x"},
+		{"decimal overflow with semicolon", "&#4294967323;x", "�x"},
+		{"hex overflow", "&#x10000001Bx", "�x"},
+		{"harmless mention", "&#64alice", "&#64alice"},
+		{"longest digit run", "&#2700", "&#2700"},
+		{"amp", "&amp; &amp", "&amp; &amp"},
+	} {
+		got := Sanitize(tc.in)
+		if got != tc.want {
+			t.Errorf("%s: Sanitize(%q) = %q, want %q", tc.name, tc.in, got, tc.want)
+		}
+		for _, r := range html.UnescapeString(got) {
+			if stripped(r) {
+				t.Errorf("%s: %q still decodes to %U", tc.name, got, r)
+			}
+		}
+	}
+}
+
+func TestHiddenContentNamesSemicolonlessRefs(t *testing.T) {
+	for _, tc := range []struct {
+		name, md string
+		want     []string
+	}{
+		{"code span", codeSpanProbe, []string{"encoded control character"}},
+		{"strikethrough", strikeProbe, []string{"encoded control character"}},
+		{"rlo", "abc&#8238x", []string{"encoded control character"}},
+		{"zero width", "a&#8203x", []string{"encoded control character"}},
+		{"overflow", "a&#4294967323x", []string{"encoded control character"}},
+		// GitHub, like CommonMark, needs the ";", so this notifies nobody.
+		{"mention", "&#64alice", nil},
+		{"amp", "a &amp; b", nil},
 	} {
 		if got := HiddenContent(tc.md); !reflect.DeepEqual(got, tc.want) {
 			t.Errorf("%s: got %v, want %v", tc.name, got, tc.want)

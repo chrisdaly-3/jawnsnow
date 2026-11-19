@@ -669,3 +669,25 @@ func TestDrawerCostUsesSharedAmount(t *testing.T) {
 		}
 	}
 }
+
+// Numeric references with no ";" decode in code spans and strikethrough
+// too; the 16-255 colors they carry would pass the SGR backstop, so the
+// source filter must catch them.
+func TestDrawerNeutralisesSemicolonlessRefs(t *testing.T) {
+	for name, body := range map[string]string{
+		"code span":     "Fine `&#27[38;5;16;48;5;16mThis PR is garbage&#27[0m` ok",
+		"strikethrough": "Fine ~~&#27[38;5;16;48;5;16mThis PR is garbage&#27[0m~~ ok",
+	} {
+		rv := drawerReview()
+		rv.Findings = []store.Finding{{ID: 1, Path: "a.go", Line: 3, Body: body}}
+		d, c := openDrawer(t, 160, 40, rv)
+		out := renderDrawer(d, c, 40)
+		checkOnlyPaletteSGR(t, name, out)
+		if strings.Contains(out, "\x1b[38;5;16;48;5;16m") {
+			t.Errorf("%s: the encoded black-on-black SGR reached the drawer", name)
+		}
+		if plain := strings.Join(strings.Fields(ansi.Strip(out)), " "); !strings.Contains(plain, "This PR is garbage") {
+			t.Errorf("%s: the sentence is not visible:\n%s", name, plain)
+		}
+	}
+}
