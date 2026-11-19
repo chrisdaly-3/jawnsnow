@@ -12,6 +12,7 @@ import (
 
 	"github.com/chrisdaly-3/jawnsnow/internal/github"
 	"github.com/chrisdaly-3/jawnsnow/internal/status"
+	"github.com/chrisdaly-3/jawnsnow/internal/store"
 	"github.com/chrisdaly-3/jawnsnow/internal/tracker"
 )
 
@@ -76,7 +77,12 @@ func ids(rows []tracker.Tracked) []string {
 }
 
 func TestDoneGolden(t *testing.T) {
-	golden(t, "done.golden", renderDone(t, testDone(120, 20, 0), 120, 20, donePRs()))
+	d := testDone(120, 20, 0)
+	d.stats = map[string]store.PRStat{
+		"m1": {Reviews: 2, CostUSD: 1.75},
+		"c1": {Reviews: 1, Unknown: 1},
+	}
+	golden(t, "done.golden", renderDone(t, d, 120, 20, donePRs()))
 }
 
 func TestDoneTabSwitchesTables(t *testing.T) {
@@ -243,5 +249,89 @@ func TestDoneDatesUseTheLocalZone(t *testing.T) {
 	}
 	if newDone().loc != time.Local {
 		t.Error("the Done view does not default to the local zone")
+	}
+}
+
+func TestReviewCostText(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		st   store.PRStat
+		want string
+	}{
+		{"none", store.PRStat{}, ""},
+		{"cost with no reviews", store.PRStat{CostUSD: 3}, ""},
+		{"one review", store.PRStat{Reviews: 1, CostUSD: 0.5}, "1 review · $0.50"},
+		{"several", store.PRStat{Reviews: 3, CostUSD: 12.345}, "3 reviews · $12.35"},
+		{"some unknown", store.PRStat{Reviews: 2, CostUSD: 1, Unknown: 1}, "2 reviews · $1.00 · cost unknown"},
+		{"all unknown", store.PRStat{Reviews: 2, Unknown: 2}, "2 reviews · cost unknown"},
+		{"one unknown", store.PRStat{Reviews: 1, Unknown: 1}, "1 review · cost unknown"},
+	} {
+		if got := reviewCostText(tc.st); got != tc.want {
+			t.Errorf("%s: got %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+// costHarnessDone seeds reviews and ledger rows for the Done fixture's PRs.
+func doneCostHarness(t *testing.T) *harness {
+	t.Helper()
+	useUTC(t)
+	prs := append(donePRs(), doneCard("x1", "chainguard-dev/mono", 85090, "fix: mixed costs", "gus", status.Merged, t0.Add(-5*time.Hour)),
+		doneCard("n1", "chainguard-dev/mono", 85091, "docs: never reviewed", "hal", status.Merged, t0.Add(-6*time.Hour)))
+	h := newHarness(t, opts{}, prs...)
+	ctx := context.Background()
+	for _, r := range []store.Review{
+		{ID: "a1", PRID: "m1", StartedAt: t0.Add(-5 * time.Hour)},
+		{ID: "a2", PRID: "m1", StartedAt: t0.Add(-4 * time.Hour)},
+		{ID: "b1", PRID: "m2", StartedAt: t0.Add(-3 * time.Hour)},
+		{ID: "c1r", PRID: "c1", StartedAt: t0.Add(-3 * time.Hour)},
+		{ID: "x1r", PRID: "x1", StartedAt: t0.Add(-3 * time.Hour)},
+	} {
+		if err := h.store.SaveReview(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, c := range []store.CostRow{
+		{At: t0, ReviewID: "a1", PRID: "m1", CostUSD: 1.5},
+		{At: t0, ReviewID: "a2", PRID: "m1", CostUSD: 0.25},
+		{At: t0, ReviewID: "b1", PRID: "m2", CostUSD: 0.4},
+		{At: t0, ReviewID: "c1r", PRID: "c1", CostUnknown: true},
+		{At: t0, ReviewID: "x1r", PRID: "x1", CostUSD: 1},
+		{At: t0, ReviewID: "x1r", PRID: "x1", CostUnknown: true},
+	} {
+		if err := h.store.AddCost(ctx, c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return h
+}
+
+func TestDoneShowsReviewCost(t *testing.T) {
+	h := doneCostHarness(t)
+	h.press(t, "2")
+	out := ansi.Strip(content(h.m))
+	for _, want := range []string{
+		"2 reviews · $1.75",
+		"1 review · $0.40",
+		"1 review · cost unknown",
+		"1 review · $1.00 · cost unknown",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("Done view lacks %q:\n%s", want, out)
+		}
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, "never reviewed") && strings.Contains(line, "review") && strings.Contains(line, "$") {
+			t.Errorf("a PR with no reviews shows a cost: %q", line)
+		}
+	}
+
+	// A finished review refreshes the column without leaving the view.
+	if err := h.store.SaveReview(context.Background(), store.Review{ID: "b2", PRID: "m2", StartedAt: t0}); err != nil {
+		t.Fatal(err)
+	}
+	h.m, _ = settle(t, h.m, reviewDoneMsg{PRID: "m2", Review: store.Review{ID: "b2", PRID: "m2"}})
+	if out := ansi.Strip(content(h.m)); !strings.Contains(out, "2 reviews · $0.40") {
+		t.Errorf("after a review finished:\n%s", out)
 	}
 }

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"slices"
@@ -577,5 +578,36 @@ func TestDrawerShowsNoHyperlinks(t *testing.T) {
 	}
 	if plain := ansi.Strip(raw); !strings.Contains(plain, "the docs") || !strings.Contains(plain, "https://evil.example/phish") {
 		t.Errorf("the link's text and URL should both show:\n%s", plain)
+	}
+}
+
+// A failed load must not leave a pending jump to a review: a later reload
+// would otherwise move the pass.
+func TestDrawerLoadErrorClearsWantedReview(t *testing.T) {
+	d, _ := newDrawer().showReview("a", "r2", 160)
+	d = d.loadedReviews(drawerLoadedMsg{PRID: "a", Seq: 1, Err: errors.New("db locked")})
+	if d.wantReview != "" {
+		t.Fatalf("wantReview = %q after a failed load, want it cleared", d.wantReview)
+	}
+	d = d.loadedReviews(drawerLoadedMsg{PRID: "a", Seq: 2, Reviews: []store.Review{{ID: "r1"}, {ID: "r2"}}})
+	if d.pass != 0 {
+		t.Errorf("pass = %d after a later load, want 0", d.pass)
+	}
+}
+
+func TestSharedFormatters(t *testing.T) {
+	if got := dollars(1.5); got != "$1.50" {
+		t.Errorf("dollars = %q", got)
+	}
+	if got := costCell(1.5, false); got != "$1.50" {
+		t.Errorf("known cell = %q", got)
+	}
+	if got := costCell(1.5, true); got != "?" {
+		t.Errorf("unknown cell = %q", got)
+	}
+	for v, want := range map[string]string{"approve": "APPROVE", "request_changes": "REQUEST CHANGES", "comment": "COMMENT", "weird": "WEIRD", "": ""} {
+		if got := verdictLabel(v); got != want {
+			t.Errorf("verdictLabel(%q) = %q, want %q", v, got, want)
+		}
 	}
 }

@@ -169,3 +169,31 @@ func TestMigratesV6Database(t *testing.T) {
 		t.Errorf("RecordPost on migrated database: %v", err)
 	}
 }
+
+func TestPostedReviewIDs(t *testing.T) {
+	s, _ := openTemp(t)
+	ctx := context.Background()
+	if got, err := s.PostedReviewIDs(ctx); err != nil || len(got) != 0 {
+		t.Fatalf("empty store: %v, %v", got, err)
+	}
+	seedReview(t, s, "r1", "pr1", 0)
+	seedReview(t, s, "r2", "pr1", 1)
+	seedReview(t, s, "r3", "pr1", 2)
+	// r1 is posted twice and must appear once; r3 is never posted.
+	for _, p := range []Posted{
+		{ReviewID: "r1", GitHubReviewID: "a", At: t0},
+		{ReviewID: "r1", GitHubReviewID: "b", At: t0.Add(time.Second)},
+		{ReviewID: "r2", GitHubReviewID: "c", At: t0},
+	} {
+		if err := s.RecordPost(ctx, p, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := s.PostedReviewIDs(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || !got["r1"] || !got["r2"] || got["r3"] {
+		t.Errorf("PostedReviewIDs = %v, want r1 and r2", got)
+	}
+}

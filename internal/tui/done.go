@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"slices"
 	"strconv"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
+	"github.com/chrisdaly-3/jawnsnow/internal/store"
 	"github.com/chrisdaly-3/jawnsnow/internal/theme"
 	"github.com/chrisdaly-3/jawnsnow/internal/tracker"
 )
@@ -24,7 +26,7 @@ const (
 	colAuthor = 14
 	colStatus = 10
 	colWhen   = 8
-	colClaude = 26
+	colClaude = 34
 	cellPad   = 2 // the table's cell style pads each side by one
 )
 
@@ -45,6 +47,66 @@ type doneModel struct {
 	// verdicts is each waiting PR's latest Claude verdict, by ID. The root
 	// model copies it in before each view.
 	verdicts map[string]string
+
+	// stats is each PR's review count and cost, for the merged table's last
+	// column; issued and applied order the loads so an old answer can't
+	// replace a newer one.
+	stats           map[string]store.PRStat
+	issued, applied int
+}
+
+// doneStatsMsg carries the review stats a load read.
+type doneStatsMsg struct {
+	Seq   int
+	Stats map[string]store.PRStat
+	Err   error
+}
+
+// loadDoneStats reads every PR's review count and cost in a command.
+func (m Model) loadDoneStats() (Model, tea.Cmd) {
+	st := m.store
+	m.done.issued++
+	seq := m.done.issued
+	return m, func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), inputsTimeout)
+		defer cancel()
+		stats, err := st.PRReviewStats(ctx)
+		return doneStatsMsg{Seq: seq, Stats: stats, Err: err}
+	}
+}
+
+// updateDoneStats takes a stats load. A failed read keeps the last good
+// numbers.
+func (m Model) updateDoneStats(msg tea.Msg) (_ Model, ok bool) {
+	d, isStats := msg.(doneStatsMsg)
+	if !isStats {
+		return m, false
+	}
+	if d.Seq >= m.done.applied && d.Err == nil {
+		m.done.applied, m.done.stats = d.Seq, d.Stats
+	}
+	return m, true
+}
+
+// reviewCostText is the merged table's review cell: the count, then the
+// spend, or a note where a run's cost was never reported. A PR with no
+// reviews has a blank cell.
+func reviewCostText(st store.PRStat) string {
+	if st.Reviews == 0 {
+		return ""
+	}
+	text := strconv.Itoa(st.Reviews) + " reviews"
+	if st.Reviews == 1 {
+		text = "1 review"
+	}
+	switch {
+	case st.Unknown == 0:
+		return text + " · " + dollars(st.CostUSD)
+	case st.CostUSD > 0:
+		return text + " · " + dollars(st.CostUSD) + " · cost unknown"
+	default:
+		return text + " · cost unknown"
+	}
 }
 
 func newDone() doneModel { return doneModel{w: 120, h: 30, loc: time.Local} }
@@ -199,15 +261,14 @@ func (m doneModel) columns(pane, width int) []table.Column {
 	}
 }
 
-// cells is one row. The merged table's last column is blank until plan 3
-// fills it.
+// cells is one row.
 func (m doneModel) cells(pane int, t tracker.Tracked, th theme.Theme) table.Row {
 	pr := clean(t.PR.Repo+"#"+strconv.Itoa(t.PR.Number)) + " " + clean(t.PR.Title)
 	author := clean(t.PR.Author)
 	if pane == paneWaiting {
 		return table.Row{pr, author, string(t.WaitReason), sinceAge(t.WaitingSince, m.now), m.verdicts[t.PR.ID]}
 	}
-	return table.Row{pr, author, th.ChipLine(string(t.Status.Status)), doneDate(t.DoneAt, m.loc), ""}
+	return table.Row{pr, author, th.ChipLine(string(t.Status.Status)), doneDate(t.DoneAt, m.loc), reviewCostText(m.stats[t.PR.ID])}
 }
 
 func doneDate(at time.Time, loc *time.Location) string {

@@ -328,6 +328,9 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 	if next, cmd, ok := m.updateReviewLog(msg); ok {
 		return next, cmd
 	}
+	if next, ok := m.updateDoneStats(msg); ok {
+		return next, nil
+	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
@@ -646,6 +649,8 @@ func (m Model) showView(v View) (Model, tea.Cmd) {
 		return m.enterCost()
 	case ViewReviews:
 		return m.enterReviews()
+	case ViewDone:
+		return m.loadDoneStats()
 	}
 	return m, nil
 }

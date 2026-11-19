@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -26,7 +27,9 @@ type reviewLogLoadedMsg struct {
 	Entries []store.LogEntry
 	// Posted is the IDs of the reviews that were posted to GitHub.
 	Posted map[string]bool
-	Err    error
+	// Keep is the review ID the cursor stays on, if it is still listed.
+	Keep string
+	Err  error
 }
 
 // reviewLogModel is the Reviews view: every Claude review, newest first.
@@ -77,7 +80,11 @@ func (m Model) enterReviews() (Model, tea.Cmd) {
 
 // loadReviewLog reads the reviews the current filter matches, and which of
 // them were posted, in a command.
-func (m Model) loadReviewLog() (Model, tea.Cmd) {
+func (m Model) loadReviewLog() (Model, tea.Cmd) { return m.loadReviewLogKeeping("") }
+
+// loadReviewLogKeeping is loadReviewLog that puts the cursor on the review
+// keep when the load still has it.
+func (m Model) loadReviewLogKeeping(keep string) (Model, tea.Cmd) {
 	st, f := m.store, m.reviewLog.filter()
 	return m, func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), inputsTimeout)
@@ -86,16 +93,25 @@ func (m Model) loadReviewLog() (Model, tea.Cmd) {
 		if err != nil {
 			return reviewLogLoadedMsg{Filter: f, Err: err}
 		}
-		posted := map[string]bool{}
-		for _, e := range es {
-			ps, err := st.PostedFor(ctx, e.Review.ID)
-			if err != nil {
-				return reviewLogLoadedMsg{Filter: f, Err: err}
-			}
-			posted[e.Review.ID] = len(ps) > 0
+		posted, err := st.PostedReviewIDs(ctx)
+		if err != nil {
+			return reviewLogLoadedMsg{Filter: f, Err: err}
 		}
-		return reviewLogLoadedMsg{Filter: f, Entries: es, Posted: posted}
+		return reviewLogLoadedMsg{Filter: f, Entries: es, Posted: posted, Keep: keep}
 	}
+}
+
+// reloadReviewLog re-reads the Reviews view after a review or a post, if it
+// is the view on screen, keeping the cursor on the same review.
+func (m Model) reloadReviewLog() (Model, tea.Cmd) {
+	if m.view != ViewReviews {
+		return m, nil
+	}
+	keep := ""
+	if r := m.reviewLog; len(r.entries) > 0 {
+		keep = r.entries[r.at()].Review.ID
+	}
+	return m.loadReviewLogKeeping(keep)
 }
 
 // updateReviewLog takes the view's loads and pastes.
@@ -109,6 +125,9 @@ func (m Model) updateReviewLog(msg tea.Msg) (_ Model, _ tea.Cmd, ok bool) {
 		r.loaded, r.shown, r.entries, r.posted, r.err = true, msg.Filter, msg.Entries, msg.Posted, ""
 		if msg.Err != nil {
 			r.entries, r.posted, r.err = nil, nil, "could not read reviews: "+msg.Err.Error()
+		}
+		if i := slices.IndexFunc(r.entries, func(e store.LogEntry) bool { return msg.Keep != "" && e.Review.ID == msg.Keep }); i >= 0 {
+			r.cursor = i
 		}
 		r.cursor = r.at()
 		m.reviewLog = r
@@ -270,17 +289,14 @@ func (m Model) reviewLogCells(e store.LogEntry, cols []reviewLogCol, posted bool
 		case "outcome":
 			row[i] = orDash(clean(r.Outcome))
 		case "verdict":
-			row[i] = orDash(clean(r.Verdict))
+			row[i] = orDash(verdictLabel(r.Verdict))
 		case "findings":
 			row[i] = "–"
 			if e.Findings > 0 {
 				row[i] = fmt.Sprintf("%d · %d blocking", e.Findings, e.Blocking)
 			}
 		case "cost":
-			row[i] = fmt.Sprintf("$%.2f", r.CostUSD)
-			if r.CostUnknown {
-				row[i] = "?"
-			}
+			row[i] = costCell(r.CostUSD, r.CostUnknown)
 		case "posted":
 			if posted {
 				row[i] = "✓"

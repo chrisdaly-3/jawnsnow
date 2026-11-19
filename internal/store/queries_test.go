@@ -215,7 +215,7 @@ func TestPRReviewStats(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string]PRStat{
-		"pr1": {Reviews: 2, CostUSD: 4},
+		"pr1": {Reviews: 2, CostUSD: 4, Unknown: 1},
 		"pr2": {Reviews: 1, CostUSD: 3},
 		"pr3": {Reviews: 1, CostUSD: 0},
 		"pr4": {Reviews: 0, CostUSD: 4},

@@ -189,7 +189,13 @@ func (m drawerModel) update(msg tea.Msg, c drawerCtx) (drawerModel, tea.Cmd, act
 // loadedReviews takes a PR's reviews. The pass on screen stays on screen if
 // it is still there, so a new review arriving doesn't move you.
 func (m drawerModel) loadedReviews(msg drawerLoadedMsg) drawerModel {
-	if msg.PRID != m.prID || msg.Err != nil || msg.Seq < m.applied {
+	if msg.PRID != m.prID || msg.Seq < m.applied {
+		return m
+	}
+	if msg.Err != nil {
+		// No later load is owed the jump: a reload long after would
+		// otherwise move the pass.
+		m.wantReview = ""
 		return m
 	}
 	m.applied = msg.Seq
@@ -347,6 +353,15 @@ var verdictBanners = map[string]struct {
 	"comment":         {"COMMENT", 39},
 }
 
+// verdictLabel is a verdict's text as the drawer's banner shows it, so the
+// Reviews view reads the same. An unknown verdict is upper-cased as it came.
+func verdictLabel(verdict string) string {
+	if b, ok := verdictBanners[verdict]; ok {
+		return b.label
+	}
+	return strings.ToUpper(cleanLine(verdict))
+}
+
 var ledgerLabels = []struct{ ledger, label string }{
 	{"addressed", "fixed"}, {"outstanding", "still open"}, {"answered", "answered"}, {"new", "new"},
 }
@@ -428,7 +443,7 @@ func (m drawerModel) layout(c drawerCtx) (lines []string, anchors []int) {
 	if b, ok := verdictBanners[r.Verdict]; ok {
 		banner = th.Banner(b.color, b.label)
 	} else if r.Verdict != "" {
-		banner = th.Muted().Render(strings.ToUpper(cleanLine(r.Verdict)))
+		banner = th.Muted().Render(verdictLabel(r.Verdict))
 	}
 	switch r.Outcome {
 	case "incomplete":
@@ -592,14 +607,26 @@ func (m drawerModel) bottomLine(c drawerCtx, inner int) string {
 	return th.Muted().Render(ansi.Truncate("j/k scroll · n/p finding · </> pass · y copy · O open line · P post", inner, "…"))
 }
 
+// dollars is an amount of money the way every view writes it.
+func dollars(usd float64) string { return fmt.Sprintf("$%.2f", usd) }
+
+// costCell is a cost for a table cell: the amount, or "?" when it was never
+// reported.
+func costCell(usd float64, unknown bool) string {
+	if unknown {
+		return "?"
+	}
+	return dollars(usd)
+}
+
 // costText is a review's cost, saying so when a run's cost was never
 // reported rather than showing a number that leaves it out.
 func costText(r store.Review) string {
 	switch {
 	case !r.CostUnknown:
-		return fmt.Sprintf("$%.2f", r.CostUSD)
+		return dollars(r.CostUSD)
 	case r.CostUSD > 0:
-		return fmt.Sprintf("$%.2f + cost unknown", r.CostUSD)
+		return dollars(r.CostUSD) + " + cost unknown"
 	default:
 		return "cost unknown"
 	}

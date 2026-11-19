@@ -499,7 +499,8 @@ func (m Model) finishPost(msg postDoneMsg) (Model, tea.Cmd) {
 			m.notice = "posted, but could not look up its threads: " + msg.ThreadErr.Error()
 		}
 	}
-	return m, tea.Batch(reload, poll)
+	m, relog := m.reloadReviewLog()
+	return m, tea.Batch(reload, poll, relog)
 }
 
 func (d drawerModel) withPosted(p store.Posted) drawerModel {

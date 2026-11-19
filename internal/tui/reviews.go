@@ -241,7 +241,13 @@ func (m Model) updateReviews(msg tea.Msg) (_ Model, _ tea.Cmd, ok bool) {
 			m, load = m.loadDrawer(msg.PRID)
 			cmd = tea.Batch(cmd, load)
 		}
-		return m, cmd, true
+		if m.reviews.quitting {
+			return m, cmd, true // finishReview is winding down to a quit
+		}
+		var stats, reload tea.Cmd
+		m, stats = m.loadDoneStats()
+		m, reload = m.reloadReviewLog()
+		return m, tea.Batch(cmd, stats, reload), true
 	case reviewInputsMsg:
 		m, cmd := m.applyInputs(msg)
 		return m, cmd, true

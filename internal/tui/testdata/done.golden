@@ -1,13 +1,13 @@
 ▸ Merged & closed (3)
- PR                                                    Author          Status      Done      Claude reviews / your cost 
- chainguard-dev/mono#85044 docs: explain the deploy …  me               Merged     Nov 18                               
- chainguard-dev/mono#85001 feat(policies): add repo_…  alice            Merged     Nov 17                               
- chainguard-dev/os#4001 bump zlib to 1.3.2             erin             Closed     Nov 14                               
+ PR                                            Author          Status      Done      Claude reviews / your cost         
+ chainguard-dev/mono#85044 docs: explain the…  me               Merged     Nov 18                                       
+ chainguard-dev/mono#85001 feat(policies): a…  alice            Merged     Nov 17    2 reviews · $1.75                  
+ chainguard-dev/os#4001 bump zlib to 1.3.2     erin             Closed     Nov 14    1 review · cost unknown            
 
   Waiting for new activity (2)
- PR                                                    Author          Reason      Since     Latest Claude verdict      
- chainguard-dev/mono#85300 chore: rotate the registr…  bob             hidden      3h                                   
- chainguard-dev/enforce#310 refactor: split the poll…  frank           stale       2d                                   
+ PR                                            Author          Reason      Since     Latest Claude verdict              
+ chainguard-dev/mono#85300 chore: rotate the…  bob             hidden      3h                                           
+ chainguard-dev/enforce#310 refactor: split …  frank           stale       2d                                           
 
 
 

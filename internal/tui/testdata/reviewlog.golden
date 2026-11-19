@@ -3,9 +3,9 @@ Reviews (4)
 
  Started  Review                                  Tier · model · effort         Outcome     Verdict          Findings        Cost    Posted 
  30m      acme/gadgets#22 Tune the gadget loop    first_pass · opus · high      failed      –                –               ?              
- 1h       acme/gadgets#22 Tune the gadget loop    first_pass · sonnet · low     incomplete  request_changes  –               $12.50         
- 3h       acme/widgets#1 Fix the widget cache     first_pass · opus · high      complete    comment          2 · 1 blocking  $1.50   ✓      
- 2d       acme/widgets#1 Fix the widget cache     follow_up · sonnet · medium   complete    approve          –               $0.40          
+ 1h       acme/gadgets#22 Tune the gadget loop    first_pass · sonnet · low     incomplete  REQUEST CHANGES  –               $12.50         
+ 3h       acme/widgets#1 Fix the widget cache     first_pass · opus · high      complete    COMMENT          2 · 1 blocking  $1.50   ✓      
+ 2d       acme/widgets#1 Fix the widget cache     follow_up · sonnet · medium   complete    APPROVE          –               $0.40          
                                                                                                                                             
                                                                                                                                             
                                                                                                                                             

@@ -69,3 +69,21 @@ func (s *Store) PostedFor(ctx context.Context, reviewID string) ([]Posted, error
 	}
 	return out, rows.Err()
 }
+
+// PostedReviewIDs is the set of review IDs that were posted at least once.
+func (s *Store) PostedReviewIDs(ctx context.Context) (map[string]bool, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT DISTINCT review_id FROM posted_reviews`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]bool{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out[id] = true
+	}
+	return out, rows.Err()
+}

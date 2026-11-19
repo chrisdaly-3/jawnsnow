@@ -232,3 +232,46 @@ func TestReviewLogNarrowDropsColumns(t *testing.T) {
 		}
 	}
 }
+
+// A review finishing while the Reviews view is open adds its row without
+// moving the cursor off the review you were on.
+func TestReviewLogReloadsAfterReviewAndPost(t *testing.T) {
+	h := logHarness(t, 140, 24, true)
+	h.press(t, "3", "j") // r3, r4, ...
+	if e := h.m.reviewLog.entries[h.m.reviewLog.at()]; e.Review.ID != "r4" {
+		t.Fatalf("cursor on %q, want r4", e.Review.ID)
+	}
+
+	ctx := context.Background()
+	if err := h.store.SaveReview(ctx, store.Review{ID: "r5", PRID: "1", Repo: "acme/widgets", Number: 1, Outcome: "complete", StartedAt: t0}); err != nil {
+		t.Fatal(err)
+	}
+	h.m, _ = settle(t, h.m, reviewDoneMsg{PRID: "1", Review: store.Review{ID: "r5", PRID: "1"}})
+	r := h.m.reviewLog
+	if len(r.entries) != 5 || r.entries[0].Review.ID != "r5" {
+		t.Fatalf("entries after a review = %d, first %q; want 5 starting r5", len(r.entries), r.entries[0].Review.ID)
+	}
+	if got := r.entries[r.at()].Review.ID; got != "r4" {
+		t.Errorf("cursor moved to %q, want it kept on r4", got)
+	}
+
+	p := store.Posted{ReviewID: "r4", GitHubReviewID: "g1", At: t0}
+	if err := h.store.RecordPost(ctx, p, nil); err != nil {
+		t.Fatal(err)
+	}
+	h.m, _ = settle(t, h.m, postDoneMsg{ReviewID: "r4", PRID: "22", Posted: p})
+	r = h.m.reviewLog
+	if !r.posted["r4"] {
+		t.Errorf("r4 not marked posted after the post: %v", r.posted)
+	}
+	if got := r.entries[r.at()].Review.ID; got != "r4" {
+		t.Errorf("cursor moved to %q after the post, want r4", got)
+	}
+
+	// Another view doesn't pay for the reload.
+	h.press(t, "1")
+	_, cmd := update(t, h.m, reviewDoneMsg{PRID: "1", Review: store.Review{ID: "r5", PRID: "1"}})
+	if n := len(logLoads(t, cmd)); n != 0 {
+		t.Errorf("a review finishing outside the Reviews view reloaded its log %d times", n)
+	}
+}
