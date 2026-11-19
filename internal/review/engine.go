@@ -560,20 +560,57 @@ func (e *Engine) ReleasePR(ctx context.Context, repo string, number int) error {
 }
 
 // PruneIdle removes worktrees idle for longer than review.worktree_idle
-// from every pool this Engine has made.
+// from every repo with stored slots, as well as every pool this Engine has
+// made. A repo this process never reviewed gets its pool only when it has
+// a slot to prune; one that can't be resolved is skipped with its error.
 func (e *Engine) PruneIdle(ctx context.Context) error {
 	idle := e.Config().Review.WorktreeIdle.Duration
+	names, err := e.Store.SlotRepos(ctx)
+	if err != nil {
+		return err
+	}
 	e.mu.Lock()
-	pools := make([]*workspace.Pool, 0, len(e.repos))
-	for _, rp := range e.repos {
-		pools = append(pools, rp.pool)
+	for name := range e.repos {
+		if !slices.Contains(names, name) {
+			names = append(names, name)
+		}
 	}
 	e.mu.Unlock()
+	slices.Sort(names)
+
 	var errs []error
-	for _, p := range pools {
-		errs = append(errs, p.PruneIdle(ctx, idle))
+	for _, name := range names {
+		rp := e.cachedPool(name)
+		if rp == nil {
+			due, err := e.hasIdleSlot(ctx, name, idle)
+			if err != nil {
+				errs = append(errs, err)
+				continue
+			}
+			if !due {
+				continue
+			}
+			if rp, err = e.repoPool(ctx, name); err != nil {
+				errs = append(errs, fmt.Errorf("prune %s: %w", name, err))
+				continue
+			}
+		}
+		errs = append(errs, rp.pool.PruneIdle(ctx, idle))
 	}
 	return errors.Join(errs...)
+}
+
+// hasIdleSlot reports whether repo has a stored free slot unused for longer
+// than idle.
+func (e *Engine) hasIdleSlot(ctx context.Context, repo string, idle time.Duration) (bool, error) {
+	slots, err := e.Store.Slots(ctx, repo)
+	if err != nil {
+		return false, err
+	}
+	now := e.now()
+	return slices.ContainsFunc(slots, func(s store.Slot) bool {
+		return !s.Busy && now.Sub(s.LastUsed) > idle
+	}), nil
 }
 
 // dataDir creates DataDir and returns its real path. Pools and review

@@ -257,6 +257,24 @@ func (s *Store) SaveSlot(ctx context.Context, sl Slot) error {
 	return err
 }
 
+// SlotRepos lists, sorted, every repo that has a stored slot.
+func (s *Store) SlotRepos(ctx context.Context) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT DISTINCT repo FROM worktree_slots ORDER BY repo`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var repo string
+		if err := rows.Scan(&repo); err != nil {
+			return nil, err
+		}
+		out = append(out, repo)
+	}
+	return out, rows.Err()
+}
+
 // DeleteSlot removes the slot at path; an unknown path is ignored.
 func (s *Store) DeleteSlot(ctx context.Context, path string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM worktree_slots WHERE path = ?`, path)

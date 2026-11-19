@@ -239,6 +239,11 @@ func TestSlotsCRUD(t *testing.T) {
 	if len(got) != 1 || got[0].Path != b.Path {
 		t.Errorf("after delete: %+v", got)
 	}
+
+	repos, err := s.SlotRepos(ctx)
+	if err != nil || !reflect.DeepEqual(repos, []string{"acme/other", "acme/widgets"}) {
+		t.Errorf("SlotRepos = %q, %v", repos, err)
+	}
 }
 
 func TestMigratesV1Database(t *testing.T) {

@@ -808,6 +808,54 @@ func TestEnginePruneIdle(t *testing.T) {
 	}
 }
 
+// A slot left by an earlier snow is pruned even when this one never
+// reviewed its repo.
+func TestEnginePruneIdleCoversReposNotReviewedThisSession(t *testing.T) {
+	env := newEngineEnv(t)
+	env.claude.script(fakeRun{Reads: readAll, Output: output(nil, nil), Cost: 0.3})
+	if _, err := env.run(t, Request{Mode: ModeAuto}); err != nil {
+		t.Fatal(err)
+	}
+	slots, _ := env.st.Slots(context.Background(), "o/n")
+	if len(slots) != 1 {
+		t.Fatalf("slots = %+v", slots)
+	}
+	restarted := &Engine{
+		Config: env.e.Config, Client: env.e.Client, Store: env.st, DataDir: env.data,
+		Claude: env.e.Claude, Now: env.clock, CloneURL: env.e.CloneURL, binArgs: env.e.binArgs,
+	}
+	if err := restarted.PruneIdle(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := env.st.Slots(context.Background(), "o/n"); len(got) != 1 {
+		t.Fatalf("a fresh slot was pruned: %+v", got)
+	}
+	env.advance(3 * time.Hour)
+	if err := restarted.PruneIdle(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := env.st.Slots(context.Background(), "o/n"); len(got) != 0 {
+		t.Errorf("idle slot of a repo not reviewed this session kept: %+v", got)
+	}
+	if exists(slots[0].Path) {
+		t.Errorf("worktree %s kept", slots[0].Path)
+	}
+}
+
+// A repo whose stored slots can't be resolved is skipped, with its error.
+func TestEnginePruneIdleReportsUnresolvableRepo(t *testing.T) {
+	env := newEngineEnv(t)
+	slot := store.Slot{Repo: "o/gone", Path: filepath.Join(env.data, "worktrees", "o__gone", "slot-1"), LastUsed: env.now.Add(-5 * time.Hour)}
+	if err := env.st.SaveSlot(context.Background(), slot); err != nil {
+		t.Fatal(err)
+	}
+	env.cfg.Repos = map[string]config.Repo{"o/gone": {Path: t.TempDir(), Scope: "full"}}
+	err := env.e.PruneIdle(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "o/gone") {
+		t.Errorf("PruneIdle err = %v, want one naming o/gone", err)
+	}
+}
+
 func TestEngineContinuationFailureKeepsEarlierOutput(t *testing.T) {
 	for _, tc := range []struct {
 		name string
