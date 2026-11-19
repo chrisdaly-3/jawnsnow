@@ -1011,3 +1011,14 @@ func TestPreviewNeverDecodesSplitReferences(t *testing.T) {
 		t.Errorf("the sentence is not in the preview:\n%s", got)
 	}
 }
+
+func TestPreviewDefinitionListsDecodeNothing(t *testing.T) {
+	for name, src := range defListProbes {
+		h := newPostHarness(t, markdownReview(src), opts{})
+		h.press(t, "P", "enter")
+		checkNoDecodedControls(t, name, h.m.postBody(160, 56))
+		if got := modalText(h.m); !strings.Contains(got, "This PR is garbage") {
+			t.Errorf("%s: the sentence is not in the preview:\n%s", name, got)
+		}
+	}
+}

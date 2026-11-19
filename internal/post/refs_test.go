@@ -2,9 +2,16 @@ package post
 
 import (
 	"html"
+	"math/rand/v2"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/ast"
+	"github.com/yuin/goldmark/extension"
+	"github.com/yuin/goldmark/parser"
+	"github.com/yuin/goldmark/text"
 )
 
 // The final review's probe: entities that goldmark decodes into ESC [ 8 m,
@@ -124,6 +131,47 @@ func TestHiddenContentNamesSemicolonlessRefs(t *testing.T) {
 	} {
 		if got := HiddenContent(tc.md); !reflect.DeepEqual(got, tc.want) {
 			t.Errorf("%s: got %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+// CodeBlockLines must find exactly the code blocks glamour's parser does;
+// genBlockInputs mixes the block syntax where GFM and glamour's settings
+// disagree, like definition lists.
+func TestCodeBlockLinesMatchGlamoursParser(t *testing.T) {
+	glamourLike := goldmark.New(
+		goldmark.WithExtensions(extension.GFM, extension.DefinitionList),
+		goldmark.WithParserOptions(parser.WithAutoHeadingID()),
+	).Parser()
+	pool := []string{
+		"Term", ": def", ":   def", ":\tdef", "", "", "    code x", "\tcode", "- item", "  : def",
+		"      ind", "```", "```go", "~~~", "   ```", "text", "> quote", ">     q", "1. x", "   : def",
+		"# h", "| a | b |", "|---|---|", "<div>", "</div>", "  - nested", "        deep",
+	}
+	rng := rand.New(rand.NewPCG(3, 4))
+	for range 400 {
+		lines := make([]string, 3+rng.IntN(10))
+		for j := range lines {
+			lines[j] = pool[rng.IntN(len(pool))]
+		}
+		md := strings.Join(lines, "\n")
+		src := []byte(md)
+		var want [][2]int
+		_ = ast.Walk(glamourLike.Parse(text.NewReader(src)), func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+			switch n.(type) {
+			case *ast.FencedCodeBlock, *ast.CodeBlock:
+				if entering {
+					for i := range n.Lines().Len() {
+						seg := n.Lines().At(i)
+						want = append(want, [2]int{seg.Start, seg.Stop})
+					}
+				}
+				return ast.WalkSkipChildren, nil
+			}
+			return ast.WalkContinue, nil
+		})
+		if got := CodeBlockLines(md); !reflect.DeepEqual(got, want) {
+			t.Errorf("CodeBlockLines(%q) = %v, want %v", md, got, want)
 		}
 	}
 }

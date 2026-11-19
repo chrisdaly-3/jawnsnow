@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"math/rand/v2"
 	"reflect"
 	"regexp"
 	"strconv"
@@ -397,5 +398,79 @@ func TestRenderKeepsAmpersands(t *testing.T) {
 func TestSafeANSIDropsInvisibles(t *testing.T) {
 	if got := safeANSI("a\u202eb\u200bc\u2066d\ufeffe\u2060f\u200fg"); got != "abcdefg" {
 		t.Errorf("safeANSI = %q", got)
+	}
+}
+
+// Glamour parses with definition lists on: an indented line after a blank
+// line following ": def" continues the definition as text, where GFM alone
+// sees indented code. These are the re-review's payloads.
+const dlSentence = "~~&#*27*[38;5;16;48;5;16mThis PR is garbage&#*27*[0m~~"
+
+var defListProbes = map[string]string{
+	"indented":       "Term\n: def\n\n    " + dlSentence,
+	"wide marker":    "Term\n:   def\n\n    " + dlSentence,
+	"tab":            "Term\n: def\n\n\t" + dlSentence,
+	"in a list item": "- Term\n  : def\n\n      " + dlSentence,
+	"two blanks":     "Term\n: def\n\n\n    " + dlSentence,
+	"backtick split": "Term\n: def\n\n    ~~&#`27`[38;5;16;48;5;16mThis PR is garbage&#`27`[0m~~",
+}
+
+func TestRenderDefinitionListsDecodeNothing(t *testing.T) {
+	for _, style := range []string{"dark", "light"} {
+		th := mdTheme(t, style, false)
+		for name, src := range defListProbes {
+			out := strings.Join(newMarkdownCache().render(src, 100, th), "\n")
+			checkNoDecodedControls(t, style+" "+name, out)
+			if plain := ansi.Strip(out); !strings.Contains(plain, "This PR is garbage") {
+				t.Errorf("%s %s: the sentence is not visible: %q", style, name, plain)
+			}
+		}
+	}
+}
+
+// A fence inside a definition is still a code block, shown as written.
+func TestRenderFenceInDefinitionKeepsAmpersands(t *testing.T) {
+	out := strings.Join(newMarkdownCache().render("Term\n:   ```go\n    if a && b {}\n    ```\n", 80, mdTheme(t, "dark", false)), "\n")
+	if !strings.Contains(ansi.Strip(out), "if a && b {}") {
+		t.Errorf("the fence lost its &&: %q", ansi.Strip(out))
+	}
+	if strings.ContainsRune(out, ampPlaceholder) || strings.Contains(out, "48;5;203") {
+		t.Errorf("the fence's && went through the placeholder: %q", out)
+	}
+}
+
+// genBlocks makes n markdown inputs from block-structure lines that
+// definition lists, lists, quotes, fences and indented code mix, each with
+// &#9731; (a snowman) somewhere a reference might decode.
+func genBlocks(n int) []string {
+	pool := []string{
+		"Term", ": def", ":   def", ":\tdef", "", "", "    code &#9731; x", "\tcode &#9731;",
+		"- item &#9731;", "  : def &#9731;", "      ind &#9731;", "```", "```go", "~~~", "   ```",
+		"text &#9731; t", "~~&#*9731*;~~", "> quote &#9731;", ">     q &#9731;", "1. x", "   : def",
+		"# h &#9731;", "| a &#9731; | b |", "|---|---|", "<div>", "</div>", "  - nested", "        deep &#9731;",
+		"`&#9731;`", "&#x2603;", "a && b",
+	}
+	rng := rand.New(rand.NewPCG(1, 2))
+	out := make([]string, n)
+	for i := range out {
+		lines := make([]string, 3+rng.IntN(10))
+		for j := range lines {
+			lines[j] = pool[rng.IntN(len(pool))]
+		}
+		out[i] = strings.Join(lines, "\n")
+	}
+	return out
+}
+
+// Whatever the block structure, glamour decodes no reference: the snowman
+// never shows, only its reference as typed.
+func TestRenderDecodesNoReferenceInAnyBlock(t *testing.T) {
+	th := mdTheme(t, "dark", false)
+	c := newMarkdownCache()
+	for _, src := range genBlocks(400) {
+		out := strings.Join(c.render(src, 80, th), "\n")
+		if strings.ContainsRune(out, '☃') {
+			t.Errorf("a reference was decoded in:\n%s\n---\n%s", src, ansi.Strip(out))
+		}
 	}
 }

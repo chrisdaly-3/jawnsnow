@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"image/color"
 	"reflect"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -119,10 +118,14 @@ const ampPlaceholder = '\ue026'
 // their highlighter would mark the placeholder as an error.
 func hideAmpersands(src string) string {
 	src = strings.ReplaceAll(src, string(ampPlaceholder), "\ufffd")
-	code := post.CodeBlockLines(src)
+	code := post.CodeBlockLines(src) // in source order
 	var b strings.Builder
+	k := 0
 	for i := range len(src) {
-		if src[i] == '&' && !slices.ContainsFunc(code, func(r [2]int) bool { return i >= r[0] && i < r[1] }) {
+		for k < len(code) && code[k][1] <= i {
+			k++
+		}
+		if src[i] == '&' && !(k < len(code) && code[k][0] <= i) {
 			b.WriteRune(ampPlaceholder)
 			continue
 		}

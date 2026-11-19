@@ -20,7 +20,18 @@ var atEntity = regexp.MustCompile(`&#0*64;|&#[xX]0*40;|&commat;`)
 
 var htmlComment = regexp.MustCompile(`(?s)<!--.*?(?:-->|$)`)
 
+// parserFor models GitHub, which has no definition lists, so HiddenContent
+// warns about what GitHub will show.
 var parserFor = goldmark.New(goldmark.WithExtensions(extension.GFM)).Parser()
+
+// glamourParser parses as glamour's NewTermRenderer does: GFM, definition
+// lists and heading IDs. CodeBlockLines must see the same block structure
+// as the renderer, or text glamour renders (and decodes) could be taken for
+// a code block it shows as written. Keep it in step with glamour.
+var glamourParser = goldmark.New(
+	goldmark.WithExtensions(extension.GFM, extension.DefinitionList),
+	goldmark.WithParserOptions(parser.WithAutoHeadingID()),
+).Parser()
 
 // HiddenContent names what a rendered view hides or acts on: character
 // references that decode to control or invisible characters, HTML
@@ -150,10 +161,10 @@ func encodedControl(src []byte, literal []text.Segment) bool {
 }
 
 // CodeBlockLines returns the byte ranges of md's fenced and indented code
-// lines, which a renderer shows as written.
+// lines as glamour parses them, in order; glamour shows these as written.
 func CodeBlockLines(md string) [][2]int {
 	src := []byte(md)
-	root := parserFor.Parse(text.NewReader(src))
+	root := glamourParser.Parse(text.NewReader(src))
 	var out [][2]int
 	_ = ast.Walk(root, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
 		if !entering {

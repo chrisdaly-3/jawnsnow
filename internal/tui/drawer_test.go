@@ -702,3 +702,16 @@ func TestDrawerNeverDecodesSplitReferences(t *testing.T) {
 		t.Errorf("the sentence is not visible:\n%s", plain)
 	}
 }
+
+func TestDrawerDefinitionListsDecodeNothing(t *testing.T) {
+	for name, src := range defListProbes {
+		rv := drawerReview()
+		rv.Findings = []store.Finding{{ID: 1, Path: "a.go", Line: 3, Body: src}}
+		d, c := openDrawer(t, 160, 40, rv)
+		out := renderDrawer(d, c, 40)
+		checkNoDecodedControls(t, name, out)
+		if plain := strings.Join(strings.Fields(ansi.Strip(out)), " "); !strings.Contains(plain, "This PR is garbage") {
+			t.Errorf("%s: the sentence is not visible:\n%s", name, plain)
+		}
+	}
+}
