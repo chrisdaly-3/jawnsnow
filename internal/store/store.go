@@ -52,6 +52,14 @@ var migrations = []string{
 	`CREATE INDEX findings_review_id ON findings (review_id);
 	CREATE INDEX reviews_pr_id_started_at ON reviews (pr_id, started_at);
 	CREATE INDEX cost_ledger_at ON cost_ledger (at)`,
+	// Reviews posted to GitHub; the thread IDs live in the findings' data.
+	`CREATE TABLE posted_reviews (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		review_id TEXT,
+		at TEXT,
+		data TEXT
+	);
+	CREATE INDEX posted_reviews_review_id ON posted_reviews (review_id)`,
 }
 
 type Store struct {

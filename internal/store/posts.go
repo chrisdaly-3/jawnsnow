@@ -1,0 +1,71 @@
+package store
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"time"
+)
+
+// Posted is one review sent to GitHub.
+type Posted struct {
+	ReviewID, GitHubReviewID, URL, Event, CommitOID string
+	FindingIDs                                      []int64
+	At                                              time.Time
+}
+
+// RecordPost stores p and sets the ThreadID of each finding in threads, in
+// one transaction. A finding that doesn't exist, or belongs to another
+// review, fails the whole call.
+func (s *Store) RecordPost(ctx context.Context, p Posted, threads map[int64]string) error {
+	data, err := json.Marshal(p)
+	if err != nil {
+		return fmt.Errorf("encode post of %s: %w", p.ReviewID, err)
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, `INSERT INTO posted_reviews (review_id, at, data) VALUES (?, ?, ?)`,
+		p.ReviewID, ts(p.At), string(data)); err != nil {
+		return fmt.Errorf("record post of %s: %w", p.ReviewID, err)
+	}
+	for id, thread := range threads {
+		res, err := tx.ExecContext(ctx, `UPDATE findings SET data = json_set(data, '$.ThreadID', ?)
+			WHERE id = ? AND review_id = ?`, thread, id, p.ReviewID)
+		if err != nil {
+			return fmt.Errorf("set thread of finding %d: %w", id, err)
+		}
+		if n, err := res.RowsAffected(); err != nil {
+			return err
+		} else if n != 1 {
+			return fmt.Errorf("set thread of finding %d: no such finding in review %s", id, p.ReviewID)
+		}
+	}
+	return tx.Commit()
+}
+
+// PostedFor returns reviewID's posts, newest first.
+func (s *Store) PostedFor(ctx context.Context, reviewID string) ([]Posted, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT data FROM posted_reviews
+		WHERE review_id = ? ORDER BY at DESC, id DESC`, reviewID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Posted
+	for rows.Next() {
+		var data string
+		if err := rows.Scan(&data); err != nil {
+			return nil, err
+		}
+		var p Posted
+		if err := json.Unmarshal([]byte(data), &p); err != nil {
+			return nil, fmt.Errorf("decode post: %w", err)
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
