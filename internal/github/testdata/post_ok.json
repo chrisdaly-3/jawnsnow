@@ -1,0 +1,14 @@
+{
+ "addPullRequestReview": {
+  "pullRequestReview": {
+   "id": "PRR_1",
+   "url": "https://github.com/o/r/pull/1#pullrequestreview-1",
+   "comments": {
+    "nodes": [
+     {"id": "PRRC_1", "path": "a.go", "line": 12},
+     {"id": "PRRC_2", "path": "b.go", "line": null}
+    ]
+   }
+  }
+ }
+}

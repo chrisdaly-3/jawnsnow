@@ -1,0 +1,12 @@
+{
+ "node": {
+  "reviewThreads": {
+   "pageInfo": {"hasPreviousPage": true, "startCursor": "CUR_BACK"},
+   "nodes": [
+    {"id": "PRT_9", "comments": {"nodes": [{"id": "PRRC_9"}]}},
+    {"id": "PRT_2", "comments": {"nodes": [{"id": "PRRC_2"}]}},
+    {"id": "PRT_empty", "comments": {"nodes": []}}
+   ]
+  }
+ }
+}

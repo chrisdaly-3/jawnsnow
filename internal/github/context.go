@@ -39,7 +39,7 @@ const commentNodes = `nodes{author{login} body createdAt}`
 const filesSelection = `files(first:100, after: $after){pageInfo{hasNextPage endCursor} nodes{path}}`
 
 // reviewContextQuery fetches the body, comments, threads and the first page of
-// files. It is a query, never a mutation: the client is read-only.
+// files. It only reads: the client never writes.
 const reviewContextQuery = `query ReviewContext($id: ID!, $after: String) {
   node(id: $id) { ... on PullRequest {
     body

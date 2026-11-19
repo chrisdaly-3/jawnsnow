@@ -1,0 +1,10 @@
+{
+ "node": {
+  "reviewThreads": {
+   "pageInfo": {"hasPreviousPage": false, "startCursor": "CUR_END"},
+   "nodes": [
+    {"id": "PRT_1", "comments": {"nodes": [{"id": "PRRC_1"}]}}
+   ]
+  }
+ }
+}

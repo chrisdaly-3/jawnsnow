@@ -1,0 +1,177 @@
+package github
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/cli/go-gh/v2/pkg/api"
+)
+
+const threadIDsMaxPages = 5
+
+// The one GitHub write the tool makes. It lives here, apart from Client, so
+// nothing that polls or reviews can reach a mutation.
+const addReviewMutation = `mutation($input: AddPullRequestReviewInput!) {
+  addPullRequestReview(input: $input) {
+    pullRequestReview {
+      id
+      url
+      comments(first: 100) { nodes { id path line } }
+    }
+  }
+}`
+
+// Review threads are matched to comments afterwards because the mutation's
+// payload does not return them. Pages run backwards: a review just posted
+// sits at the end of the PR's threads.
+const threadIDsQuery = `query($pr: ID!, $before: String) {
+  node(id: $pr) {
+    ... on PullRequest {
+      reviewThreads(last: 100, before: $before) {
+        pageInfo { hasPreviousPage startCursor }
+        nodes { id comments(first: 1) { nodes { id } } }
+      }
+    }
+  }
+}`
+
+type PostThread struct {
+	Path      string
+	Line      int
+	StartLine int // 0 = single line
+	Body      string
+}
+
+type PostInput struct {
+	PRID, CommitOID, Event, Body string
+	Threads                      []PostThread
+}
+
+type PostedComment struct {
+	ID, Path string
+	Line     int
+}
+
+type PostResult struct {
+	ReviewID, URL string
+	Comments      []PostedComment
+}
+
+type Poster interface {
+	PostReview(ctx context.Context, in PostInput) (PostResult, error)
+	// ThreadIDs maps comment IDs to the IDs of their review threads. A
+	// comment it does not find is left out.
+	ThreadIDs(ctx context.Context, prID string, commentIDs []string) (map[string]string, error)
+}
+
+type poster struct{ d Doer }
+
+func NewPoster(d Doer) Poster { return &poster{d: d} }
+
+// NewGHPoster builds a poster that authenticates with the user's gh login.
+func NewGHPoster() (Poster, error) {
+	g, err := api.DefaultGraphQLClient()
+	if err != nil {
+		return nil, fmt.Errorf("github: gh auth: %w", err)
+	}
+	return NewPoster(g), nil
+}
+
+// PostReview sends every value as a variable, never inside the query text.
+// A failure is returned as is, with GitHub's message, and never retried: a
+// retry after a response was lost could post the review twice.
+func (p *poster) PostReview(ctx context.Context, in PostInput) (PostResult, error) {
+	threads := make([]map[string]any, 0, len(in.Threads))
+	for _, t := range in.Threads {
+		m := map[string]any{"path": t.Path, "line": t.Line, "side": "RIGHT", "body": t.Body}
+		if t.StartLine > 0 {
+			m["startLine"] = t.StartLine
+			m["startSide"] = "RIGHT"
+		}
+		threads = append(threads, m)
+	}
+	input := map[string]any{
+		"pullRequestId": in.PRID,
+		"commitOID":     in.CommitOID,
+		"body":          in.Body,
+		"event":         in.Event,
+		"threads":       threads,
+	}
+	var resp struct {
+		AddPullRequestReview *struct {
+			PullRequestReview struct {
+				ID       string `json:"id"`
+				URL      string `json:"url"`
+				Comments struct {
+					Nodes []struct {
+						ID   string `json:"id"`
+						Path string `json:"path"`
+						Line *int   `json:"line"`
+					} `json:"nodes"`
+				} `json:"comments"`
+			} `json:"pullRequestReview"`
+		} `json:"addPullRequestReview"`
+	}
+	if err := p.d.DoWithContext(ctx, addReviewMutation, map[string]any{"input": input}, &resp); err != nil {
+		return PostResult{}, fmt.Errorf("github: post review: %w", err)
+	}
+	if resp.AddPullRequestReview == nil {
+		return PostResult{}, fmt.Errorf("github: post review: no review in the response")
+	}
+	r := resp.AddPullRequestReview.PullRequestReview
+	res := PostResult{ReviewID: r.ID, URL: r.URL}
+	for _, n := range r.Comments.Nodes {
+		c := PostedComment{ID: n.ID, Path: n.Path}
+		if n.Line != nil {
+			c.Line = *n.Line
+		}
+		res.Comments = append(res.Comments, c)
+	}
+	return res, nil
+}
+
+func (p *poster) ThreadIDs(ctx context.Context, prID string, commentIDs []string) (map[string]string, error) {
+	want := make(map[string]bool, len(commentIDs))
+	for _, id := range commentIDs {
+		want[id] = true
+	}
+	found := map[string]string{}
+	var before any
+	for range threadIDsMaxPages {
+		if len(found) == len(want) {
+			break
+		}
+		var resp struct {
+			Node struct {
+				ReviewThreads struct {
+					PageInfo struct {
+						HasPreviousPage bool   `json:"hasPreviousPage"`
+						StartCursor     string `json:"startCursor"`
+					} `json:"pageInfo"`
+					Nodes []struct {
+						ID       string `json:"id"`
+						Comments struct {
+							Nodes []struct {
+								ID string `json:"id"`
+							} `json:"nodes"`
+						} `json:"comments"`
+					} `json:"nodes"`
+				} `json:"reviewThreads"`
+			} `json:"node"`
+		}
+		if err := p.d.DoWithContext(ctx, threadIDsQuery, map[string]any{"pr": prID, "before": before}, &resp); err != nil {
+			return nil, fmt.Errorf("github: review threads: %w", err)
+		}
+		rt := resp.Node.ReviewThreads
+		for _, t := range rt.Nodes {
+			if len(t.Comments.Nodes) > 0 && want[t.Comments.Nodes[0].ID] {
+				found[t.Comments.Nodes[0].ID] = t.ID
+			}
+		}
+		if !rt.PageInfo.HasPreviousPage {
+			break
+		}
+		before = rt.PageInfo.StartCursor
+	}
+	return found, nil
+}
