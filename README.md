@@ -2,6 +2,8 @@
 
 `snow` is a terminal UI that watches the GitHub PRs your team asks you to review, shows each PR's status, runs read-only Claude reviews, and lets you post a review you've read as your own after a preview.
 
+[What it does](#what-it-does) · [Requirements](#requirements) · [Install](#install) · [Quickstart](#quickstart) · [Screenshots](#screenshots) · [Configuration](#configuration) · [Documentation](#documentation) · [Development](#development) · [Credits](#credits) · [License](#license)
+
 ![snow demo](docs/assets/demo.gif)
 
 ## What it does
@@ -21,16 +23,16 @@
 
 ## Install
 
-From a clone:
-
-```sh
-go install ./cmd/snow
-```
-
-By module path, once the repository is published:
-
 ```sh
 go install github.com/chrisdaly-3/jawnsnow/cmd/snow@latest
+```
+
+Or from a clone of [github.com/chrisdaly-3/jawnsnow](https://github.com/chrisdaly-3/jawnsnow):
+
+```sh
+git clone https://github.com/chrisdaly-3/jawnsnow.git
+cd jawnsnow
+go install ./cmd/snow
 ```
 
 ## Quickstart
