@@ -259,6 +259,22 @@ func (m Model) postCapture(msg tea.KeyPressMsg) (_ Model, _ tea.Cmd, ok bool) {
 	if msg.IsRepeat {
 		return m, nil, true
 	}
+	// The help overlay over the modal takes every key but ctrl+c, which
+	// quits as it does from the modal.
+	if m.help {
+		switch msg.String() {
+		case "ctrl+c":
+			return m, nil, false
+		case "?", "esc":
+			m.help = false
+		}
+		return m, nil, true
+	}
+	if msg.String() == "?" && !m.post.inFlight && !m.post.editing &&
+		(m.post.stage == postPick || m.post.stage == postPreview) {
+		m.help = true
+		return m, nil, true
+	}
 	if msg.String() != "ctrl+c" {
 		next, cmd := m.postKey(msg)
 		return next, cmd, true

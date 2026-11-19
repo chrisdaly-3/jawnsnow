@@ -945,3 +945,47 @@ func TestPreviewBuildsOncePerSelection(t *testing.T) {
 		t.Errorf("posts = %d; preview:\n%s", len(h.poster.posts), got)
 	}
 }
+
+// helpTitles is the help overlay's section titles, in order.
+func helpTitles(m Model) []string {
+	var out []string
+	for _, s := range m.helpSections() {
+		out = append(out, s.title)
+	}
+	return out
+}
+
+// ? opens the post modal's help in the picker and the preview, and closes
+// it again without touching the flow; not while posting.
+func TestQuestionMarkOpensPostHelp(t *testing.T) {
+	h := newPostHarness(t, markdownReview("fix `x`"), opts{})
+	h.press(t, "P", "?")
+	if !h.m.help || !slices.Equal(helpTitles(h.m), []string{"Everywhere", "Post"}) {
+		t.Fatalf("picker ?: help %v, sections %v", h.m.help, helpTitles(h.m))
+	}
+	if got := modalText(h.m); !strings.Contains(got, "pick the event, then post") {
+		t.Errorf("the Post section is not shown:\n%s", got)
+	}
+	h.press(t, "j", "enter") // swallowed by the help
+	if h.m.post.stage != postPick || h.m.post.pick != 1 {
+		t.Errorf("keys reached the flow under the help: %+v", h.m.post)
+	}
+	h.press(t, "?")
+	if h.m.help || h.m.post == nil || h.m.post.stage != postPick {
+		t.Fatalf("? again: help %v, flow %+v", h.m.help, h.m.post)
+	}
+	h.press(t, "enter", "?")
+	if !h.m.help || h.m.post.stage != postPreview {
+		t.Fatalf("preview ?: help %v, stage %v", h.m.help, h.m.post.stage)
+	}
+	h.press(t, "esc")
+	if h.m.help || h.m.post == nil || h.m.post.stage != postPreview {
+		t.Fatalf("esc closes only the help: help %v, flow %+v", h.m.help, h.m.post)
+	}
+	h.wait()
+	m, _ := update(t, h.m, key("enter")) // in flight
+	m, _ = update(t, m, key("?"))
+	if m.help {
+		t.Error("? opened the help while posting")
+	}
+}

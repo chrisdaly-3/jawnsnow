@@ -125,7 +125,7 @@ var footerKeys = map[View][]keyHint{
 var (
 	postLoadingKeys = []keyHint{{"esc", "cancel"}}
 	postRepostKeys  = []keyHint{{"y", "post again"}, {"n", "cancel"}}
-	postPickKeys    = []keyHint{{"j/k", "event"}, {"enter", "select"}, {"esc", "cancel"}}
+	postPickKeys    = []keyHint{{"j/k", "event"}, {"enter", "select"}, {"esc", "cancel"}, {"?", "help"}}
 	postPostingKeys = []keyHint{{"", "posting to GitHub…"}}
 	postResultKeys  = []keyHint{{"esc", "close"}}
 	// postHoldOnKey leads the preview's footer after an enter that came
@@ -139,7 +139,7 @@ func postPreviewKeys(raw bool) []keyHint {
 		m.help = "rendered"
 	}
 	return []keyHint{{"j/k", "finding"}, {"space", "toggle"}, {"e", "edit summary"}, m,
-		{"ctrl+d/ctrl+u", "scroll"}, {"enter", "post"}, {"esc", "back"}}
+		{"ctrl+d/ctrl+u", "scroll"}, {"enter", "post"}, {"esc", "back"}, {"?", "help"}}
 }
 
 var footerGlobal = []keyHint{{"[ ]", "views"}, {"R", "poll"}, {"m", "mode"}, {"?", "help"}, {"q", "quit"}}
@@ -148,7 +148,7 @@ var footerGlobal = []keyHint{{"[ ]", "views"}, {"R", "poll"}, {"m", "mode"}, {"?
 // keys.
 var (
 	costRangeKeys  = []keyHint{{"enter", "apply"}, {"esc", "cancel"}}
-	costPickerKeys = []keyHint{{"h/l", "dimension"}, {"j/k", "value"}, {"space", "toggle"}, {"esc", "close"}}
+	costPickerKeys = []keyHint{{"h/l", "dimension"}, {"j/k", "value"}, {"space", "toggle"}, {"esc", "close"}, {"?", "help"}}
 )
 
 // The Reviews view's footer while its filter input has the keys.

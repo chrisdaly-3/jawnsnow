@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -454,5 +455,20 @@ func TestCostViewPluralUnknownRuns(t *testing.T) {
 	h.press(t, "4")
 	if got := stripped(h.m); !strings.Contains(got, "Total $13.95 · 2 runs cost unknown") {
 		t.Errorf("two unknown runs aren't counted:\n%s", got)
+	}
+}
+
+func TestQuestionMarkOpensCostFilterHelp(t *testing.T) {
+	h := costHarness(t, opts{}, 120, 40, true)
+	h.press(t, "4", "f", "?")
+	if !h.m.help || !slices.Equal(helpTitles(h.m), []string{"Everywhere", "Cost filter"}) {
+		t.Fatalf("help %v, sections %v", h.m.help, helpTitles(h.m))
+	}
+	if got := ansi.Strip(content(h.m)); !strings.Contains(got, "include or leave out the value") {
+		t.Errorf("the Cost filter section is not shown:\n%s", got)
+	}
+	h.press(t, "?")
+	if h.m.help || !h.m.cost.picking {
+		t.Errorf("? again: help %v, picking %v; want the picker back", h.m.help, h.m.cost.picking)
 	}
 }

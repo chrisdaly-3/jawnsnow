@@ -121,6 +121,9 @@ func (m Model) costPickerKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		}
 	case "esc", "f":
 		c.picking = false
+	case "?":
+		m.help = true
+		return m, nil
 	}
 	m.cost = c.recompute()
 	return m, m.resolveLabels()
