@@ -112,6 +112,7 @@ The drawer shows `failed` and the error in red, and the Reviews view lists it as
 | `repos."<name>".path <path> is not a git repository` | fix `repos.<name>.path` |
 | `acquire worktree: no free worktree slot` | more reviews of one repo ran than its worktree pool has slots, as after raising `review.max_in_flight` without a restart |
 | `acquire worktree: git …` | git couldn't add or check out a worktree |
+| `acquire worktree: git checkout …: Unable to create '…/index.lock': File exists` | a git in that slot was killed mid-checkout and left its lock. snow stops a git it cancels with SIGTERM, so git removes the lock itself, and it clears a lock left in a slot before the next checkout there. Review the PR again with `space` |
 | `claude run stopped: context deadline exceeded` | the run took longer than `review.run_timeout` |
 | `claude reported an error result (<subtype>)` | claude finished with an error result; the subtype in brackets is claude's own name for it |
 | `claude failed with no result: <error>: <stderr>` | claude exited without a result; the end of its error output follows |
