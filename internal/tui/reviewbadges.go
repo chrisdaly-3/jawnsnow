@@ -66,15 +66,16 @@ func (m Model) badge(t tracker.Tracked, frame int) string {
 	case s.skip == "teammate" && !reviewedAt(s.latest, t.PR.HeadOID):
 		return th.Muted().Render("· teammate reviewed")
 	}
-	return latestBadge(th, s)
+	return latestBadge(th, s, t.PR.HeadOID)
 }
 
-// latestBadge is the badge for the PR's latest finished review.
-func latestBadge(th theme.Theme, s reviewState) string {
+// latestBadge is the badge for the PR's latest finished review; head is
+// the PR's head now.
+func latestBadge(th theme.Theme, s reviewState, head string) string {
 	if s.cancelled && s.latest != nil {
 		return th.Muted().Render("· review cancelled")
 	}
-	return verdictBadge(th, s.latest)
+	return verdictBadge(th, s.latest, head)
 }
 
 // reviewedAt reports whether r is a review at head that didn't fail.
@@ -82,18 +83,30 @@ func reviewedAt(r *store.Review, head string) bool {
 	return r != nil && r.HeadOID == head && r.Outcome != "failed"
 }
 
-// verdictBadge is the badge for a finished review, or "" for none.
-func verdictBadge(th theme.Theme, r *store.Review) string {
-	switch {
-	case r == nil:
+// verdictBadge is the badge for a finished review, or "" for none. A
+// review of an older head than the PR's is muted, since it no longer says
+// what the PR is, and an incomplete one says so.
+func verdictBadge(th theme.Theme, r *store.Review, head string) string {
+	if r == nil {
 		return ""
+	}
+	var text string
+	var style lipgloss.Style
+	switch n := blockingCount(r.Findings); {
 	case r.Outcome == "failed":
-		return th.StatusFg(string(status.CIFailed)).Render("! review failed")
+		text, style = "! review failed", th.StatusFg(string(status.CIFailed))
+	case n > 0:
+		text, style = "✦ Claude: "+strconv.Itoa(n)+" blocking", th.StatusFg(string(status.CIFailed))
+	default:
+		text, style = "✦ Claude: clean", th.StatusFg(string(status.Approved))
 	}
-	if n := blockingCount(r.Findings); n > 0 {
-		return th.StatusFg(string(status.CIFailed)).Render("✦ Claude: " + strconv.Itoa(n) + " blocking")
+	if r.Outcome == "incomplete" {
+		text += " · incomplete"
 	}
-	return th.StatusFg(string(status.Approved)).Render("✦ Claude: clean")
+	if head != "" && r.HeadOID != head {
+		return th.Muted().Render(text + " (older head)")
+	}
+	return style.Render(text)
 }
 
 // blockingCount counts the blocking findings still open.
@@ -112,7 +125,7 @@ func (m Model) reviewVerdicts() map[string]string {
 	out := map[string]string{}
 	for id, s := range m.reviews.state {
 		if t, ok := m.prs[id]; ok && t.Place == tracker.PlaceWaiting {
-			if b := latestBadge(m.theme, s); b != "" {
+			if b := latestBadge(m.theme, s, t.PR.HeadOID); b != "" {
 				out[id] = b
 			}
 		}

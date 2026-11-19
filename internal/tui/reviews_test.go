@@ -12,6 +12,7 @@ import (
 
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/chrisdaly-3/jawnsnow/internal/config"
 	"github.com/chrisdaly-3/jawnsnow/internal/github"
@@ -322,6 +323,53 @@ func TestDoneBadges(t *testing.T) {
 				t.Errorf("badge %q missing:\n%s", tt.want, c)
 			}
 		})
+	}
+}
+
+func TestBadgeOfAnOlderHeadIsMuted(t *testing.T) {
+	h := newHarness(t, opts{reviews: true}, wallPR("1"))
+	h.finishPoll(t)
+	h.m, _ = settle(t, h.m, spaceKey())
+	h.runReviews(t)
+	if b := ansi.Strip(h.m.badge(h.m.prs["1"], 0)); b != "✦ Claude: clean" {
+		t.Fatalf("badge at the reviewed head = %q", b)
+	}
+
+	moved := h.client.snaps["1"]
+	moved.HeadOID, moved.UpdatedAt = "head-1b", t0
+	h.client.snaps["1"] = moved
+	h.client.found = []string{"1"}
+	h.press(t, "R")
+	if h.m.prs["1"].PR.HeadOID != "head-1b" {
+		t.Fatalf("head = %q after the poll", h.m.prs["1"].PR.HeadOID)
+	}
+	if got, want := h.m.badge(h.m.prs["1"], 0), h.m.theme.Muted().Render("✦ Claude: clean (older head)"); got != want {
+		t.Errorf("badge after a push = %q, want %q", got, want)
+	}
+	h.m = h.m.withState("1", func(s *reviewState) {
+		s.latest = &store.Review{HeadOID: "head-0", Outcome: "failed"}
+	})
+	if got, want := h.m.badge(h.m.prs["1"], 0), h.m.theme.Muted().Render("! review failed (older head)"); got != want {
+		t.Errorf("failed badge at an older head = %q, want %q", got, want)
+	}
+}
+
+func TestIncompleteBadgeSaysSo(t *testing.T) {
+	h := newHarness(t, opts{reviews: true}, wallPR("1"))
+	h.finishPoll(t)
+	for _, tc := range []struct {
+		findings []store.Finding
+		want     string
+	}{
+		{nil, "✦ Claude: clean · incomplete"},
+		{[]store.Finding{{Blocking: true, Ledger: "new"}}, "✦ Claude: 1 blocking · incomplete"},
+	} {
+		h.m = h.m.withState("1", func(s *reviewState) {
+			s.latest = &store.Review{HeadOID: h.m.prs["1"].PR.HeadOID, Outcome: "incomplete", Findings: tc.findings}
+		})
+		if got := ansi.Strip(h.m.badge(h.m.prs["1"], 0)); got != tc.want {
+			t.Errorf("incomplete badge = %q, want %q", got, tc.want)
+		}
 	}
 }
 
