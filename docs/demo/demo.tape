@@ -16,7 +16,7 @@ Set Height 820
 Set Padding 16
 Set Theme "TokyoNight"
 Set TypingSpeed 60ms
-Set Framerate 10
+Set Framerate 50
 
 Hide
 Type "go build -o /tmp/snowdemo ./cmd/snowdemo && clear && /tmp/snowdemo"
