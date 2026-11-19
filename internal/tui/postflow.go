@@ -157,11 +157,15 @@ type (
 	// posted, and RecordErr says whether the record was saved.
 	postDoneMsg struct {
 		ReviewID, PRID, Event string
-		Posted                store.Posted
-		Raced                 *store.Posted
-		Err                   error
-		ThreadErr             error
-		RecordErr             error
+		// Body and NewThreads are the posted review's summary and how many
+		// threads it started.
+		Body       string
+		NewThreads int
+		Posted     store.Posted
+		Raced      *store.Posted
+		Err        error
+		ThreadErr  error
+		RecordErr  error
 	}
 )
 
@@ -478,7 +482,7 @@ func (m Model) runEditor(msg postEditReadyMsg) (Model, tea.Cmd, bool) {
 func (m Model) postCmd(rv store.Review, sel post.Selection, in github.PostInput, threadFindings []int64, known map[string]bool) tea.Cmd {
 	poster, st, now := m.poster, m.store, m.now
 	return func() tea.Msg {
-		done := postDoneMsg{ReviewID: rv.ID, PRID: rv.PRID, Event: in.Event}
+		done := postDoneMsg{ReviewID: rv.ID, PRID: rv.PRID, Event: in.Event, Body: in.Body, NewThreads: len(in.Threads)}
 		cctx, ccancel := context.WithTimeout(context.Background(), inputsTimeout)
 		ps, err := st.PostedFor(cctx, rv.ID)
 		ccancel()
@@ -574,8 +578,9 @@ func matchThreads(in github.PostInput, findingIDs []int64, comments []github.Pos
 // finishPost applies a post's result. A refusal goes back to the preview
 // with the selections kept; a failure that may have posted does too, but
 // the next enter asks first. A post recorded meanwhile asks the repost
-// question. A post that landed polls now so the PR's status catches up,
-// and a record that failed after it stays on screen.
+// question. A post that landed moves the card at once and polls so
+// GitHub's view replaces the assumed one, and a record that failed after
+// it stays on screen.
 func (m Model) finishPost(msg postDoneMsg) (Model, tea.Cmd) {
 	current := m.post.on(msg.ReviewID) && m.post.inFlight
 	if m.notice == postQuitWarning {
@@ -621,8 +626,10 @@ func (m Model) finishPost(msg postDoneMsg) (Model, tea.Cmd) {
 	if msg.RecordErr != nil {
 		m = m.withUnconfirmed(msg.ReviewID, unconfirmedPost{Event: msg.Posted.Event, At: msg.Posted.At, Kind: postUnrecorded})
 	}
-	// The card drops Drafted now; the poll below moves it to its new lane.
+	// The card drops Drafted and moves to its new lane now; the poll below
+	// brings GitHub's view once it has one.
 	m = m.markPosted(msg.ReviewID)
+	m = m.assumePosted(msg)
 	var reload tea.Cmd
 	if m.drawer.prID == msg.PRID {
 		m.drawer = m.drawer.withPosted(msg.Posted)

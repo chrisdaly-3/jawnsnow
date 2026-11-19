@@ -131,15 +131,17 @@ When GitHub accepts the review:
 
 1. snow records the post in its database straight away: the GitHub review ID and URL, the event, the commit, which findings were included, and the time.
 2. It looks up the review threads GitHub made for the inline comments and stores each thread's ID on its finding.
-3. It polls at once, so the PR's status catches up. A posted approval or change request, or a comment with a summary or at least one inline comment that starts a thread, is your review on GitHub: the PR moves lanes, and the next Claude review uses the `follow_up` tier.
+3. It moves the card at once, as if GitHub already showed the review, then polls so GitHub's own view takes over. A posted approval or change request, or a comment with a summary or at least one inline comment that starts a thread, is your review on GitHub: the PR moves lanes, and the next Claude review uses the `follow_up` tier.
 
-The card's [Drafted pill](views.md#the-drafted-pill) goes at once, before the poll. The poll then moves the card by the [status rules](views.md#statuses):
+The card's [Drafted pill](views.md#the-drafted-pill) goes at once too. The card moves by the [status rules](views.md#statuses):
 
-| Event | Lane after the poll |
+| Event | Lane after the post |
 | --- | --- |
 | Comment | Waiting on author (`CHANGES_REQUESTED`) |
 | Request changes | Waiting on author (`CHANGES_REQUESTED`) |
-| Approve | Approved: `APPROVED` once GitHub counts the PR approved, otherwise `APPROVED_BY_YOU` |
+| Approve | Approved: `APPROVED_BY_YOU` at first, then `APPROVED` if GitHub counts the PR approved |
+
+GitHub can take a few seconds to show a new review, so the poll right after a post may not see it. Until a poll that started after the post brings a fresh copy of the PR, snow keeps the review it assumed. A poll that was already running when you posted doesn't move the card back.
 
 A rule earlier in the order still wins: a PR whose CI failed at the head stays in the CI lane.
 

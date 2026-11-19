@@ -176,6 +176,9 @@ type Model struct {
 	// unconfirmedPosts are posts the store has no row for, by review ID:
 	// ones whose record failed, and ones that may have reached GitHub.
 	unconfirmedPosts map[string]unconfirmedPost
+	// assumed are reviews this session posted that GitHub's snapshots may
+	// not show yet, by PR ID.
+	assumed map[string]assumedReview
 
 	reviews reviewsModel
 	// session is the Agent view's model picks for this session.
@@ -809,6 +812,7 @@ func (m Model) finishPoll(res poll.Result) (Model, tea.Cmd) {
 			Found: res.Found, Snapshots: res.Snapshots, Viewer: m.viewer, Now: now,
 		}, m.cfg)
 		m.prs = next
+		m = m.settleAssumed(res.Snapshots, m.pollStarted)
 		m.unreachable = stillUnreachable(m.unreachable, res, next)
 		m = m.markSave(slices.Collect(maps.Keys(next))...)
 		m = m.markDelete(removed...)

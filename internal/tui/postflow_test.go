@@ -19,6 +19,7 @@ import (
 
 	"github.com/chrisdaly-3/jawnsnow/internal/github"
 	"github.com/chrisdaly-3/jawnsnow/internal/post"
+	"github.com/chrisdaly-3/jawnsnow/internal/status"
 	"github.com/chrisdaly-3/jawnsnow/internal/store"
 )
 
@@ -1038,8 +1039,8 @@ func newDraftedHarness(t *testing.T) *postH {
 	return h
 }
 
-// A successful post clears the pill at once; the poll it starts moves the
-// card later.
+// A successful post clears the pill at once, and the card moves lanes with
+// it (TestPostMovesCardAtOnce).
 func TestPostClearsDraftedAtOnce(t *testing.T) {
 	h := newDraftedHarness(t)
 	h.press(t, "P", "k", "enter")
@@ -1097,5 +1098,121 @@ func TestUnrecordedPostClearsDrafted(t *testing.T) {
 	h.press(t, "enter", "esc")
 	if h.drafted() {
 		t.Errorf("Drafted still shown after an unrecorded post:\n%s", ansi.Strip(content(h.m)))
+	}
+}
+
+// A post moves the card at once, before GitHub shows the review: the
+// fake client still answers with the snapshot from before the post.
+func TestPostMovesCardAtOnce(t *testing.T) {
+	for _, tc := range []struct {
+		event post.Event
+		// keys pick the event; k k reaches Approve, at the top, whatever
+		// the review's verdict.
+		keys []string
+		want status.Status
+	}{
+		{post.Approve, []string{"k", "k", "enter"}, status.ApprovedByYou},
+		{post.Comment, []string{"k", "k", "j", "enter"}, status.ChangesRequested},
+		{post.RequestChanges, []string{"k", "k", "j", "j", "enter"}, status.ChangesRequested},
+	} {
+		t.Run(string(tc.event), func(t *testing.T) {
+			t.Setenv("VISUAL", "")
+			t.Setenv("EDITOR", "my-editor")
+			h := newPostHarness(t, markdownReview("fix `x`"), opts{})
+			if got := h.m.prs["1"].Status.Status; got != status.ReadyForReview {
+				t.Fatalf("status before the post = %s, want %s", got, status.ReadyForReview)
+			}
+			h.press(t, "P")
+			h.press(t, tc.keys...)
+			h.writeSummary(t, "Please fix the lookup.")
+			h.wait()
+			h.press(t, "enter")
+			if len(h.poster.posts) != 1 || h.poster.posts[0].Event != string(tc.event) {
+				t.Fatalf("posts = %+v, want one %s", h.poster.posts, tc.event)
+			}
+			if got := h.m.prs["1"].Status.Status; got != tc.want {
+				t.Errorf("status after the post = %s, want %s", got, tc.want)
+			}
+		})
+	}
+}
+
+// writeSummary writes the summary in the post preview through the editor.
+func (h *postH) writeSummary(t *testing.T, text string) {
+	t.Helper()
+	h.press(t, "e")
+	if len(h.execs) == 0 {
+		t.Fatal("e did not open the editor")
+	}
+	path := filepath.Join(h.m.dataDir, "tmp", "post-r1.md")
+	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h.m, _ = settle(t, h.m, h.execs[len(h.execs)-1].fn(nil))
+}
+
+// A poll that started before the post knows nothing of it, so its snapshot
+// must not move the card back.
+func TestPostedReviewSurvivesPollStartedBefore(t *testing.T) {
+	h := newPostHarness(t, markdownReview("fix `x`"), opts{})
+	m, held := update(t, h.m, key("R"))
+	if !m.polling || held == nil {
+		t.Fatal("R did not start a poll")
+	}
+	h.m = m
+	h.press(t, "P", "enter")
+	h.wait()
+	h.press(t, "enter")
+	if len(h.poster.posts) != 1 {
+		t.Fatalf("%d posts, want 1", len(h.poster.posts))
+	}
+	// The held poll sees the PR changed, but not the review.
+	s := h.client.snaps["1"]
+	s.UpdatedAt = s.UpdatedAt.Add(time.Minute)
+	h.client.snaps["1"] = s
+	msgs, _ := runCmd(t, held)
+	h.m, _ = settle(t, h.m, msgs...)
+	if got := h.m.prs["1"].Status.Status; got != status.ChangesRequested {
+		t.Errorf("status after the held poll = %s, want %s", got, status.ChangesRequested)
+	}
+}
+
+// Once a poll that started after the post brings a snapshot, GitHub's
+// view replaces the one the post assumed.
+func TestGitHubSnapshotReplacesPostedReview(t *testing.T) {
+	h := newPostHarness(t, markdownReview("fix `x`"), opts{})
+	h.press(t, "P", "k", "k", "enter")
+	h.wait()
+	h.press(t, "enter")
+	if got := h.m.prs["1"].Status.Status; got != status.ApprovedByYou {
+		t.Fatalf("status after the post = %s, want %s", got, status.ApprovedByYou)
+	}
+	s := h.client.snaps["1"]
+	s.UpdatedAt = s.UpdatedAt.Add(time.Minute)
+	s.ReviewDecision = "APPROVED"
+	s.Reviews = []github.Review{{Author: "me", State: "APPROVED", CommitOID: "head-1", SubmittedAt: h.clock.now.Add(time.Second)}}
+	h.client.snaps["1"] = s
+	h.press(t, "R")
+	got := h.m.prs["1"]
+	if got.Status.Status != status.Approved {
+		t.Errorf("status after GitHub caught up = %s, want %s", got.Status.Status, status.Approved)
+	}
+	if !reflect.DeepEqual(got.PR.Reviews, s.Reviews) {
+		t.Errorf("reviews = %+v, want GitHub's alone %+v", got.PR.Reviews, s.Reviews)
+	}
+}
+
+// A post GitHub refused leaves the card where it was.
+func TestRefusedPostLeavesCard(t *testing.T) {
+	h := newPostHarness(t, markdownReview("fix `x`"), opts{})
+	h.poster.err = &github.RefusedError{Err: errors.New("github: post review: no permission")}
+	h.press(t, "P", "enter")
+	h.wait()
+	h.press(t, "enter")
+	if len(h.poster.posts) != 1 {
+		t.Fatalf("%d posts, want 1", len(h.poster.posts))
+	}
+	if got := h.m.prs["1"].Status.Status; got != status.ReadyForReview {
+		t.Errorf("status after a refused post = %s, want %s", got, status.ReadyForReview)
 	}
 }
