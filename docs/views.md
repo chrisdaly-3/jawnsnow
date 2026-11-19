@@ -64,7 +64,7 @@ With nothing on the Wall it says `Nothing on the wall. Feeds: <feed names> · pr
 
 ### Cards
 
-A card has four lines:
+A card has four lines, or five when it is [drafted](#the-drafted-pill):
 
 ```
  ⣾ mono#85180
@@ -77,12 +77,13 @@ A card has four lines:
 2. The title.
 3. The author, the age of the head commit (`45m`, `2h`, `3d`), and lines added and removed.
 4. The status chip, then the Claude badge. When both don't fit, the badge takes the chip's place.
+5. On a drafted card only: the Claude badge, under the `Drafted` pill that takes line 4.
 
 The selected card has a bar in the accent colour on its left edge.
 
 ### The Drafted pill
 
-A card shows `Drafted` in place of its status chip when the PR's latest Claude review is ready to post:
+A card shows `Drafted` on its own line, in place of its status chip, when the PR's latest Claude review is ready to post:
 
 - it finished with outcome complete, not incomplete or failed;
 - it is of the PR's current head commit;
@@ -92,14 +93,13 @@ A card shows `Drafted` in place of its status chip when the PR's latest Claude r
    api#405
    Verify webhook signatures before parsing the body
    bob · 3h · +142 −58
-   Drafted  ✦ Claude: 2 blocking
+   Drafted
+   ✦ Claude: 2 blocking
 ```
 
-The Claude badge stays beside it. The card stays in its lane: `Drafted` is not a status, so it changes no lane, count or Done view. While a review runs the card shows `⣾ Claude reviewing…` as usual, and its status chip.
+A drafted card is a line taller: the pill takes line 4, and the Claude badge moves to a fifth line below it, so both always show, at any width. Each is cut to the card's width. The card stays in its lane: `Drafted` is not a status, so it changes no lane, count or Done view. While a review runs the card shows `⣾ Claude reviewing…` as usual, and its status chip.
 
 The pill goes as soon as you post the review from the drawer, and the card moves lanes at the poll that follows the post. See [after posting](posting.md#after-posting). A new commit on the PR also clears it, since the review is then of an older head.
-
-The pill takes the chip's place only where the chip would show. When the pill and the badge don't both fit, the badge alone shows, as it does with the chip. In side-by-side lanes on a 160-column terminal, `✦ Claude: clean` fits beside the pill but `✦ Claude: 2 blocking` doesn't. The stacked layout gives each card the full width, so there both usually fit.
 
 Its label and colour are set with [`[theme.status] DRAFTED`](configuration.md#themestatusstatus).
 

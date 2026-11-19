@@ -27,8 +27,9 @@ const (
 	wideMin = 120
 	laneGap = 1
 
-	cardLines  = 4
-	cardStride = cardLines + 1 // a card and the blank line after it
+	// cardLines is a card's height; a drafted card has one more, so the
+	// Drafted pill and the Claude badge each get a line.
+	cardLines = 4
 
 	// scrollTick drives the narrow-mode scroll spring at about 60 frames
 	// a second.
@@ -416,10 +417,10 @@ func (m wallModel) moveTo(lanes [laneCount][]tracker.Tracked, lane, row int) (wa
 		m.selID = lanes[lane][row].PR.ID
 	}
 	if !m.narrow() {
-		m.scroll[lane] = wideScroll(m.scroll[lane], row, len(lanes[lane]), m.laneCapacity())
+		m.scroll[lane] = wideScroll(m.scroll[lane], row, m.heights(lanes[lane]), m.laneAvail())
 		return m, nil
 	}
-	items, total := narrowLayout(lanes)
+	items, total := narrowLayout(lanes, m.cardHeight)
 	target := scrollTarget(items, total, lane, row, m.target, m.viewportH())
 	if target == m.target {
 		return m, nil
@@ -450,39 +451,80 @@ func (m wallModel) stepSpring() wallModel {
 	return m
 }
 
-// laneCapacity is how many whole cards fit in a wide lane's box.
-func (m wallModel) laneCapacity() int {
-	return max((m.viewportH()-2+1)/cardStride, 1)
+// cardHeight is how many lines t's card takes.
+func (m wallModel) cardHeight(t tracker.Tracked) int {
+	if m.drafted[t.PR.ID] {
+		return cardLines + 1
+	}
+	return cardLines
+}
+
+func (m wallModel) heights(cards []tracker.Tracked) []int {
+	hs := make([]int, len(cards))
+	for i, t := range cards {
+		hs[i] = m.cardHeight(t)
+	}
+	return hs
+}
+
+// laneAvail is the lines inside a wide lane's box.
+func (m wallModel) laneAvail() int { return m.viewportH() - 2 }
+
+// fitFrom is how many whole cards from first fit in avail lines, with a
+// blank line between each, and at least one.
+func fitFrom(heights []int, first, avail int) int {
+	n, used := 0, -1
+	for i := first; i < len(heights); i++ {
+		used += heights[i] + 1
+		if used > avail {
+			break
+		}
+		n++
+	}
+	return max(n, 1)
+}
+
+// lastFirst is the first visible card when a lane is scrolled to its end:
+// the lowest card from which every later one fits.
+func lastFirst(heights []int, avail int) int {
+	f := len(heights) - 1
+	for f > 0 && fitFrom(heights, f-1, avail) >= len(heights)-(f-1) {
+		f--
+	}
+	return max(f, 0)
 }
 
 // wideScroll gives the first visible card that keeps row on screen,
-// moving as little as it can from first.
-func wideScroll(first, row, count, capacity int) int {
-	if row < first {
-		first = row
+// moving as little as it can from first, and never past the lane's end.
+func wideScroll(first, row int, heights []int, avail int) int {
+	if len(heights) == 0 {
+		return 0
 	}
-	if row >= first+capacity {
-		first = row - capacity + 1
+	first = min(first, row)
+	for first < row && first+fitFrom(heights, first, avail) <= row {
+		first++
 	}
-	return max(min(first, count-capacity), 0)
+	return max(min(first, lastFirst(heights, avail)), 0)
 }
 
-// item is one heading or card of the narrow column. row is -1 for a heading.
-type item struct{ lane, row, top int }
+// item is one heading or card of the narrow column. row is -1 for a
+// heading; h is the card's height.
+type item struct{ lane, row, top, h int }
 
 // narrowLayout places each non-empty lane's heading and cards in one
-// column. total is the line after the last card.
-func narrowLayout(lanes [laneCount][]tracker.Tracked) (items []item, total int) {
+// column, each card height(t) tall. total is the line after the last card.
+func narrowLayout(lanes [laneCount][]tracker.Tracked, height func(tracker.Tracked) int) (items []item, total int) {
 	y := 0
 	for l := range lanes {
 		if len(lanes[l]) == 0 {
 			continue
 		}
-		items = append(items, item{l, -1, y})
+		items = append(items, item{l, -1, y, 1})
 		y++
-		for r := range lanes[l] {
-			items = append(items, item{l, r, y})
-			y += cardStride
+		for r, t := range lanes[l] {
+			h := height(t)
+			items = append(items, item{l, r, y, h})
+			y += h + 1 // the card and the blank line after it
 		}
 	}
 	return items, max(y-1, 0)
@@ -498,7 +540,7 @@ func scrollTarget(items []item, total, lane, row int, cur float64, vh int) float
 	for _, it := range items {
 		switch {
 		case it.lane == lane && it.row == row:
-			top, bottom = it.top, it.top+cardLines
+			top, bottom = it.top, it.top+it.h
 		case it.lane == lane && it.row == -1 && row == 0:
 			top = it.top
 		}
@@ -602,10 +644,11 @@ func (m wallModel) wideView(lanes [laneCount][]tracker.Tracked, width, height in
 			w++
 		}
 		first := m.scroll[l]
+		hs := m.heights(lanes[l])
 		if l == lane {
-			first = wideScroll(first, row, len(lanes[l]), m.laneCapacity())
+			first = wideScroll(first, row, hs, m.laneAvail())
 		}
-		first = max(min(first, len(lanes[l])-m.laneCapacity()), 0)
+		first = max(min(first, lastFirst(hs, m.laneAvail())), 0)
 		cols[l] = m.laneBox(lanes[l], l, w, max(height, 2), l == lane, row, first, th, frame)
 	}
 	out := make([]string, max(height, 2))
@@ -662,7 +705,7 @@ func laneLabel(lane int, cards []tracker.Tracked, th theme.Theme, frame int, foc
 
 func (m wallModel) narrowView(lanes [laneCount][]tracker.Tracked, width, height int, th theme.Theme, frame int) []string {
 	lane, row := m.resolve(lanes)
-	items, total := narrowLayout(lanes)
+	items, total := narrowLayout(lanes, m.cardHeight)
 	var lines []string
 	for _, it := range items {
 		if it.row < 0 {
@@ -696,8 +739,9 @@ func renderCard(t tracker.Tracked, width int, selected bool, th theme.Theme, now
 
 // badgedCard is renderCard with a Claude badge after the status chip. When
 // both don't fit, the badge takes the chip's place: the lane already
-// groups by status, and the badge is what changes. A drafted card's chip is
-// the Drafted pill, which is dropped for the badge the same way.
+// groups by status, and the badge is what changes. A drafted card is a line
+// taller: the Drafted pill takes the chip's line and the badge gets the one
+// below, so neither crowds the other out.
 func badgedCard(t tracker.Tracked, width int, selected bool, th theme.Theme, now time.Time, frame int, badge string, drafted bool) []string {
 	st := string(t.Status.Status)
 	marker := " "
@@ -713,10 +757,6 @@ func badgedCard(t tracker.Tracked, width int, selected bool, th theme.Theme, now
 	}
 	textW := max(width-3, 0)
 	pr := t.PR
-	chip := th.ChipLine(st)
-	if drafted {
-		chip = th.ChipLine(draftedPill)
-	}
 
 	ref := clean(repoShort(pr.Repo)) + "#" + strconv.Itoa(pr.Number)
 	meta := th.Muted().Render(clean(pr.Author)+" · "+cardAge(t, now)+" · ") +
@@ -727,7 +767,13 @@ func badgedCard(t tracker.Tracked, width int, selected bool, th theme.Theme, now
 		marker + glyph + " " + th.Accent().Render(ansi.Truncate(ref, textW, "…")),
 		marker + "  " + ansi.Truncate(clean(pr.Title), textW, "…"),
 		marker + "  " + ansi.Truncate(meta, textW, "…"),
-		marker + "  " + ansi.Truncate(chipAndBadge(chip, badge, textW), textW, "…"),
+	}
+	if drafted {
+		lines = append(lines,
+			marker+"  "+ansi.Truncate(th.ChipLine(draftedPill), textW, "…"),
+			marker+"  "+ansi.Truncate(badge, textW, "…"))
+	} else {
+		lines = append(lines, marker+"  "+ansi.Truncate(chipAndBadge(th.ChipLine(st), badge, textW), textW, "…"))
 	}
 	for i := range lines {
 		lines[i] = padTo(lines[i], width)

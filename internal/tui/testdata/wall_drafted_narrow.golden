@@ -1,0 +1,30 @@
+── CI ⣾ 2 ────────────────────────────────────────────────────────────────────────────────
+▌⣾ mono#85180                                                                             
+▌  feat(policies): fill Decision.repo_name from the registry                              
+▌  alice · 2h · +120 −8                                                                   
+▌   Waiting on CI                                                                         
+
+ ✗ mono#85190                                                                             
+   fix(registry): retry on 503 from the index                                             
+   dave · 3h · +9 −3                                                                      
+    CI failed                                                                             
+
+── Ready for you 2 ───────────────────────────────────────────────────────────────────────
+   mono#85211                                                                             
+   fix(oidc): refresh the signing key before expiry                                       
+   bob · 5h · +14 −2                                                                      
+    Drafted                                                                               
+   ✦ Claude: 2 blocking                                                                   
+
+   os#4012                                                                                
+   bump openssl to 3.5.1                                                                  
+   erin · 9h · +4 −4                                                                      
+    Ready for you   ✦ Claude: clean                                                       
+
+── New changes ⣾ 2 ───────────────────────────────────────────────────────────────────────
+ ⣾ mono#85102                                                                             
+   chore: bump driftlessaf                                                                
+   carol · 1d · +300 −40                                                                  
+    New changes                                                                           
+
+   enforce#311                                                                            

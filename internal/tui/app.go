@@ -584,7 +584,7 @@ func (m Model) wallUpdate(msg tea.Msg) (Model, tea.Cmd) {
 	w, h := m.bodySize()
 	w -= m.drawerWidthIn(ViewWall)
 	m.wall.setSize(w, h)
-	m.wall.now, m.wall.feeds = m.now(), m.feedNames()
+	m.wall.now, m.wall.feeds, m.wall.drafted = m.now(), m.feedNames(), m.draftedPRs()
 	wall, cmd, act := m.wall.update(msg, m.wallPRs())
 	m.wall = wall
 	m, actCmd := m.apply(act)

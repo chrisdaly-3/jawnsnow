@@ -4,6 +4,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -535,5 +536,79 @@ func TestOutlinedChipIsOneLineOnACard(t *testing.T) {
 	}
 	if !strings.Contains(chip, "[Approved by you · needs more]") || strings.Contains(chip, "│") {
 		t.Errorf("chip line = %q, want the whole label in brackets and no box:\n%s", chip, out)
+	}
+}
+
+// draftedWall is the golden wall with Claude badges on both Ready cards and
+// c drafted, so a drafted card and a badged, undrafted one sit together.
+func draftedWall(t *testing.T, width, height int) wallModel {
+	th := testTheme(t)
+	w := testWall(width, height)
+	w.badges = map[string]string{
+		"c": th.StatusFg(string(status.CIFailed)).Render("✦ Claude: 2 blocking"),
+		"d": th.StatusFg(string(status.Approved)).Render("✦ Claude: clean"),
+	}
+	w.drafted = map[string]bool{"c": true}
+	return w
+}
+
+func TestWallGoldenDraftedWide(t *testing.T) {
+	golden(t, "wall_drafted_wide.golden", renderWall(t, draftedWall(t, 160, 30), 160, 30, wallPRs()))
+}
+
+func TestWallGoldenDraftedNarrow(t *testing.T) {
+	golden(t, "wall_drafted_narrow.golden", renderWall(t, draftedWall(t, 90, 30), 90, 30, wallPRs()))
+}
+
+// Scrolling over a lane of mixed four- and five-line cards keeps the
+// whole selected card on screen, in side-by-side lanes and stacked.
+func TestWallScrollsOverDraftedCards(t *testing.T) {
+	var prs []tracker.Tracked
+	w := testWall(160, 13)
+	w.drafted, w.badges = map[string]bool{}, map[string]string{}
+	for i := range 6 {
+		id := strconv.Itoa(i)
+		prs = append(prs, wallCard(id, "acme/widgets", 100+i, "PR "+id, "sam", status.ReadyForReview, false, 1, 1, time.Duration(i+1)*time.Hour))
+		w.badges[id] = "✦ Claude: clean"
+		if i%3 != 1 {
+			w.drafted[id] = true
+		}
+	}
+	for _, size := range [][2]int{{160, 13}, {90, 13}} {
+		w := w
+		w.setSize(size[0], size[1])
+		check := func(want int) {
+			t.Helper()
+			for i := 0; i < 1000 && w.animating; i++ {
+				w, _, _ = w.update(wallTickMsg{}, prs)
+			}
+			id := strconv.Itoa(want)
+			out := ansi.Strip(renderWall(t, w, size[0], size[1], prs))
+			var marked []string
+			for _, l := range strings.Split(out, "\n") {
+				if strings.Contains(l, "▌") {
+					marked = append(marked, l)
+				}
+			}
+			height := cardLines
+			if w.drafted[id] {
+				height++
+			}
+			if len(marked) != height || !strings.Contains(marked[0], "widgets#10"+id) {
+				t.Fatalf("%v: card %s: %d marked lines, want all %d of it:\n%s", size, id, len(marked), height, out)
+			}
+			if _, a := press(t, w, prs, "o"); a != (actionOpen{URL: "https://github.com/acme/widgets/pull/" + id}) {
+				t.Errorf("%v: o opens %#v, want card %s", size, a, id)
+			}
+		}
+		check(0)
+		for i := 1; i < len(prs); i++ {
+			w, _ = press(t, w, prs, "j")
+			check(i)
+		}
+		for i := len(prs) - 2; i >= 0; i-- {
+			w, _ = press(t, w, prs, "k")
+			check(i)
+		}
 	}
 }

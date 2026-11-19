@@ -852,8 +852,11 @@ func TestDraftedPill(t *testing.T) {
 			if n := strings.Count(c, "Ready for you"); n != 1 {
 				t.Errorf("Ready for you appears %d times, want only the lane title:\n%s", n, c)
 			}
-			if !strings.Contains(c, "Drafted   ✦ Claude: clean") {
-				t.Errorf("no Drafted pill beside the badge:\n%s", c)
+			// The pill has its own line and the badge the one below it.
+			lines := strings.Split(c, "\n")
+			i := slices.IndexFunc(lines, func(l string) bool { return strings.Contains(l, "Drafted") })
+			if strings.Contains(lines[i], "Claude") || i+1 >= len(lines) || !strings.Contains(lines[i+1], "✦ Claude: clean") {
+				t.Errorf("want Drafted on its own line with the badge below:\n%s", c)
 			}
 			if lane := h.m.prs["1"].Status.Status; lane != status.ReadyForReview {
 				t.Errorf("status = %v, want it unchanged", lane)
@@ -862,26 +865,49 @@ func TestDraftedPill(t *testing.T) {
 	}
 }
 
-// The pill takes the chip's place only where the chip would show: when it
-// and the badge don't both fit, the badge alone shows, and no line is wider
-// than the card.
+// A drafted card is a line taller at every width: the pill on line 4 in
+// place of the chip, the badge on line 5, each cut to the card.
 func TestDraftedPillOnNarrowCards(t *testing.T) {
 	th := testTheme(t)
 	c := readyPR("1")
 	badge := th.StatusFg(string(status.CIFailed)).Render("✦ Claude: 2 blocking")
 	for _, tc := range []struct {
-		width int
-		want  string
+		width      int
+		pill, rest string
 	}{
-		{40, "Drafted   ✦ Claude: 2 blocking"},
-		{28, "✦ Claude: 2 blocking"},
-		{12, "✦ Claude…"},
+		{90, "Drafted", "✦ Claude: 2 blocking"}, // the stacked layout
+		{28, "Drafted", "✦ Claude: 2 blocking"}, // a 25-cell line, as in the demo's lanes
+		{12, "Drafted", "✦ Claude…"},
 	} {
 		lines := badgedCard(c, tc.width, false, th, t0, 0, badge, true)
+		if len(lines) != cardLines+1 {
+			t.Fatalf("width %d: %d lines, want %d", tc.width, len(lines), cardLines+1)
+		}
 		for i, l := range lines {
 			if w := ansi.StringWidth(l); w != tc.width {
 				t.Errorf("width %d: line %d is %d wide", tc.width, i, w)
 			}
+		}
+		if got := strings.TrimSpace(ansi.Strip(lines[3])); got != tc.pill {
+			t.Errorf("width %d: pill line = %q, want %q", tc.width, got, tc.pill)
+		}
+		if got := strings.TrimSpace(ansi.Strip(lines[4])); got != tc.rest {
+			t.Errorf("width %d: badge line = %q, want %q", tc.width, got, tc.rest)
+		}
+	}
+
+	// A card that isn't drafted is drawn as before: four lines, the chip
+	// and the badge sharing the last, or the badge alone when both don't fit.
+	for _, tc := range []struct {
+		width int
+		want  string
+	}{
+		{40, "Ready for you   ✦ Claude: 2 blocking"},
+		{28, "✦ Claude: 2 blocking"},
+	} {
+		lines := badgedCard(c, tc.width, false, th, t0, 0, badge, false)
+		if len(lines) != cardLines {
+			t.Fatalf("width %d: %d lines, want %d", tc.width, len(lines), cardLines)
 		}
 		if got := strings.TrimSpace(ansi.Strip(lines[3])); got != tc.want {
 			t.Errorf("width %d: chip line = %q, want %q", tc.width, got, tc.want)
