@@ -100,14 +100,7 @@ func reviewCostText(st store.PRStat) string {
 	if st.Reviews == 1 {
 		text = "1 review"
 	}
-	switch {
-	case st.Unknown == 0:
-		return text + " · " + dollars(st.CostUSD)
-	case st.Known > 0:
-		return text + " · " + dollars(st.CostUSD) + "+?"
-	default:
-		return text + " · ?"
-	}
+	return text + " · " + costAmount(st.CostUSD, st.Known, st.Unknown)
 }
 
 func newDone() doneModel { return doneModel{w: 120, h: 30, loc: time.Local} }

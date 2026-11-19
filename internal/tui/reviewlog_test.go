@@ -297,3 +297,34 @@ func TestReviewLogDropsAnOlderLoad(t *testing.T) {
 		t.Errorf("entries = %d (first %q), want the newer load's 5 starting r5", n, m.reviewLog.entries[0].Review.ID)
 	}
 }
+
+// The Reviews cost cell reads like Done's: "$X.XX+?" when some runs
+// reported no cost, "?" when none did.
+func TestReviewLogCostCell(t *testing.T) {
+	h := logHarness(t, 140, 30, true)
+	for _, c := range []store.CostRow{
+		{At: t0, ReviewID: "r1", PRID: "1", CostUSD: 1.5},
+		{At: t0, ReviewID: "r1", PRID: "1", CostUnknown: true},
+		{At: t0, ReviewID: "r2", PRID: "1", CostUSD: 0.4},
+	} {
+		if err := h.store.AddCost(context.Background(), c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h.press(t, "3")
+	cells := map[string]string{}
+	for _, l := range strings.Split(ansi.Strip(content(h.m)), "\n") {
+		for _, want := range []string{"$1.50+?", "$0.40", "$12.50", "?"} {
+			for _, f := range strings.Fields(l) {
+				if f == want {
+					cells[want] = l
+				}
+			}
+		}
+	}
+	for _, want := range []string{"$1.50+?", "$0.40", "$12.50", "?"} {
+		if cells[want] == "" {
+			t.Errorf("no cost cell %q in:\n%s", want, ansi.Strip(content(h.m)))
+		}
+	}
+}

@@ -599,11 +599,35 @@ func TestSharedFormatters(t *testing.T) {
 	if got := dollars(1.5); got != "$1.50" {
 		t.Errorf("dollars = %q", got)
 	}
-	if got := costCell(1.5, false); got != "$1.50" {
-		t.Errorf("known cell = %q", got)
+	for _, tc := range []struct {
+		usd            float64
+		known, unknown int
+		want           string
+	}{
+		{1.5, 2, 0, "$1.50"},
+		{1.5, 1, 1, "$1.50+?"},
+		{0, 1, 1, "$0.00+?"}, // a real $0 beside a run with no cost
+		{0, 0, 2, "?"},
+		{0, 0, 0, "$0.00"},
+	} {
+		if got := costAmount(tc.usd, tc.known, tc.unknown); got != tc.want {
+			t.Errorf("costAmount(%v, %d, %d) = %q, want %q", tc.usd, tc.known, tc.unknown, got, tc.want)
+		}
 	}
-	if got := costCell(1.5, true); got != "?" {
-		t.Errorf("unknown cell = %q", got)
+	// A review read before the ledger counted runs falls back on its flag.
+	for _, tc := range []struct {
+		r    store.Review
+		want string
+	}{
+		{store.Review{CostUSD: 1.5}, "$1.50"},
+		{store.Review{CostUSD: 1.5, CostUnknown: true}, "$1.50+?"},
+		{store.Review{CostUnknown: true}, "?"},
+		{store.Review{CostUnknown: true, CostRuns: store.CostRuns{Known: 1, Unknown: 1}}, "$0.00+?"},
+		{store.Review{CostUSD: 2, CostRuns: store.CostRuns{Unknown: 1}}, "?"},
+	} {
+		if got := reviewCost(tc.r); got != tc.want {
+			t.Errorf("reviewCost(%+v) = %q, want %q", tc.r, got, tc.want)
+		}
 	}
 	for v, want := range map[string]string{"approve": "APPROVE", "request_changes": "REQUEST CHANGES", "comment": "COMMENT", "weird": "WEIRD", "": ""} {
 		if got := verdictLabel(v); got != want {
@@ -622,5 +646,26 @@ func TestDrawerNeutralisesEncodedControls(t *testing.T) {
 	checkOnlyPaletteSGR(t, "drawer", out)
 	if plain := strings.Join(strings.Fields(ansi.Strip(out)), " "); !strings.Contains(plain, "This PR is garbage and so is its author") {
 		t.Errorf("the sentence is not visible:\n%s", plain)
+	}
+}
+
+// The drawer uses the shared number, with its longer wording beside it.
+func TestDrawerCostUsesSharedAmount(t *testing.T) {
+	for _, tc := range []struct {
+		runs store.CostRuns
+		usd  float64
+		want string
+	}{
+		{store.CostRuns{Known: 1, Unknown: 1}, 0, "$0.00+? (some cost unknown)"},
+		{store.CostRuns{Known: 1, Unknown: 1}, 1.25, "$1.25+? (some cost unknown)"},
+		{store.CostRuns{Unknown: 2}, 0, "? (cost unknown)"},
+		{store.CostRuns{Known: 2}, 1.25, "$1.25 ·"},
+	} {
+		r := drawerReview()
+		r.CostUSD, r.CostUnknown, r.CostRuns = tc.usd, tc.runs.Unknown > 0, tc.runs
+		d, c := openDrawer(t, 160, 40, r)
+		if plain := ansi.Strip(d.view(d.width(), 40, c)); !strings.Contains(plain, tc.want) {
+			t.Errorf("%+v: no %q in:\n%s", tc.runs, tc.want, plain)
+		}
 	}
 }

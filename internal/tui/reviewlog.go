@@ -232,7 +232,7 @@ var reviewLogCols = []reviewLogCol{
 	{"outcome", "Outcome", 10, 0},
 	{"verdict", "Verdict", 15, 4},
 	{"findings", "Findings", 14, 5},
-	{"cost", "Cost", 6, 2},
+	{"cost", "Cost", 8, 2},
 	{"posted", "Posted", 6, 3},
 }
 
@@ -303,7 +303,7 @@ func (m Model) reviewLogCells(e store.LogEntry, cols []reviewLogCol, posted bool
 				row[i] = fmt.Sprintf("%d · %d blocking", e.Findings, e.Blocking)
 			}
 		case "cost":
-			row[i] = costCell(r.CostUSD, r.CostUnknown)
+			row[i] = reviewCost(r)
 		case "posted":
 			if posted {
 				row[i] = "✓"

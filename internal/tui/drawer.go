@@ -610,25 +610,51 @@ func (m drawerModel) bottomLine(c drawerCtx, inner int) string {
 // dollars is an amount of money the way every view writes it.
 func dollars(usd float64) string { return fmt.Sprintf("$%.2f", usd) }
 
-// costCell is a cost for a table cell: the amount, or "?" when it was never
-// reported.
-func costCell(usd float64, unknown bool) string {
-	if unknown {
+// costAmount is a cost the way every view writes it, from the known total
+// and how many runs did and didn't report a cost: "$X.XX", "$X.XX+?" when
+// some runs reported none, or "?" when none did.
+func costAmount(usd float64, known, unknown int) string {
+	switch {
+	case unknown == 0:
+		return dollars(usd)
+	case known > 0:
+		return dollars(usd) + "+?"
+	default:
 		return "?"
 	}
-	return dollars(usd)
 }
 
-// costText is a review's cost, saying so when a run's cost was never
-// reported rather than showing a number that leaves it out.
+// reviewRuns is how many of r's runs did and didn't report a cost. A
+// review with no ledger rows falls back on its own flag and total.
+func reviewRuns(r store.Review) (known, unknown int) {
+	known, unknown = r.CostRuns.Known, r.CostRuns.Unknown
+	if known+unknown == 0 && r.CostUnknown {
+		unknown = 1
+		if r.CostUSD > 0 {
+			known = 1
+		}
+	}
+	return known, unknown
+}
+
+// reviewCost is a review's costAmount.
+func reviewCost(r store.Review) string {
+	known, unknown := reviewRuns(r)
+	return costAmount(r.CostUSD, known, unknown)
+}
+
+// costText is the drawer's review cost: the shared amount, saying in words
+// when a run's cost was never reported.
 func costText(r store.Review) string {
+	known, unknown := reviewRuns(r)
+	amount := costAmount(r.CostUSD, known, unknown)
 	switch {
-	case !r.CostUnknown:
-		return dollars(r.CostUSD)
-	case r.CostUSD > 0:
-		return dollars(r.CostUSD) + " + cost unknown"
+	case unknown == 0:
+		return amount
+	case known > 0:
+		return amount + " (some cost unknown)"
 	default:
-		return "cost unknown"
+		return amount + " (cost unknown)"
 	}
 }
 
