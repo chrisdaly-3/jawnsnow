@@ -17,6 +17,7 @@ import (
 	"github.com/chrisdaly-3/jawnsnow/internal/config"
 	"github.com/chrisdaly-3/jawnsnow/internal/github"
 	"github.com/chrisdaly-3/jawnsnow/internal/review"
+	"github.com/chrisdaly-3/jawnsnow/internal/status"
 	"github.com/chrisdaly-3/jawnsnow/internal/store"
 	"github.com/chrisdaly-3/jawnsnow/internal/tracker"
 )
@@ -800,5 +801,90 @@ func TestForcedHeadMovedNotice(t *testing.T) {
 	}
 	if want := "PR moved on since the last poll — polling now"; !strings.Contains(content(h.m), want) {
 		t.Errorf("no %q notice:\n%s", want, content(h.m))
+	}
+}
+
+// A card shows Drafted in place of its status chip while its latest review
+// finished complete at the PR's head and was never posted.
+func TestDraftedPill(t *testing.T) {
+	tests := []struct {
+		name, outcome, head string
+		posted, running     bool
+		want                bool
+	}{
+		{name: "complete at head, unposted", outcome: "complete", head: "head-1", want: true},
+		{name: "incomplete", outcome: "incomplete", head: "head-1"},
+		{name: "failed", outcome: "failed", head: "head-1"},
+		{name: "older head", outcome: "complete", head: "head-0"},
+		{name: "posted", outcome: "complete", head: "head-1", posted: true},
+		{name: "running", outcome: "complete", head: "head-1", running: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newHarness(t, opts{}, wallPR("1"))
+			ctx := context.Background()
+			rv := store.Review{
+				ID: "rv1", PRID: "1", Repo: "acme/widgets", Number: 1, HeadOID: tt.head,
+				Outcome: tt.outcome, StartedAt: t0.Add(-time.Hour), EndedAt: t0.Add(-time.Hour),
+			}
+			if err := h.store.SaveReview(ctx, rv); err != nil {
+				t.Fatal(err)
+			}
+			if tt.posted {
+				p := store.Posted{ReviewID: "rv1", GitHubReviewID: "PRR_1", Event: "COMMENT", At: t0.Add(-time.Minute)}
+				if err := h.store.RecordPost(ctx, p, nil); err != nil {
+					t.Fatal(err)
+				}
+			}
+			h.finishPoll(t)
+			if tt.running {
+				h.m = h.m.withState("1", func(s *reviewState) { s.running = true })
+			}
+			c := ansi.Strip(content(h.m))
+			if got := strings.Contains(c, "Drafted"); got != tt.want {
+				t.Fatalf("Drafted shown = %v, want %v:\n%s", got, tt.want, c)
+			}
+			if !tt.want {
+				return
+			}
+			// Only the lane's title still says Ready for you: the pill took
+			// the chip's place, and the badge stays.
+			if n := strings.Count(c, "Ready for you"); n != 1 {
+				t.Errorf("Ready for you appears %d times, want only the lane title:\n%s", n, c)
+			}
+			if !strings.Contains(c, "Drafted   ✦ Claude: clean") {
+				t.Errorf("no Drafted pill beside the badge:\n%s", c)
+			}
+			if lane := h.m.prs["1"].Status.Status; lane != status.ReadyForReview {
+				t.Errorf("status = %v, want it unchanged", lane)
+			}
+		})
+	}
+}
+
+// The pill takes the chip's place only where the chip would show: when it
+// and the badge don't both fit, the badge alone shows, and no line is wider
+// than the card.
+func TestDraftedPillOnNarrowCards(t *testing.T) {
+	th := testTheme(t)
+	c := readyPR("1")
+	badge := th.StatusFg(string(status.CIFailed)).Render("✦ Claude: 2 blocking")
+	for _, tc := range []struct {
+		width int
+		want  string
+	}{
+		{40, "Drafted   ✦ Claude: 2 blocking"},
+		{28, "✦ Claude: 2 blocking"},
+		{12, "✦ Claude…"},
+	} {
+		lines := badgedCard(c, tc.width, false, th, t0, 0, badge, true)
+		for i, l := range lines {
+			if w := ansi.StringWidth(l); w != tc.width {
+				t.Errorf("width %d: line %d is %d wide", tc.width, i, w)
+			}
+		}
+		if got := strings.TrimSpace(ansi.Strip(lines[3])); got != tc.want {
+			t.Errorf("width %d: chip line = %q, want %q", tc.width, got, tc.want)
+		}
 	}
 }

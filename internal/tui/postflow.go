@@ -603,6 +603,8 @@ func (m Model) finishPost(msg postDoneMsg) (Model, tea.Cmd) {
 		if !refused {
 			text = uncertainPost + msg.Err.Error()
 			m = m.withUnconfirmed(msg.ReviewID, unconfirmedPost{Event: msg.Event, At: m.now(), Kind: postUncertain})
+			// It may well be on GitHub, so the card stops calling it Drafted.
+			m = m.markPosted(msg.ReviewID)
 		}
 		if current {
 			p := *m.post
@@ -619,6 +621,8 @@ func (m Model) finishPost(msg postDoneMsg) (Model, tea.Cmd) {
 	if msg.RecordErr != nil {
 		m = m.withUnconfirmed(msg.ReviewID, unconfirmedPost{Event: msg.Posted.Event, At: msg.Posted.At, Kind: postUnrecorded})
 	}
+	// The card drops Drafted now; the poll below moves it to its new lane.
+	m = m.markPosted(msg.ReviewID)
 	var reload tea.Cmd
 	if m.drawer.prID == msg.PRID {
 		m.drawer = m.drawer.withPosted(msg.Posted)
@@ -651,7 +655,8 @@ func (m Model) finishPost(msg postDoneMsg) (Model, tea.Cmd) {
 		}
 	}
 	m, relog := m.reloadReviewLog()
-	return m, tea.Batch(reload, poll, relog)
+	m, inputs := m.loadReviewInputs()
+	return m, tea.Batch(reload, poll, relog, inputs)
 }
 
 // withUnconfirmed remembers a post the store has no row for.

@@ -12,7 +12,7 @@ import (
 
 var allStatuses = []string{
 	"CI_WAITING", "CI_FAILED", "READY_FOR_REVIEW", "NEW_CHANGES",
-	"CHANGES_REQUESTED", "APPROVED", "APPROVED_BY_YOU", "MERGED", "CLOSED",
+	"CHANGES_REQUESTED", "APPROVED", "APPROVED_BY_YOU", "MERGED", "CLOSED", "DRAFTED",
 }
 
 func mustNew(t *testing.T, cfg config.ThemeConfig) Theme {
@@ -164,6 +164,33 @@ func TestChipLineIsOneLine(t *testing.T) {
 	}
 	if got := plain.ChipLine("nope"); got != "" {
 		t.Errorf("ChipLine of an unknown status = %q, want empty", got)
+	}
+}
+
+// DRAFTED isn't a status, but a card shows it as one: a filled chip.
+func TestDraftedPill(t *testing.T) {
+	th := mustNew(t, config.ThemeConfig{})
+	if got := th.Label("DRAFTED"); got != "Drafted" {
+		t.Errorf("Label(DRAFTED) = %q, want Drafted", got)
+	}
+	if got := assertIndexed(t, "DRAFTED", th.Color("DRAFTED")); got != 213 {
+		t.Errorf("DRAFTED color index = %d, want 213", got)
+	}
+	if _, ok := th.Spinner("DRAFTED"); ok {
+		t.Error("DRAFTED should not spin")
+	}
+	if got := th.ChipLine("DRAFTED"); !strings.Contains(got, "48;5;213") || ansi.Strip(got) != " Drafted " {
+		t.Errorf("ChipLine(DRAFTED) = %q, want \" Drafted \" on 213", got)
+	}
+
+	over := mustNew(t, config.ThemeConfig{Status: map[string]config.StatusStyle{
+		"DRAFTED": {Label: "Unposted", Color: "#ff00ff", Spinner: "none"},
+	}})
+	if got := ansi.Strip(over.ChipLine("DRAFTED")); got != " Unposted " {
+		t.Errorf("overridden ChipLine(DRAFTED) = %q, want \" Unposted \"", got)
+	}
+	if got, ok := over.Color("DRAFTED").(color.RGBA); !ok || got != (color.RGBA{0xFF, 0x00, 0xFF, 0xFF}) {
+		t.Errorf("overridden DRAFTED color = %v", over.Color("DRAFTED"))
 	}
 }
 

@@ -86,9 +86,10 @@ type (
 		next  <-chan tea.Msg
 	}
 	reviewInputsMsg struct {
-		spent float64
-		prs   map[string]reviewInputs
-		err   error
+		spent  float64
+		prs    map[string]reviewInputs
+		posted map[string]bool // review IDs posted at least once
+		err    error
 	}
 	reviewTickMsg        struct{}
 	pruneTickMsg         struct{}
@@ -150,6 +151,10 @@ type reviewsModel struct {
 	// spent and autoToday come from the last evaluation's store reads.
 	spent     float64
 	autoToday map[string]int
+	// posted is the review IDs posted at least once, from the store and
+	// from posts this session made. Posts are never deleted, so a read only
+	// adds to it: one that started before a post can't take it back.
+	posted map[string]bool
 	// One read runs at a time. stale is set when a review finished while
 	// it read, so its spend and counts are out of date.
 	loading, stale bool
@@ -161,7 +166,7 @@ type reviewsModel struct {
 }
 
 func newReviews(r Reviewer, off string) reviewsModel {
-	return reviewsModel{reviewer: r, off: off, state: map[string]reviewState{}, released: map[string]bool{}, autoToday: map[string]int{}}
+	return reviewsModel{reviewer: r, off: off, state: map[string]reviewState{}, released: map[string]bool{}, autoToday: map[string]int{}, posted: map[string]bool{}}
 }
 
 // capturing reports whether a question or the picker takes every key.
@@ -424,7 +429,8 @@ func (m Model) startQueued() (Model, tea.Cmd) {
 
 // loadReviewInputs reads, in one command, what an evaluation needs from
 // the store: today's spend, and each wall or waiting PR's latest review and
-// auto reviews today. If a read is running it asks for another after it.
+// auto reviews today. The posted review IDs come with them, for the cards'
+// Drafted pills. If a read is running it asks for another after it.
 func (m Model) loadReviewInputs() (Model, tea.Cmd) {
 	if m.reviews.loading {
 		m.reviews.stale = true
@@ -446,6 +452,10 @@ func (m Model) loadReviewInputs() (Model, tea.Cmd) {
 		if err != nil {
 			return reviewInputsMsg{err: err}
 		}
+		posted, err := st.PostedReviewIDs(ctx)
+		if err != nil {
+			return reviewInputsMsg{err: err}
+		}
 		prs := make(map[string]reviewInputs, len(ids))
 		for _, id := range ids {
 			n, err := st.AutoReviewsSince(ctx, id, day)
@@ -462,7 +472,7 @@ func (m Model) loadReviewInputs() (Model, tea.Cmd) {
 			}
 			prs[id] = in
 		}
-		return reviewInputsMsg{spent: spent, prs: prs}
+		return reviewInputsMsg{spent: spent, prs: prs, posted: posted}
 	}
 }
 
@@ -474,6 +484,9 @@ func (m Model) applyInputs(msg reviewInputsMsg) (Model, tea.Cmd) {
 	if msg.err != nil {
 		m.notice = "could not read reviews: " + msg.err.Error()
 		return m, nil
+	}
+	for id := range msg.posted {
+		m = m.markPosted(id)
 	}
 	for id, in := range msg.prs {
 		if in.latest == nil {
@@ -498,6 +511,19 @@ func (m Model) applyInputs(msg reviewInputsMsg) (Model, tea.Cmd) {
 		m.reviews.autoToday[id] = in.autoToday
 	}
 	return m.autoStart()
+}
+
+// markPosted records that review id was posted, so its card drops Drafted.
+func (m Model) markPosted(id string) Model {
+	if m.reviews.posted[id] {
+		return m
+	}
+	m.reviews.posted = maps.Clone(m.reviews.posted)
+	if m.reviews.posted == nil {
+		m.reviews.posted = map[string]bool{}
+	}
+	m.reviews.posted[id] = true
+	return m
 }
 
 // autoStart, in auto mode, decides each wall PR and starts the allowed

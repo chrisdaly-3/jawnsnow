@@ -204,7 +204,9 @@ effort = "medium"
 # Override any status's label, color or spinner. Colors are xterm-256 indices
 # 16–255 (0–15 are rejected because terminal themes remap them) or hex. Spinner is
 # a bubbles spinner name ("dot", "line", "minidot", "pulse", "points", "meter") or
-# "none". Unset keys keep the defaults shown here.
+# "none". Unset keys keep the defaults shown here. DRAFTED is not a status: it is
+# the pill a Wall card shows in place of its status while its latest Claude review
+# is finished and not yet posted.
 [theme.status]
 # CI_WAITING        = { label = "Waiting on CI",                color = "214", spinner = "dot" }
 # CI_FAILED         = { label = "CI failed",                    color = "203", spinner = "none" }
@@ -215,6 +217,7 @@ effort = "medium"
 # APPROVED_BY_YOU   = { label = "Approved by you · needs more", color = "41",  spinner = "none" }
 # MERGED            = { label = "Merged",                       color = "140", spinner = "none" }
 # CLOSED            = { label = "Closed",                       color = "244", spinner = "none" }
+# DRAFTED           = { label = "Drafted",                      color = "213", spinner = "none" }
 
 [theme.chrome]
 # Colors of the UI frame, same formats as above. Defaults shown.

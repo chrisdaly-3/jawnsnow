@@ -40,10 +40,13 @@ type defaultStyle struct {
 	outlined bool
 }
 
-// statusOrder lists the statuses in a stable order.
+// statusOrder lists the statuses in a stable order. DRAFTED is not a
+// status: it is the pill a card shows in place of its status while its
+// review is finished and unposted, styled the same way.
 var statusOrder = []string{
 	"CI_WAITING", "CI_FAILED", "READY_FOR_REVIEW", "NEW_CHANGES",
 	"CHANGES_REQUESTED", "APPROVED", "APPROVED_BY_YOU", "MERGED", "CLOSED",
+	"DRAFTED",
 }
 
 var defaults = map[string]defaultStyle{
@@ -56,6 +59,7 @@ var defaults = map[string]defaultStyle{
 	"APPROVED_BY_YOU":   {label: "Approved by you · needs more", color: "41", spinner: "none", outlined: true},
 	"MERGED":            {label: "Merged", color: "140", spinner: "none"},
 	"CLOSED":            {label: "Closed", color: "244", spinner: "none"},
+	"DRAFTED":           {label: "Drafted", color: "213", spinner: "none"},
 }
 
 const (

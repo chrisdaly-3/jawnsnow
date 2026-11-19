@@ -1055,7 +1055,7 @@ func (m Model) body(width, height int) string {
 	switch m.view {
 	case ViewWall:
 		w := m.wall
-		w.now, w.feeds, w.badges = m.now(), m.feedNames(), m.reviewBadges(m.spinFrame)
+		w.now, w.feeds, w.badges, w.drafted = m.now(), m.feedNames(), m.reviewBadges(m.spinFrame), m.draftedPRs()
 		dw := min(m.drawerWidthIn(ViewWall), max(width-1, 0))
 		w.setSize(width-dw, height)
 		wallView := w.view(width-dw, height, m.displayPRs(), m.theme, m.spinFrame)

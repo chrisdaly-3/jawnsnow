@@ -69,6 +69,28 @@ func (m Model) badge(t tracker.Tracked, frame int) string {
 	return latestBadge(th, s, t.PR.HeadOID)
 }
 
+// draftedPRs is the wall PRs whose cards show Drafted in place of their
+// status.
+func (m Model) draftedPRs() map[string]bool {
+	out := map[string]bool{}
+	for id, t := range m.prs {
+		if t.Place == tracker.PlaceWall && m.drafted(t) {
+			out[id] = true
+		}
+	}
+	return out
+}
+
+// drafted reports whether t's latest review is finished, complete, at t's
+// head and never posted: a review waiting to be posted. A running review
+// shows its own badge instead.
+func (m Model) drafted(t tracker.Tracked) bool {
+	s := m.reviews.state[t.PR.ID]
+	r := s.latest
+	return !s.running && !s.cancelled && r != nil && r.ID != "" &&
+		r.Outcome == "complete" && r.HeadOID == t.PR.HeadOID && !m.reviews.posted[r.ID]
+}
+
 // latestBadge is the badge for the PR's latest finished review; head is
 // the PR's head now.
 func latestBadge(th theme.Theme, s reviewState, head string) string {

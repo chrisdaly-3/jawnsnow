@@ -1022,3 +1022,80 @@ func TestPreviewDefinitionListsDecodeNothing(t *testing.T) {
 		}
 	}
 }
+
+// drafted reports whether PR "1"'s card shows the Drafted pill.
+func (h *postH) drafted() bool { return strings.Contains(ansi.Strip(content(h.m)), "Drafted") }
+
+// newDraftedHarness is a post harness whose review r1 is the PR's latest,
+// so its card shows Drafted.
+func newDraftedHarness(t *testing.T) *postH {
+	t.Helper()
+	h := newPostHarness(t, postReview(), opts{})
+	h.evaluate(t)
+	if !h.drafted() {
+		t.Fatalf("no Drafted pill before posting:\n%s", ansi.Strip(content(h.m)))
+	}
+	return h
+}
+
+// A successful post clears the pill at once; the poll it starts moves the
+// card later.
+func TestPostClearsDraftedAtOnce(t *testing.T) {
+	h := newDraftedHarness(t)
+	h.press(t, "P", "k", "enter")
+	h.wait()
+	m, cmd := update(t, h.m, key("enter"))
+	msgs, _ := runCmd(t, cmd)
+	if len(msgs) != 1 {
+		t.Fatalf("the post produced %d messages, want its postDoneMsg", len(msgs))
+	}
+	done, ok := msgs[0].(postDoneMsg)
+	if !ok || done.Err != nil {
+		t.Fatalf("post result = %#v", msgs[0])
+	}
+	h.m, _ = update(t, m, done)
+	if h.drafted() {
+		t.Errorf("Drafted still shown after the post:\n%s", ansi.Strip(content(h.m)))
+	}
+	if h.client.polls != 1 {
+		t.Errorf("%d polls had run, want the check before the post's poll", h.client.polls)
+	}
+
+	// A read of the store that started before the post was recorded must
+	// not bring the pill back.
+	h.m, _ = settle(t, h.m, reviewInputsMsg{prs: map[string]reviewInputs{"1": {latest: h.m.reviews.state["1"].latest}}, posted: map[string]bool{}})
+	if h.drafted() {
+		t.Errorf("a stale read brought Drafted back:\n%s", ansi.Strip(content(h.m)))
+	}
+}
+
+// A post that may have reached GitHub counts as posted for the pill.
+func TestUncertainPostClearsDrafted(t *testing.T) {
+	h := newDraftedHarness(t)
+	h.poster.err = fmt.Errorf("github: post review: %w", context.DeadlineExceeded)
+	h.press(t, "P", "k", "enter")
+	h.wait()
+	h.press(t, "enter")
+	if got := modalText(h.m); !strings.Contains(got, uncertainText) {
+		t.Fatalf("no uncertain warning:\n%s", got)
+	}
+	h.press(t, "esc", "esc")
+	if h.m.post != nil {
+		t.Fatalf("modal still open: %+v", h.m.post)
+	}
+	if h.drafted() {
+		t.Errorf("Drafted still shown after an uncertain post:\n%s", ansi.Strip(content(h.m)))
+	}
+}
+
+// A post whose record failed is on GitHub, so the pill clears too.
+func TestUnrecordedPostClearsDrafted(t *testing.T) {
+	h := newDraftedHarness(t)
+	failRecords(t, h.harness)
+	h.press(t, "P", "k", "enter")
+	h.wait()
+	h.press(t, "enter", "esc")
+	if h.drafted() {
+		t.Errorf("Drafted still shown after an unrecorded post:\n%s", ansi.Strip(content(h.m)))
+	}
+}

@@ -77,6 +77,24 @@ func TestValidateAcceptsColors(t *testing.T) {
 	}
 }
 
+// DRAFTED is the card pill for a finished, unposted review; a theme styles
+// it like a status.
+func TestValidateAcceptsDrafted(t *testing.T) {
+	c := Defaults()
+	c.Theme.Status = map[string]StatusStyle{"DRAFTED": {Label: "Unposted", Color: "200", Spinner: "none"}}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("Validate() = %v", err)
+	}
+	c.Theme.Status = map[string]StatusStyle{"DRAFTED": {Color: "3"}}
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "theme.status.DRAFTED.color") {
+		t.Errorf("DRAFTED color 3: Validate() = %v", err)
+	}
+	c.Theme.Status = map[string]StatusStyle{"DRAFT": {}}
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "theme.status.DRAFT: unknown status") {
+		t.Errorf("DRAFT: Validate() = %v, want an unknown status", err)
+	}
+}
+
 func TestValidateReportsAllProblems(t *testing.T) {
 	c := Defaults()
 	c.GitHub.PollInterval = Duration{time.Second}

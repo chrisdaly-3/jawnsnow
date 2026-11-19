@@ -38,6 +38,10 @@ const (
 	settleEps = 0.01
 )
 
+// draftedPill is the theme key of the pill a drafted card shows in place of
+// its status chip.
+const draftedPill = "DRAFTED"
+
 var laneTitles = [laneCount]string{"CI", "Ready for you", "New changes", "Waiting on author", "Approved"}
 
 // wallTickMsg advances the narrow-mode scroll spring one frame.
@@ -71,6 +75,8 @@ type wallModel struct {
 	now    time.Time
 	feeds  []string          // feed names, for the empty state
 	badges map[string]string // each PR's Claude badge, by ID
+	// drafted is the PRs whose cards show Drafted in place of their status.
+	drafted map[string]bool
 }
 
 func newWall() wallModel {
@@ -624,7 +630,7 @@ func (m wallModel) laneBox(cards []tracker.Tracked, lane, w, h int, focused bool
 
 	var content []string
 	for r := first; r < len(cards); r++ {
-		content = append(content, badgedCard(cards[r], innerW, focused && r == row, th, m.now, frame, m.badges[cards[r].PR.ID])...)
+		content = append(content, badgedCard(cards[r], innerW, focused && r == row, th, m.now, frame, m.badges[cards[r].PR.ID], m.drafted[cards[r].PR.ID])...)
 		content = append(content, "")
 	}
 	out := []string{top}
@@ -664,7 +670,7 @@ func (m wallModel) narrowView(lanes [laneCount][]tracker.Tracked, width, height 
 			continue
 		}
 		t := lanes[it.lane][it.row]
-		lines = append(lines, badgedCard(t, width, it.lane == lane && it.row == row, th, m.now, frame, m.badges[t.PR.ID])...)
+		lines = append(lines, badgedCard(t, width, it.lane == lane && it.row == row, th, m.now, frame, m.badges[t.PR.ID], m.drafted[t.PR.ID])...)
 		lines = append(lines, "")
 	}
 	off := m.pos
@@ -685,13 +691,14 @@ func narrowHeading(lane int, cards []tracker.Tracked, width int, th theme.Theme,
 // renderCard draws one PR as cardLines lines, each exactly width cells
 // wide: the repo and number, the title, who and when, and the status chip.
 func renderCard(t tracker.Tracked, width int, selected bool, th theme.Theme, now time.Time, frame int) []string {
-	return badgedCard(t, width, selected, th, now, frame, "")
+	return badgedCard(t, width, selected, th, now, frame, "", false)
 }
 
 // badgedCard is renderCard with a Claude badge after the status chip. When
 // both don't fit, the badge takes the chip's place: the lane already
-// groups by status, and the badge is what changes.
-func badgedCard(t tracker.Tracked, width int, selected bool, th theme.Theme, now time.Time, frame int, badge string) []string {
+// groups by status, and the badge is what changes. A drafted card's chip is
+// the Drafted pill, which is dropped for the badge the same way.
+func badgedCard(t tracker.Tracked, width int, selected bool, th theme.Theme, now time.Time, frame int, badge string, drafted bool) []string {
 	st := string(t.Status.Status)
 	marker := " "
 	if selected {
@@ -706,6 +713,10 @@ func badgedCard(t tracker.Tracked, width int, selected bool, th theme.Theme, now
 	}
 	textW := max(width-3, 0)
 	pr := t.PR
+	chip := th.ChipLine(st)
+	if drafted {
+		chip = th.ChipLine(draftedPill)
+	}
 
 	ref := clean(repoShort(pr.Repo)) + "#" + strconv.Itoa(pr.Number)
 	meta := th.Muted().Render(clean(pr.Author)+" · "+cardAge(t, now)+" · ") +
@@ -716,7 +727,7 @@ func badgedCard(t tracker.Tracked, width int, selected bool, th theme.Theme, now
 		marker + glyph + " " + th.Accent().Render(ansi.Truncate(ref, textW, "…")),
 		marker + "  " + ansi.Truncate(clean(pr.Title), textW, "…"),
 		marker + "  " + ansi.Truncate(meta, textW, "…"),
-		marker + "  " + ansi.Truncate(chipAndBadge(th.ChipLine(st), badge, textW), textW, "…"),
+		marker + "  " + ansi.Truncate(chipAndBadge(chip, badge, textW), textW, "…"),
 	}
 	for i := range lines {
 		lines[i] = padTo(lines[i], width)

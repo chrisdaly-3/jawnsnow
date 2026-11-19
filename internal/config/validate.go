@@ -13,10 +13,12 @@ import (
 var (
 	efforts  = []string{"low", "medium", "high", "xhigh", "max"}
 	spinners = []string{"dot", "line", "minidot", "pulse", "points", "meter", "none"}
-	// statusKeys are the nine statuses a theme may restyle.
+	// statusKeys are the nine statuses a theme may restyle, and DRAFTED,
+	// the pill a card shows for a finished review not yet posted.
 	statusKeys = []string{
 		"CI_WAITING", "CI_FAILED", "READY_FOR_REVIEW", "NEW_CHANGES",
 		"CHANGES_REQUESTED", "APPROVED", "APPROVED_BY_YOU", "MERGED", "CLOSED",
+		"DRAFTED",
 	}
 	hexColor = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 )

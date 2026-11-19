@@ -135,6 +135,20 @@ accent = "#ff8800"
 	assertEq(t, cfg.Theme.Chrome.Accent, "#ff8800")
 }
 
+func TestLoadDraftedTheme(t *testing.T) {
+	cfg, warns, err := Load(writeConfig(t, `
+[theme.status]
+DRAFTED = { label = "Unposted", color = "200", spinner = "none" }
+`))
+	if err != nil || len(warns) != 0 {
+		t.Fatalf("err=%v warns=%v", err, warns)
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() = %v", err)
+	}
+	assertEq(t, cfg.Theme.Status["DRAFTED"], StatusStyle{Label: "Unposted", Color: "200", Spinner: "none"})
+}
+
 func TestIgnoreChecksForCombines(t *testing.T) {
 	c := Config{
 		GitHub: GitHubConfig{IgnoreChecks: []string{"a"}},
