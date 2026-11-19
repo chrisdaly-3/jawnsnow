@@ -48,6 +48,9 @@ func (p postFlow) hints() []keyHint {
 	if p.inFlight {
 		return postPostingKeys
 	}
+	if p.holdOn {
+		return append([]keyHint{postHoldOnKey}, postPreviewKeys(p.raw)...)
+	}
 	return postPreviewKeys(p.raw)
 }
 

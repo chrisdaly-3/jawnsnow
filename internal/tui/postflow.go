@@ -108,9 +108,13 @@ type postFlow struct {
 	// enter sends nothing. editing is the same for the editor. quitArmed
 	// is set by a first ctrl+c while posting.
 	inFlight, editing, quitArmed bool
-	// previewAt is when the preview opened: an enter sooner than
-	// postConfirmDelay after it is the picker's enter held or bounced.
+	// previewAt is when the preview last changed: it opened, the
+	// selection or summary changed, or an enter came too soon. An enter
+	// sooner than postConfirmDelay after it is held or bounced, and on
+	// most terminals a held key arrives as plain presses, so each one
+	// restarts the wait; holdOn says so in the footer.
 	previewAt time.Time
+	holdOn    bool
 	err       string // the last post or editor failure
 	result    string // postResult's text
 }
@@ -218,6 +222,7 @@ func (m Model) updatePost(msg tea.Msg) (_ Model, _ tea.Cmd, ok bool) {
 		} else {
 			p.sel.Body, p.err = strings.TrimRight(msg.Body, "\n"), ""
 		}
+		p.previewAt = m.now()
 		m.post = &p
 	case postDoneMsg:
 		next, cmd := m.finishPost(msg)
@@ -297,6 +302,7 @@ func (m Model) postKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 func (m Model) previewKey(p postFlow, k string) (Model, tea.Cmd) {
 	fs := orderedFindings(p.review.Findings)
 	follow := false
+	p.holdOn = false
 	switch k {
 	case "j", "down":
 		p.cursor, follow = min(p.cursor+1, max(len(fs)-1, 0)), true
@@ -310,6 +316,7 @@ func (m Model) previewKey(p postFlow, k string) (Model, tea.Cmd) {
 				p.sel.Include = map[int64]bool{}
 			}
 			p.sel.Include[id] = !included(p.sel, id)
+			p.previewAt = m.now()
 		}
 	case "m":
 		p.raw = !p.raw
@@ -326,6 +333,7 @@ func (m Model) previewKey(p postFlow, k string) (Model, tea.Cmd) {
 		return m, writeEditFile(m.dataDir, p.review.ID, p.sel.Body)
 	case "enter":
 		if m.now().Sub(p.previewAt) < postConfirmDelay {
+			p.previewAt, p.holdOn = m.now(), true
 			break
 		}
 		in, pv, err := post.Build(p.review, p.review.PRID, p.sel)

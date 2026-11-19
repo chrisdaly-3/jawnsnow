@@ -845,3 +845,67 @@ func TestPreviewShowsConcealedText(t *testing.T) {
 		t.Errorf("the sentence is hidden in the preview:\n%s", got)
 	}
 }
+
+// advance moves the clock on by d.
+func (h *postH) advance(d time.Duration) { h.clock.now = h.clock.now.Add(d) }
+
+// Without keyboard enhancements a held enter arrives as plain presses, so
+// IsRepeat can't catch it. Each early enter restarts the wait instead.
+func TestHeldPlainEnterNeverPosts(t *testing.T) {
+	h := newPostHarness(t, markdownReview("fix `x`"), opts{})
+	h.press(t, "P")
+	for range 40 { // 2s of auto-repeat at 50ms
+		h.press(t, "enter")
+		h.advance(50 * time.Millisecond)
+	}
+	if len(h.poster.posts) != 0 {
+		t.Fatalf("a held enter posted %d times", len(h.poster.posts))
+	}
+	if got := modalText(h.m); !strings.Contains(got, "hold on — press enter again to post") {
+		t.Errorf("an ignored enter is silent:\n%s", got)
+	}
+	h.advance(600 * time.Millisecond)
+	h.press(t, "enter")
+	if len(h.poster.posts) != 1 {
+		t.Errorf("one enter after a quiet 600ms posted %d times, want 1", len(h.poster.posts))
+	}
+}
+
+// A changed selection restarts the wait, so the confirm follows the
+// preview being on screen as it will post.
+func TestToggleRestartsConfirmWait(t *testing.T) {
+	h := newPostHarness(t, postReview(), opts{})
+	h.press(t, "P", "k", "enter")
+	h.wait()
+	h.press(t, "space", "enter")
+	if len(h.poster.posts) != 0 {
+		t.Fatalf("enter right after a toggle posted %d times", len(h.poster.posts))
+	}
+	h.wait()
+	h.press(t, "enter")
+	if len(h.poster.posts) != 1 {
+		t.Errorf("enter after the wait posted %d times, want 1", len(h.poster.posts))
+	}
+}
+
+func TestEditorReturnRestartsConfirmWait(t *testing.T) {
+	t.Setenv("VISUAL", "")
+	t.Setenv("EDITOR", "my-editor")
+	h := newPostHarness(t, markdownReview("fix `x`"), opts{})
+	h.press(t, "P", "enter")
+	h.wait()
+	h.press(t, "e")
+	if err := os.WriteFile(filepath.Join(h.m.dataDir, "tmp", "post-r1.md"), []byte("New summary."), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h.m, _ = settle(t, h.m, h.execs[0].fn(nil))
+	h.press(t, "enter")
+	if len(h.poster.posts) != 0 {
+		t.Fatalf("enter right after the editor posted %d times", len(h.poster.posts))
+	}
+	h.wait()
+	h.press(t, "enter")
+	if len(h.poster.posts) != 1 || h.poster.posts[0].Body != "New summary." {
+		t.Errorf("posts = %+v, want one with the edited summary", h.poster.posts)
+	}
+}

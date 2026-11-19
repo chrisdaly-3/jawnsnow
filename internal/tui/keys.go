@@ -128,6 +128,9 @@ var (
 	postPickKeys    = []keyHint{{"j/k", "event"}, {"enter", "select"}, {"esc", "cancel"}}
 	postPostingKeys = []keyHint{{"", "posting to GitHub…"}}
 	postResultKeys  = []keyHint{{"esc", "close"}}
+	// postHoldOnKey leads the preview's footer after an enter that came
+	// too soon to post.
+	postHoldOnKey = keyHint{"", "hold on — press enter again to post"}
 )
 
 func postPreviewKeys(raw bool) []keyHint {
