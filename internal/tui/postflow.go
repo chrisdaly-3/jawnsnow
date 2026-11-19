@@ -630,6 +630,9 @@ func (m Model) finishPost(msg postDoneMsg) (Model, tea.Cmd) {
 	// brings GitHub's view once it has one.
 	m = m.markPosted(msg.ReviewID)
 	m = m.assumePosted(msg)
+	// Saved now, so a restart before the poll keeps the card where it is.
+	m = m.markSave(msg.PRID)
+	m, save := m.flush()
 	var reload tea.Cmd
 	if m.drawer.prID == msg.PRID {
 		m.drawer = m.drawer.withPosted(msg.Posted)
@@ -663,7 +666,7 @@ func (m Model) finishPost(msg postDoneMsg) (Model, tea.Cmd) {
 	}
 	m, relog := m.reloadReviewLog()
 	m, inputs := m.loadReviewInputs()
-	return m, tea.Batch(reload, poll, relog, inputs)
+	return m, tea.Batch(save, reload, poll, relog, inputs)
 }
 
 // withUnconfirmed remembers a post the store has no row for.

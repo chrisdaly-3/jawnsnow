@@ -1216,3 +1216,28 @@ func TestRefusedPostLeavesCard(t *testing.T) {
 		t.Errorf("status after a refused post = %s, want %s", got, status.ReadyForReview)
 	}
 }
+
+// The assumed review is saved with the PR straight away, so a restart
+// before the next poll finishes keeps the card in its new lane.
+func TestAssumedReviewIsSaved(t *testing.T) {
+	h := newPostHarness(t, markdownReview("fix `x`"), opts{})
+	m, held := update(t, h.m, key("R"))
+	if !m.polling || held == nil {
+		t.Fatal("R did not start a poll")
+	}
+	h.m = m
+	h.press(t, "P", "enter")
+	h.wait()
+	h.press(t, "enter")
+	if len(h.poster.posts) != 1 {
+		t.Fatalf("%d posts, want 1", len(h.poster.posts))
+	}
+	prs, err := h.store.LoadTracked(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	reviews := prs["1"].PR.Reviews
+	if len(reviews) != 1 || reviews[0].Author != "me" || reviews[0].State != "COMMENTED" {
+		t.Errorf("stored reviews = %+v, want the posted comment", reviews)
+	}
+}
