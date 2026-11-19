@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -135,8 +136,19 @@ func TestThreadIDsStopsAtFivePages(t *testing.T) {
 	assertEq(t, len(d.calls), 5)
 }
 
+// post.go holds the one mutation; no other file in the package may carry
+// one, including files added later.
 func TestClientStaysReadOnly(t *testing.T) {
-	for _, f := range []string{"client.go", "query.go", "context.go"} {
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, f := range files {
+		if f == "post.go" || strings.HasSuffix(f, "_test.go") {
+			continue
+		}
+		n++
 		src, err := os.ReadFile(f)
 		if err != nil {
 			t.Fatal(err)
@@ -144,6 +156,9 @@ func TestClientStaysReadOnly(t *testing.T) {
 		if strings.Contains(strings.ToLower(string(src)), "mutation") {
 			t.Errorf("%s contains a mutation", f)
 		}
+	}
+	if n < 3 {
+		t.Errorf("scanned only %d files; the glob is broken", n)
 	}
 }
 
