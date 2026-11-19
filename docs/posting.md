@@ -133,6 +133,16 @@ When GitHub accepts the review:
 2. It looks up the review threads GitHub made for the inline comments and stores each thread's ID on its finding.
 3. It polls at once, so the PR's status catches up. A posted approval or change request, or a comment with a summary or at least one inline comment that starts a thread, is your review on GitHub: the PR moves lanes, and the next Claude review uses the `follow_up` tier.
 
+The card's [Drafted pill](views.md#the-drafted-pill) goes at once, before the poll. The poll then moves the card by the [status rules](views.md#statuses):
+
+| Event | Lane after the poll |
+| --- | --- |
+| Comment | Waiting on author (`CHANGES_REQUESTED`) |
+| Request changes | Waiting on author (`CHANGES_REQUESTED`) |
+| Approve | Approved: `APPROVED` once GitHub counts the PR approved, otherwise `APPROVED_BY_YOU` |
+
+A rule earlier in the order still wins: a PR whose CI failed at the head stays in the CI lane.
+
 The drawer then shows `Posted as Comment · just now` on that pass, and the Reviews view shows `✓`. The next pass gets the posted findings with their thread IDs, so it can read the author's replies in those threads and mark a finding answered. See [the ledger](reviews.md#the-earlier-findings-ledger).
 
 If the thread lookup fails, the post still stands and snow shows `posted, but could not look up its threads: <error>`. Those findings then don't count as posted for the checklist or the ledger.
@@ -146,6 +156,8 @@ What snow does depends on whether the review might have reached GitHub.
 - Posted but not recorded: GitHub took the review but writing the record failed. The modal shows `posted to GitHub, but saving the record failed: <error> — <review URL>`; `esc` or `enter` closes it. For the rest of the session the drawer still shows the post and the flow still asks before reposting, but after a restart snow has no record of it.
 
 If the flow was closed by the time the result arrived, these show as a notice instead.
+
+An unknown result and an unrecorded post both clear the card's Drafted pill, since the review may well be on GitHub. Neither is in the database, so after a restart the pill shows again until the review is posted.
 
 ## A second snow window
 

@@ -527,7 +527,7 @@ The markdown style for review text in the drawer and the post preview: glow's da
 
 ### `theme.status.<STATUS>`
 
-Restyles one status. `<STATUS>` is one of the nine status names below; any other name is an error. Each takes `label`, `color` and `spinner`, and an unset key keeps the default.
+Restyles one status. `<STATUS>` is one of the nine status names below, or `DRAFTED`; any other name is an error. Each takes `label`, `color` and `spinner`, and an unset key keeps the default.
 
 | Key | Type | Valid values |
 | --- | --- | --- |
@@ -548,6 +548,14 @@ The defaults:
 | `APPROVED_BY_YOU` | `Approved by you · needs more` | `41` | `none` |
 | `MERGED` | `Merged` | `140` | `none` |
 | `CLOSED` | `Closed` | `244` | `none` |
+| `DRAFTED` | `Drafted` | `213` | `none` |
+
+`DRAFTED` is not a status. It styles the pill a Wall card shows in place of its status chip while the PR's latest Claude review is finished and not yet posted; see [the Drafted pill](views.md#the-drafted-pill). It never spins, so its `spinner` has no effect.
+
+```toml
+[theme.status]
+DRAFTED = { label = "Unposted", color = "177" }
+```
 
 A spinner only turns while the status is in progress: `CI_WAITING` always, and `NEW_CHANGES` while CI runs at the head. A spinner set on any other status shows only while a Claude review of that PR runs. The `CI_FAILED` card shows `✗` in place of a spinner. `APPROVED_BY_YOU` is drawn outlined instead of filled; that isn't configurable. [views.md](views.md#statuses) says when each status applies.
 

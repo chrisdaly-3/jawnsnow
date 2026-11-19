@@ -80,6 +80,29 @@ A card has four lines:
 
 The selected card has a bar in the accent colour on its left edge.
 
+### The Drafted pill
+
+A card shows `Drafted` in place of its status chip when the PR's latest Claude review is ready to post:
+
+- it finished with outcome complete, not incomplete or failed;
+- it is of the PR's current head commit;
+- it has never been posted.
+
+```
+   api#405
+   Verify webhook signatures before parsing the body
+   bob · 3h · +142 −58
+   Drafted  ✦ Claude: 2 blocking
+```
+
+The Claude badge stays beside it. The card stays in its lane: `Drafted` is not a status, so it changes no lane, count or Done view. While a review runs the card shows `⣾ Claude reviewing…` as usual, and its status chip.
+
+The pill goes as soon as you post the review from the drawer, and the card moves lanes at the poll that follows the post. See [after posting](posting.md#after-posting). A new commit on the PR also clears it, since the review is then of an older head.
+
+The pill takes the chip's place only where the chip would show. When the pill and the badge don't both fit, the badge alone shows, as it does with the chip. In side-by-side lanes on a 160-column terminal, `✦ Claude: clean` fits beside the pill but `✦ Claude: 2 blocking` doesn't. The stacked layout gives each card the full width, so there both usually fit.
+
+Its label and colour are set with [`[theme.status] DRAFTED`](configuration.md#themestatusstatus).
+
 ### The Claude badge
 
 | Badge | Means |
@@ -110,6 +133,8 @@ Each PR has exactly one status. The rules are checked in this order and the firs
 | 7 | `CHANGES_REQUESTED` | `Waiting on author` | `208` | none | your review requests changes, comments or was dismissed |
 | 8 | `CI_WAITING` | `Waiting on CI` | `214` | `dot` | you haven't reviewed, and a check that counts is pending at the head |
 | 9 | `READY_FOR_REVIEW` | `Ready for you` | `39` | none | you haven't reviewed, and CI is green or there are no checks |
+
+The [Drafted pill](#the-drafted-pill) is not a status: it changes only what a card shows, never its lane.
 
 Labels, colours and spinners can be changed in [`[theme.status]`](configuration.md#themestatusstatus). A running review spins the card's own spinner only when its status has one (by default `CI_WAITING` and `NEW_CHANGES`); otherwise the running review shows only in the badge, `⣾ Claude reviewing…`.
 
