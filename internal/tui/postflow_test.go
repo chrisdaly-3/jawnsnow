@@ -643,3 +643,56 @@ func TestEditReplacesStaleFile(t *testing.T) {
 		t.Errorf("file mode = %v (%v), want 0600", fi.Mode().Perm(), err)
 	}
 }
+
+const quitWarning = "posting to GitHub — ctrl+c again to quit anyway"
+
+func TestCtrlCGuardResetsAfterFailedPost(t *testing.T) {
+	h := newPostHarness(t, markdownReview("fix `x`"), opts{})
+	h.poster.err = errors.New("github: post review: no permission")
+	h.press(t, "P", "enter")
+	h.wait()
+	m, post1 := update(t, h.m, key("enter"))
+	m, cmd := update(t, m, ctrl('c'))
+	if isQuit(t, cmd) {
+		t.Fatal("the first ctrl+c quit during post 1")
+	}
+	msgs, _ := runCmd(t, post1)
+	m, _ = settle(t, m, msgs...)
+	if m.post == nil || m.post.inFlight {
+		t.Fatalf("after the failed post: %+v, want the preview", m.post)
+	}
+
+	h.poster.err = nil
+	m, _ = update(t, m, key("enter")) // post 2, held in flight
+	if !m.post.inFlight {
+		t.Fatal("post 2 did not start")
+	}
+	m, cmd = update(t, m, ctrl('c'))
+	if isQuit(t, cmd) {
+		t.Fatal("one ctrl+c during post 2 quit: the guard from post 1 was still armed")
+	}
+	if m.notice != quitWarning {
+		t.Errorf("notice = %q, want the warning again", m.notice)
+	}
+}
+
+func TestCtrlCWarningClearsWhenPostEnds(t *testing.T) {
+	for _, fail := range []bool{false, true} {
+		h := newPostHarness(t, markdownReview("fix `x`"), opts{})
+		if fail {
+			h.poster.err = errors.New("github: post review: no permission")
+		}
+		h.press(t, "P", "enter")
+		h.wait()
+		m, held := update(t, h.m, key("enter"))
+		m, _ = update(t, m, ctrl('c'))
+		if m.notice != quitWarning {
+			t.Fatalf("fail=%v: notice = %q, want the warning", fail, m.notice)
+		}
+		msgs, _ := runCmd(t, held)
+		m, _ = settle(t, m, msgs...)
+		if strings.Contains(modalText(m), quitWarning) {
+			t.Errorf("fail=%v: the warning outlived the post:\n%s", fail, modalText(m))
+		}
+	}
+}

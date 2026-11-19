@@ -49,6 +49,8 @@ const (
 	postConfirmDelay = 500 * time.Millisecond
 )
 
+const postQuitWarning = "posting to GitHub — ctrl+c again to quit anyway"
+
 const headMovedWarning = "PR has new commits since this review — comments will show as outdated"
 
 // postFlow is the open post modal. Like the picker it is replaced, never
@@ -194,7 +196,7 @@ func (m Model) postCapture(msg tea.KeyPressMsg) (_ Model, _ tea.Cmd, ok bool) {
 	if m.post.inFlight && !m.post.quitArmed {
 		p := *m.post
 		p.quitArmed = true
-		m.post, m.notice = &p, "posting to GitHub — ctrl+c again to quit anyway"
+		m.post, m.notice = &p, postQuitWarning
 		return m, nil, true
 	}
 	return m, nil, false
@@ -283,7 +285,8 @@ func (m Model) previewKey(p postFlow, k string) (Model, tea.Cmd) {
 		if err != nil {
 			break // the preview shows why
 		}
-		p.inFlight, p.err = true, ""
+		// Each post gets its own ctrl+c guard.
+		p.inFlight, p.quitArmed, p.err = true, false, ""
 		m.post = &p
 		return m, m.postCmd(p.review, p.sel, in, pv.ThreadFindings)
 	case "esc":
@@ -451,11 +454,14 @@ func matchThreads(in github.PostInput, findingIDs []int64, comments []github.Pos
 // status catches up, and a record that failed after it stays on screen.
 func (m Model) finishPost(msg postDoneMsg) (Model, tea.Cmd) {
 	current := m.post.on(msg.ReviewID) && m.post.inFlight
+	if m.notice == postQuitWarning {
+		m.notice = ""
+	}
 	if msg.Err != nil {
 		text := "post failed: " + msg.Err.Error()
 		if current {
 			p := *m.post
-			p.inFlight, p.err = false, text
+			p.inFlight, p.quitArmed, p.err = false, false, text
 			m.post = &p
 		} else {
 			m.notice = text
