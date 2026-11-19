@@ -144,12 +144,15 @@ func TestDetailsBatchesOf10InOrder(t *testing.T) {
 }
 
 // gatedDoer holds every call until release closes, and records how many were
-// in flight at once. full closes when limit calls are in flight.
+// in flight at once. full closes the first time limit calls are in flight;
+// after release, later batches can bring inflight back to limit, so it must
+// close only once.
 type gatedDoer struct {
 	mu             sync.Mutex
 	inflight, peak int
 	limit          int
 	full, release  chan struct{}
+	fullOnce       sync.Once
 }
 
 func (g *gatedDoer) DoWithContext(ctx context.Context, _ string, vars map[string]any, resp any) error {
@@ -157,7 +160,7 @@ func (g *gatedDoer) DoWithContext(ctx context.Context, _ string, vars map[string
 	g.inflight++
 	g.peak = max(g.peak, g.inflight)
 	if g.inflight == g.limit {
-		close(g.full)
+		g.fullOnce.Do(func() { close(g.full) })
 	}
 	g.mu.Unlock()
 	select {
