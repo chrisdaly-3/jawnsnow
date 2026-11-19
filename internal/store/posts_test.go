@@ -197,3 +197,39 @@ func TestPostedReviewIDs(t *testing.T) {
 		t.Errorf("PostedReviewIDs = %v, want r1 and r2", got)
 	}
 }
+
+// The record is written as soon as the post lands; thread IDs follow in a
+// second write once they are looked up.
+func TestSetThreadIDsAfterRecord(t *testing.T) {
+	s, _ := openTemp(t)
+	ctx := context.Background()
+	r := seedReview(t, s, "r1", "pr1", 3)
+	o := seedReview(t, s, "r2", "pr2", 1)
+	if err := s.RecordPost(ctx, Posted{ReviewID: "r1", GitHubReviewID: "PRR_1", At: t0}, nil); err != nil {
+		t.Fatal(err)
+	}
+	a, b := r.Findings[0].ID, r.Findings[2].ID
+	if err := s.SetThreadIDs(ctx, "r1", map[int64]string{a: "T_a", b: "T_b"}); err != nil {
+		t.Fatalf("SetThreadIDs: %v", err)
+	}
+	got, err := s.Reviews(ctx, "pr1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fs := got[0].Findings
+	if fs[0].ThreadID != "T_a" || fs[1].ThreadID != "" || fs[2].ThreadID != "T_b" {
+		t.Errorf("thread IDs = %q %q %q", fs[0].ThreadID, fs[1].ThreadID, fs[2].ThreadID)
+	}
+	if fs[0].Path != "a.go" || fs[0].Line != 10 || !fs[0].Blocking {
+		t.Errorf("rewrite lost other fields: %+v", fs[0])
+	}
+
+	// A finding of another review fails the whole write.
+	if err := s.SetThreadIDs(ctx, "r1", map[int64]string{r.Findings[1].ID: "T_c", o.Findings[0].ID: "T_x"}); err == nil {
+		t.Fatal("want an error for another review's finding")
+	}
+	got, _ = s.Reviews(ctx, "pr1")
+	if tid := got[0].Findings[1].ThreadID; tid != "" {
+		t.Errorf("a failed write set thread %q", tid)
+	}
+}

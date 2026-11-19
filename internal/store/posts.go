@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -32,19 +33,41 @@ func (s *Store) RecordPost(ctx context.Context, p Posted, threads map[int64]stri
 		p.ReviewID, ts(p.At), string(data)); err != nil {
 		return fmt.Errorf("record post of %s: %w", p.ReviewID, err)
 	}
+	if err := setThreads(ctx, tx, p.ReviewID, threads); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// SetThreadIDs sets the ThreadID of each finding in threads, in one
+// transaction, for a post already recorded. A finding that doesn't exist,
+// or belongs to another review, fails the whole call.
+func (s *Store) SetThreadIDs(ctx context.Context, reviewID string, threads map[int64]string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := setThreads(ctx, tx, reviewID, threads); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func setThreads(ctx context.Context, tx *sql.Tx, reviewID string, threads map[int64]string) error {
 	for id, thread := range threads {
 		res, err := tx.ExecContext(ctx, `UPDATE findings SET data = json_set(data, '$.ThreadID', ?)
-			WHERE id = ? AND review_id = ?`, thread, id, p.ReviewID)
+			WHERE id = ? AND review_id = ?`, thread, id, reviewID)
 		if err != nil {
 			return fmt.Errorf("set thread of finding %d: %w", id, err)
 		}
 		if n, err := res.RowsAffected(); err != nil {
 			return err
 		} else if n != 1 {
-			return fmt.Errorf("set thread of finding %d: no such finding in review %s", id, p.ReviewID)
+			return fmt.Errorf("set thread of finding %d: no such finding in review %s", id, reviewID)
 		}
 	}
-	return tx.Commit()
+	return nil
 }
 
 // PostedFor returns reviewID's posts, newest first.
