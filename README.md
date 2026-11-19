@@ -90,3 +90,7 @@ The tape records `cmd/snowdemo`, which runs the interface over fake data in a te
 ## Credits
 
 Review prompt adapted from Dispatch (github.com/kbsteere/dispatch), MIT. The notice is in [`internal/review/prompt/LICENSE-dispatch`](internal/review/prompt/LICENSE-dispatch).
+
+## License
+
+MIT. See [`LICENSE`](LICENSE).
