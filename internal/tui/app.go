@@ -163,6 +163,8 @@ type Model struct {
 	dataDir string
 	// post is the open post flow, or nil.
 	post *postFlow
+	// pollAgain asks for a poll as soon as the one in flight finishes.
+	pollAgain bool
 
 	reviews reviewsModel
 	// session is the Agent view's model picks for this session.
@@ -392,8 +394,10 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		return m.reviewKey(msg)
 	}
 	// So does the post flow: nothing may reach GitHub but its own keys.
-	if m.post != nil && msg.String() != "ctrl+c" {
-		return m.postKey(msg)
+	if m.post != nil {
+		if next, cmd, ok := m.postCapture(msg); ok {
+			return next, cmd
+		}
 	}
 	// An open filter box or author picker takes every key, or typing "q"
 	// would quit. ctrl+c still quits.
@@ -744,7 +748,12 @@ func (m Model) finishPoll(res poll.Result) (Model, tea.Cmd) {
 	m.pollGen++
 	gen := m.pollGen
 	next := m.tick(wait, func(time.Time) tea.Msg { return pollTickMsg{gen: gen} })
-	return m, tea.Batch(save, release, load, next)
+	var again tea.Cmd
+	if m.pollAgain {
+		m.pollAgain = false
+		m, again = m.startPoll()
+	}
+	return m, tea.Batch(save, release, load, next, again)
 }
 
 // feedNote is the banner for searches a poll skipped: each error names its

@@ -2,19 +2,15 @@ package tui
 
 import (
 	"context"
-	"fmt"
 	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
-	"github.com/charmbracelet/x/ansi"
 
 	"github.com/chrisdaly-3/jawnsnow/internal/github"
 	"github.com/chrisdaly-3/jawnsnow/internal/post"
@@ -48,6 +44,9 @@ const (
 	// slow GitHub can't leave a post unrecorded.
 	recordTimeout = 30 * time.Second
 	postMaxWidth  = 110
+	// postConfirmDelay is how long the preview must be open before enter
+	// posts.
+	postConfirmDelay = 500 * time.Millisecond
 )
 
 const headMovedWarning = "PR has new commits since this review — comments will show as outdated"
@@ -65,10 +64,14 @@ type postFlow struct {
 	raw    bool
 	// inFlight is set from the confirming enter until the post's result
 	// arrives; every key but ctrl+c is ignored meanwhile, so a second
-	// enter sends nothing. editing is the same for the editor.
-	inFlight, editing bool
-	err               string // the last post or editor failure
-	result            string // postResult's text
+	// enter sends nothing. editing is the same for the editor. quitArmed
+	// is set by a first ctrl+c while posting.
+	inFlight, editing, quitArmed bool
+	// previewAt is when the preview opened: an enter sooner than
+	// postConfirmDelay after it is the picker's enter held or bounced.
+	previewAt time.Time
+	err       string // the last post or editor failure
+	result    string // postResult's text
 }
 
 type (
@@ -141,9 +144,15 @@ func (m Model) updatePost(msg tea.Msg) (_ Model, _ tea.Cmd, ok bool) {
 			m.post, m.notice = nil, "could not read earlier posts: "+msg.Err.Error()
 			return m, nil, true
 		}
+		// A post whose record failed is known only to the drawer, and
+		// counts as posted all the same.
+		prior := msg.Posted
+		if d, ok := m.drawer.posted[msg.ReviewID]; ok && (len(prior) == 0 || d.At.After(prior[0].At)) {
+			prior = append([]store.Posted{d}, prior...)
+		}
 		p := *m.post
-		p.prior, p.stage = msg.Posted, postPick
-		if len(msg.Posted) > 0 {
+		p.prior, p.stage = prior, postPick
+		if len(prior) > 0 {
 			p.stage = postRepost
 		}
 		m.post = &p
@@ -168,6 +177,27 @@ func (m Model) updatePost(msg tea.Msg) (_ Model, _ tea.Cmd, ok bool) {
 		return m, nil, false
 	}
 	return m, nil, true
+}
+
+// postCapture takes every key while the flow is open; ok is false for a
+// ctrl+c that should go on to quit. A held key's repeats are dropped, so
+// only deliberate presses move the flow toward posting, and the first
+// ctrl+c while posting only warns: the post can't be taken back.
+func (m Model) postCapture(msg tea.KeyPressMsg) (_ Model, _ tea.Cmd, ok bool) {
+	if msg.IsRepeat {
+		return m, nil, true
+	}
+	if msg.String() != "ctrl+c" {
+		next, cmd := m.postKey(msg)
+		return next, cmd, true
+	}
+	if m.post.inFlight && !m.post.quitArmed {
+		p := *m.post
+		p.quitArmed = true
+		m.post, m.notice = &p, "posting to GitHub — ctrl+c again to quit anyway"
+		return m, nil, true
+	}
+	return m, nil, false
 }
 
 func (m Model) postKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
@@ -195,6 +225,7 @@ func (m Model) postKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			p.pick = max(p.pick-1, 0)
 		case "enter":
 			p.sel.Event, p.stage, p.scroll, p.err = postEvents[p.pick].event, postPreview, 0, ""
+			p.previewAt = m.now()
 		case "esc":
 			m.post = nil
 			return m, nil
@@ -245,13 +276,16 @@ func (m Model) previewKey(p postFlow, k string) (Model, tea.Cmd) {
 		m.post = &p
 		return m, writeEditFile(m.dataDir, p.review.ID, p.sel.Body)
 	case "enter":
-		in, _, err := post.Build(p.review, p.review.PRID, p.sel)
+		if m.now().Sub(p.previewAt) < postConfirmDelay {
+			break
+		}
+		in, pv, err := post.Build(p.review, p.review.PRID, p.sel)
 		if err != nil {
 			break // the preview shows why
 		}
 		p.inFlight, p.err = true, ""
 		m.post = &p
-		return m, m.postCmd(p.review, p.sel, in)
+		return m, m.postCmd(p.review, p.sel, in, pv.ThreadFindings)
 	case "esc":
 		p.stage, p.err = postPick, ""
 		m.post = &p
@@ -289,7 +323,16 @@ func writeEditFile(dataDir, reviewID, body string) tea.Cmd {
 		path := filepath.Join(dir, "post-"+unsafeName.ReplaceAllString(reviewID, "_")+".md")
 		err := os.MkdirAll(dir, 0o700)
 		if err == nil {
-			err = os.WriteFile(path, []byte(body), 0o600)
+			// A file left by a run that died with the editor open is
+			// replaced, never written through.
+			_ = os.Remove(path)
+			var f *os.File
+			if f, err = os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600); err == nil {
+				_, err = f.WriteString(body)
+				if cerr := f.Close(); err == nil {
+					err = cerr
+				}
+			}
 		}
 		if err != nil {
 			_ = os.Remove(path)
@@ -329,7 +372,7 @@ func (m Model) runEditor(msg postEditReadyMsg) (Model, tea.Cmd, bool) {
 // postCmd posts in, then records it. A refused post records nothing. Once
 // GitHub has the review the record is always attempted, whatever the
 // modal does meanwhile.
-func (m Model) postCmd(rv store.Review, sel post.Selection, in github.PostInput) tea.Cmd {
+func (m Model) postCmd(rv store.Review, sel post.Selection, in github.PostInput, threadFindings []int64) tea.Cmd {
 	poster, st, now := m.poster, m.store, m.now
 	return func() tea.Msg {
 		done := postDoneMsg{ReviewID: rv.ID, PRID: rv.PRID}
@@ -354,7 +397,7 @@ func (m Model) postCmd(rv store.Review, sel post.Selection, in github.PostInput)
 		}
 		rctx, rcancel := context.WithTimeout(context.Background(), recordTimeout)
 		defer rcancel()
-		done.RecordErr = st.RecordPost(rctx, done.Posted, matchThreads(rv, sel, res.Comments, threadOf))
+		done.RecordErr = st.RecordPost(rctx, done.Posted, matchThreads(in, threadFindings, res.Comments, threadOf))
 		return done
 	}
 }
@@ -369,23 +412,28 @@ func includedIDs(rv store.Review, sel post.Selection) []int64 {
 	return ids
 }
 
-// matchThreads maps each posted comment back to its finding by path and
-// line, taking findings in payload order, then to the comment's thread.
-func matchThreads(rv store.Review, sel post.Selection, comments []github.PostedComment, threadOf map[string]string) map[int64]string {
+// matchThreads maps each posted comment back to the finding behind its
+// thread, by path and the line it was posted on, in payload order, then to
+// the comment's thread. findingIDs runs parallel to in.Threads. GitHub's
+// line is where the comment sits at head, which is shifted or gone for a
+// review of an older commit, so it is only the fallback.
+func matchThreads(in github.PostInput, findingIDs []int64, comments []github.PostedComment, threadOf map[string]string) map[int64]string {
 	type at struct {
 		path string
 		line int
 	}
 	waiting := map[at][]int64{}
-	for _, f := range rv.Findings {
-		if included(sel, f.ID) && !f.Unanchored {
-			k := at{post.Sanitize(f.Path), f.Line}
-			waiting[k] = append(waiting[k], f.ID)
-		}
+	for i, t := range in.Threads {
+		k := at{t.Path, t.Line}
+		waiting[k] = append(waiting[k], findingIDs[i])
 	}
 	out := map[int64]string{}
 	for _, c := range comments {
-		k := at{c.Path, c.Line}
+		line := c.OriginalLine
+		if line == 0 {
+			line = c.Line
+		}
+		k := at{c.Path, line}
 		ids := waiting[k]
 		if len(ids) == 0 {
 			continue
@@ -421,7 +469,14 @@ func (m Model) finishPost(msg postDoneMsg) (Model, tea.Cmd) {
 			m, reload = m.loadDrawer(msg.PRID)
 		}
 	}
-	m, poll := m.startPoll()
+	// The PR's status catches up on the next poll. One already running
+	// started before the post, so another follows it.
+	var poll tea.Cmd
+	if m.polling {
+		m.pollAgain = true
+	} else {
+		m, poll = m.startPoll()
+	}
 	switch {
 	case msg.RecordErr != nil:
 		text := "posted to GitHub, but saving the record failed: " + msg.RecordErr.Error() + " — " + msg.Posted.URL
@@ -450,161 +505,3 @@ func (d drawerModel) withPosted(p store.Posted) drawerModel {
 	d.posted = posted
 	return d
 }
-
-// postedAgo is "just now" for the first minute, then "3m ago".
-func postedAgo(d time.Duration) string {
-	if d < time.Minute {
-		return "just now"
-	}
-	return ago(d) + " ago"
-}
-
-func (p postFlow) hints() []keyHint {
-	switch p.stage {
-	case postLoading:
-		return postLoadingKeys
-	case postRepost:
-		return postRepostKeys
-	case postPick:
-		return postPickKeys
-	case postResult:
-		return postResultKeys
-	}
-	if p.inFlight {
-		return postPostingKeys
-	}
-	return postPreviewKeys(p.raw)
-}
-
-// ---- rendering ----
-
-// postBody draws the modal over the view.
-func (m Model) postBody(width, height int) string {
-	top, body, _, rows := m.postFrame(width, height)
-	inner := postInner(width)
-	bodyH := max(rows-len(top), 0)
-	scroll := min(max(m.post.scroll, 0), max(len(body)-bodyH, 0))
-	lines := append(slices.Clone(top), body[min(scroll, len(body)):]...)
-	lines = lines[:min(len(lines), rows)]
-	for i, l := range lines {
-		l = ansi.Truncate(l, inner, "")
-		lines[i] = l + strings.Repeat(" ", max(inner-ansi.StringWidth(l), 0))
-	}
-	box := m.theme.Border(true).Padding(0, 2).Render(strings.Join(lines, "\n"))
-	return lipgloss.Place(max(width, 0), max(height, 0), lipgloss.Center, lipgloss.Center, box)
-}
-
-// postInner is the content width inside the box's border and padding.
-func postInner(width int) int { return max(min(width, postMaxWidth)-6, 10) }
-
-// postFrame lays the modal out: the lines that stay put, the lines that
-// scroll, the scrolling line the cursor is on, and the rows inside the box.
-func (m Model) postFrame(width, height int) (top, body []string, cursorRow, rows int) {
-	p, th := m.post, m.theme
-	inner := postInner(width)
-	rows = max(height-2, 1)
-	wrap := func(s string, style lipgloss.Style) []string {
-		var out []string
-		for _, l := range strings.Split(ansi.Wrap(s, inner, ""), "\n") {
-			out = append(out, style.Render(l))
-		}
-		return out
-	}
-	title := "Post review · " + cleanLine(p.review.Repo) + "#" + strconv.Itoa(p.review.Number)
-
-	switch p.stage {
-	case postLoading:
-		return []string{th.Accent().Render(title), "", th.Muted().Render("Checking earlier posts…")}, nil, 0, rows
-	case postRepost:
-		last := p.prior[0]
-		q := fmt.Sprintf("Already posted as %s %s — post again? y/n", cleanLine(last.Event), postedAgo(m.now().Sub(last.At)))
-		return append([]string{th.Accent().Render(title), ""}, wrap(q, th.Accent())...), nil, 0, rows
-	case postResult:
-		return append([]string{th.Accent().Render(title), ""}, wrap(cleanLine(p.result), th.StatusFg("CI_FAILED"))...), nil, 0, rows
-	case postPick:
-		top = []string{th.Accent().Render(title), ""}
-		for i, e := range postEvents {
-			mark := "  "
-			if i == p.pick {
-				mark = th.Accent().Render("▸ ")
-			}
-			top = append(top, mark+e.label)
-		}
-		return top, nil, 0, rows
-	}
-
-	_, pv, err := post.Build(p.review, p.review.PRID, p.sel)
-	event, commit := string(p.sel.Event), shortCommit(p.review.HeadOID)
-	if err == nil {
-		event, commit = string(pv.Event), pv.Commit
-	}
-	top = []string{th.Accent().Render(title + " · " + event + " · " + cleanLine(commit))}
-	if t, ok := m.prs[p.review.PRID]; ok && t.PR.HeadOID != "" && t.PR.HeadOID != p.review.HeadOID {
-		top = append(top, wrap(headMovedWarning, th.StatusFg("CI_WAITING"))...)
-	}
-	if err != nil {
-		top = append(top, wrap(cleanLine(err.Error()), th.StatusFg("CI_FAILED"))...)
-	}
-	if p.err != "" {
-		top = append(top, wrap(cleanLine(p.err), th.StatusFg("CI_FAILED"))...)
-	}
-	if p.inFlight {
-		top = append(top, th.Accent().Render("Posting to GitHub…"))
-	}
-	if len(pv.Hidden) > 0 {
-		items := make([]string, len(pv.Hidden))
-		for i, h := range pv.Hidden {
-			items[i] = cleanLine(h)
-		}
-		top = append(top, wrap("Rendered view hides: "+strings.Join(items, "; ")+" — press m to see the raw text", th.StatusFg("CI_WAITING"))...)
-	}
-	top = append(top, "")
-
-	fs := orderedFindings(p.review.Findings)
-	if len(fs) > 0 {
-		body = append(body, th.Accent().Render("Findings"))
-	}
-	for i, f := range fs {
-		mark, box := "  ", "[ ] "
-		if i == p.cursor {
-			mark, cursorRow = th.Accent().Render("▸ "), len(body)
-		}
-		if included(p.sel, f.ID) {
-			box = "[x] "
-		}
-		row := mark + box + findingLocation(f)
-		for _, l := range ledgerLabels[:3] {
-			if f.Ledger == l.ledger {
-				row += th.Muted().Render("  [" + l.label + "]")
-			}
-		}
-		if f.ThreadID != "" {
-			row += th.Muted().Render("  [posted]")
-		}
-		body = append(body, ansi.Truncate(row, inner, "…"))
-	}
-	if len(fs) > 0 {
-		body = append(body, "")
-	}
-	if err == nil && len(pv.Parts) == 0 {
-		body = append(body, th.Muted().Render("No summary or comments: only the event is posted."))
-	}
-	// Each part is drawn from the payload's own string, so what shows is
-	// what is sent.
-	for _, part := range pv.Parts {
-		body = append(body, th.Accent().Render(ansi.Truncate(cleanLine(part.Label), inner, "…")))
-		var ls []string
-		if p.raw {
-			ls = strings.Split(ansi.Wrap(cleanBlock(part.Markdown), inner-2, ""), "\n")
-		} else {
-			ls = m.drawer.md.render(part.Markdown, inner-2, th)
-		}
-		for _, l := range ls {
-			body = append(body, "  "+l)
-		}
-		body = append(body, "")
-	}
-	return top, body, cursorRow, rows
-}
-
-func shortCommit(oid string) string { return oid[:min(len(oid), 7)] }

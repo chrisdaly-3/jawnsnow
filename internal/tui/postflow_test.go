@@ -100,6 +100,15 @@ func modalText(m Model) string {
 
 func ctrl(r rune) tea.KeyPressMsg { return tea.KeyPressMsg{Code: r, Mod: tea.ModCtrl} }
 
+// wait lets the confirm delay pass, so the next enter in the preview posts.
+func (h *postH) wait() { h.clock.now = h.clock.now.Add(postConfirmDelay) }
+
+func repeat(s string) tea.KeyPressMsg {
+	k := key(s)
+	k.IsRepeat = true
+	return k
+}
+
 func TestPostFlowHappyPath(t *testing.T) {
 	h := newPostHarness(t, postReview(), opts{})
 	h.press(t, "P")
@@ -116,7 +125,9 @@ func TestPostFlowHappyPath(t *testing.T) {
 	}
 	// The cursor is on the first finding the drawer lists, lookup.go:40;
 	// the fixed ones are left out already.
-	h.press(t, "space", "enter")
+	h.press(t, "space")
+	h.wait()
+	h.press(t, "enter")
 
 	if len(h.poster.posts) != 1 {
 		t.Fatalf("PostReview called %d times, want 1", len(h.poster.posts))
@@ -141,7 +152,7 @@ func TestPostFlowHappyPath(t *testing.T) {
 	}
 	p := posted[0]
 	if p.Event != "COMMENT" || p.GitHubReviewID != "PRR_1" || p.URL != h.poster.result.URL || p.CommitOID != "head-1" ||
-		!slices.Equal(p.FindingIDs, []int64{1}) || !p.At.Equal(t0) {
+		!slices.Equal(p.FindingIDs, []int64{1}) || !p.At.Equal(h.clock.now) {
 		t.Errorf("posted row = %+v", p)
 	}
 	rs, err := h.store.Reviews(context.Background(), "1")
@@ -157,7 +168,7 @@ func TestPostFlowHappyPath(t *testing.T) {
 	if h.m.post != nil {
 		t.Errorf("the modal is still open: %+v", h.m.post)
 	}
-	if got := modalText(h.m); !strings.Contains(got, "Posted as COMMENT · just now") {
+	if got := modalText(h.m); !strings.Contains(got, "Posted as Comment · just now") {
 		t.Errorf("the drawer does not say it was posted:\n%s", got)
 	}
 	if h.client.polls != 2 {
@@ -168,6 +179,7 @@ func TestPostFlowHappyPath(t *testing.T) {
 func TestConfirmTwiceSendsOnce(t *testing.T) {
 	h := newPostHarness(t, postReview(), opts{})
 	h.press(t, "P", "k", "enter")
+	h.wait()
 	m, first := update(t, h.m, key("enter"))
 	m, second := update(t, m, key("enter"))
 	msgs, _ := runCmd(t, first)
@@ -184,7 +196,9 @@ func TestConfirmTwiceSendsOnce(t *testing.T) {
 func TestPostErrorRecordsNothing(t *testing.T) {
 	h := newPostHarness(t, postReview(), opts{})
 	h.poster.err = errors.New("github: post review: Line could not be resolved")
-	h.press(t, "P", "k", "enter", "space", "enter")
+	h.press(t, "P", "k", "enter", "space")
+	h.wait()
+	h.press(t, "enter")
 
 	if h.m.post == nil || h.m.post.stage != postPreview || h.m.post.inFlight {
 		t.Fatalf("after a failed post: %+v, want the preview open and not posting", h.m.post)
@@ -219,7 +233,7 @@ func TestRepostAsksFirst(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.press(t, "P")
-	if got := modalText(h.m); !strings.Contains(got, "Already posted as APPROVE 2h ago — post again? y/n") {
+	if got := modalText(h.m); !strings.Contains(got, "Already posted as Approve 2h ago — post again? y/n") {
 		t.Fatalf("no repost question:\n%s", got)
 	}
 	h.press(t, "n")
@@ -243,6 +257,7 @@ func TestHeadMovedWarning(t *testing.T) {
 	if got := modalText(h.m); !strings.Contains(got, "PR has new commits since this review — comments will show as outdated") {
 		t.Errorf("no head-moved warning:\n%s", got)
 	}
+	h.wait()
 	h.press(t, "enter")
 	if len(h.poster.posts) != 1 || h.poster.posts[0].CommitOID != "0ld0ld0ld" {
 		t.Errorf("posts = %+v, want one against the reviewed commit", h.poster.posts)
@@ -262,6 +277,7 @@ func TestRequestChangesBlocksWithoutBody(t *testing.T) {
 	if got := modalText(h.m); !strings.Contains(got, "Request changes needs a summary — press e to write one") {
 		t.Errorf("no validation error:\n%s", got)
 	}
+	h.wait()
 	h.press(t, "enter")
 	if len(h.poster.posts) != 0 || h.m.post == nil || h.m.post.inFlight {
 		t.Errorf("enter with a validation error: %d posts, flow %+v", len(h.poster.posts), h.m.post)
@@ -331,6 +347,7 @@ func TestNoPosterShowsReason(t *testing.T) {
 func TestRecordFailureAfterPostIsVisible(t *testing.T) {
 	h := newPostHarness(t, postReview(), opts{})
 	h.press(t, "P", "k", "enter")
+	h.wait()
 	m, cmd := update(t, h.m, key("enter"))
 	// The store going away between the post and its record stands in for a
 	// failed write.
@@ -367,7 +384,7 @@ func TestPreviewRendersMarkdown(t *testing.T) {
 	if !strings.Contains(got, "must fix x") || strings.Contains(got, "**must**") {
 		t.Errorf("the preview is not rendered:\n%s", got)
 	}
-	if !strings.Contains(got, "COMMENT") || !strings.Contains(got, "head-1") {
+	if !strings.Contains(got, "· Comment · head-1") || strings.Contains(got, "COMMENT") {
 		t.Errorf("no event or commit in the header:\n%s", got)
 	}
 }
@@ -458,7 +475,171 @@ func TestDrawerShowsPostedAs(t *testing.T) {
 	d, c := openDrawer(t, 160, 40, drawerReview())
 	d, _, _ = d.update(drawerLoadedMsg{PRID: "a", Seq: 1, Reviews: []store.Review{drawerReview()},
 		Posted: map[string]store.Posted{"r1": {ReviewID: "r1", Event: "APPROVE", At: t0.Add(-2 * time.Hour)}}}, c)
-	if got := ansi.Strip(renderDrawer(d, c, 40)); !strings.Contains(got, "Posted as APPROVE · 2h ago") {
+	if got := ansi.Strip(renderDrawer(d, c, 40)); !strings.Contains(got, "Posted as Approve · 2h ago") {
 		t.Errorf("no posted line:\n%s", got)
+	}
+}
+
+func TestEnterBounceDoesNotPost(t *testing.T) {
+	h := newPostHarness(t, markdownReview("fix `x`"), opts{})
+	h.press(t, "P", "enter", "enter") // pick Comment, then a bounce
+	if h.m.post == nil || h.m.post.stage != postPreview {
+		t.Fatalf("flow %+v, want the preview", h.m.post)
+	}
+	if len(h.poster.posts) != 0 {
+		t.Fatalf("a bounced enter posted %d times", len(h.poster.posts))
+	}
+	h.wait()
+	h.press(t, "enter")
+	if len(h.poster.posts) != 1 {
+		t.Errorf("enter after the delay posted %d times, want 1", len(h.poster.posts))
+	}
+}
+
+func TestRepeatKeysIgnored(t *testing.T) {
+	h := newPostHarness(t, markdownReview("fix `x`"), opts{})
+	prior := store.Posted{ReviewID: "r1", Event: "COMMENT", CommitOID: "head-1", At: t0.Add(-time.Hour)}
+	if err := h.store.RecordPost(context.Background(), prior, nil); err != nil {
+		t.Fatal(err)
+	}
+	h.press(t, "P")
+	h.m, _ = settle(t, h.m, repeat("y"))
+	if h.m.post == nil || h.m.post.stage != postRepost {
+		t.Fatalf("a repeated y answered the question: %+v", h.m.post)
+	}
+	h.press(t, "y")
+	h.m, _ = settle(t, h.m, repeat("enter"))
+	if h.m.post.stage != postPick {
+		t.Fatalf("a repeated enter picked: stage %v", h.m.post.stage)
+	}
+	h.press(t, "enter")
+	h.wait()
+	h.m, _ = settle(t, h.m, repeat("enter"))
+	if len(h.poster.posts) != 0 || h.m.post.inFlight {
+		t.Errorf("a repeated enter posted %d times", len(h.poster.posts))
+	}
+}
+
+func TestMatchThreadsByPostedLine(t *testing.T) {
+	in := github.PostInput{Threads: []github.PostThread{
+		{Path: "a.go", Line: 3, Body: "one"}, {Path: "a.go", Line: 3, Body: "two"}, {Path: "b.go", Line: 9, Body: "three"},
+	}}
+	comments := []github.PostedComment{
+		{ID: "C1", Path: "a.go", Line: 3, OriginalLine: 3},
+		{ID: "C2", Path: "a.go", Line: 3, OriginalLine: 3},
+		// Posted on an older commit: the line is gone at head.
+		{ID: "C3", Path: "b.go", Line: 0, OriginalLine: 9},
+	}
+	threadOf := map[string]string{"C1": "T1", "C2": "T2", "C3": "T3"}
+	got := matchThreads(in, []int64{10, 20, 30}, comments, threadOf)
+	if want := map[int64]string{10: "T1", 20: "T2", 30: "T3"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("threads = %v, want %v", got, want)
+	}
+	// A line shifted at head still matches by the line it was posted on.
+	comments[2].Line = 14
+	if got := matchThreads(in, []int64{10, 20, 30}, comments, threadOf); got[30] != "T3" {
+		t.Errorf("shifted line: threads = %v, want 30 → T3", got)
+	}
+	// With no original line, the line is used.
+	comments[2] = github.PostedComment{ID: "C3", Path: "b.go", Line: 9}
+	if got := matchThreads(in, []int64{10, 20, 30}, comments, threadOf); got[30] != "T3" {
+		t.Errorf("no original line: threads = %v, want 30 → T3", got)
+	}
+}
+
+func TestCtrlCWhilePostingAsksAgain(t *testing.T) {
+	h := newPostHarness(t, markdownReview("fix `x`"), opts{})
+	h.press(t, "P", "enter")
+	h.wait()
+	m, _ := update(t, h.m, key("enter")) // the post is in flight
+	m, cmd := update(t, m, ctrl('c'))
+	if isQuit(t, cmd) {
+		t.Fatal("the first ctrl+c quit with a post in flight")
+	}
+	if !strings.Contains(modalText(m), "posting to GitHub — ctrl+c again to quit anyway") {
+		t.Errorf("no warning:\n%s", modalText(m))
+	}
+	_, cmd = update(t, m, ctrl('c'))
+	if !isQuit(t, cmd) {
+		t.Error("the second ctrl+c did not quit")
+	}
+}
+
+func TestRepostAsksAfterUnrecordedPost(t *testing.T) {
+	h := newPostHarness(t, markdownReview("fix `x`"), opts{})
+	// What a post whose record failed leaves: the drawer knows, the store
+	// doesn't.
+	h.m.drawer = h.m.drawer.withPosted(store.Posted{ReviewID: "r1", Event: "COMMENT", At: t0.Add(-3 * time.Minute)})
+	h.press(t, "P")
+	if got := modalText(h.m); !strings.Contains(got, "Already posted as Comment 3m ago — post again? y/n") {
+		t.Errorf("no repost question:\n%s", got)
+	}
+}
+
+func TestPostDuringPollPollsAfter(t *testing.T) {
+	h := newPostHarness(t, markdownReview("fix `x`"), opts{})
+	m, held := update(t, h.m, key("R"))
+	if !m.polling || held == nil {
+		t.Fatal("R did not start a poll")
+	}
+	h.m = m
+	h.press(t, "P", "enter")
+	h.wait()
+	h.press(t, "enter")
+	if len(h.poster.posts) != 1 {
+		t.Fatalf("%d posts, want 1", len(h.poster.posts))
+	}
+	before := h.client.polls
+	msgs, _ := runCmd(t, held)
+	h.m, _ = settle(t, h.m, msgs...)
+	// The held poll, then the one the post asked for.
+	if got := h.client.polls - before; got != 2 {
+		t.Errorf("%d polls after the held one was let go, want 2", got)
+	}
+	if h.m.pollAgain {
+		t.Error("the follow-up poll is still pending")
+	}
+}
+
+func TestEditorOpensOnOwnSummaryOnly(t *testing.T) {
+	t.Setenv("VISUAL", "")
+	t.Setenv("EDITOR", "my-editor")
+	rv := markdownReview("fix `x`")
+	rv.Findings = append(rv.Findings, store.Finding{ID: 2, Path: "b.go", Unanchored: true, Body: "a note", Ledger: "new"})
+	h := newPostHarness(t, rv, opts{})
+	h.press(t, "P", "enter", "e")
+	path := filepath.Join(h.m.dataDir, "tmp", "post-r1.md")
+	if b, err := os.ReadFile(path); err != nil || len(b) != 0 {
+		t.Errorf("the editor opened on %q (%v), want an empty file: the notes are not the summary", b, err)
+	}
+	h.m, _ = settle(t, h.m, h.execs[0].fn(nil))
+	h.wait()
+	h.press(t, "enter")
+	if len(h.poster.posts) != 1 || !strings.Contains(h.poster.posts[0].Body, "**Other notes**") {
+		t.Errorf("posts = %+v, want a body carrying the Other notes", h.poster.posts)
+	}
+}
+
+func TestEditReplacesStaleFile(t *testing.T) {
+	t.Setenv("VISUAL", "")
+	t.Setenv("EDITOR", "my-editor")
+	h := newPostHarness(t, markdownReview("fix `x`"), opts{})
+	path := filepath.Join(h.m.dataDir, "tmp", "post-r1.md")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("stale"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h.press(t, "P", "enter", "e")
+	if len(h.execs) != 1 {
+		t.Fatalf("the editor ran %d times, want 1", len(h.execs))
+	}
+	b, err := os.ReadFile(path)
+	if err != nil || len(b) != 0 {
+		t.Errorf("file = %q (%v), want the stale one replaced by the empty summary", b, err)
+	}
+	if fi, err := os.Stat(path); err != nil || fi.Mode().Perm() != 0o600 {
+		t.Errorf("file mode = %v (%v), want 0600", fi.Mode().Perm(), err)
 	}
 }

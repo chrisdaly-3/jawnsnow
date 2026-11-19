@@ -407,7 +407,7 @@ func (m drawerModel) layout(c drawerCtx) (lines []string, anchors []int) {
 		add(banner)
 	}
 	if p, ok := m.posted[r.ID]; ok {
-		add(th.Accent().Render(ansi.Truncate("Posted as "+cleanLine(p.Event)+" · "+postedAgo(c.Now.Sub(p.At)), inner, "…")))
+		add(th.Accent().Render(ansi.Truncate("Posted as "+eventLabel(p.Event)+" · "+postedAgo(c.Now.Sub(p.At)), inner, "…")))
 	}
 	if reason := cleanLine(r.VerdictReason); reason != "" {
 		add(wrap(reason)...)
