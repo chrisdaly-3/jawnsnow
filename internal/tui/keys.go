@@ -48,6 +48,17 @@ var keyMap = []keySection{
 		{"O", "open the finding's line"},
 		{"y", "copy the finding"},
 		{"space c", "review again, or pick a model"},
+		{"P", "post this review to GitHub, after a preview"},
+	}},
+	{"Post", []keyHint{
+		{"y n", "post again, or not, when it was posted before"},
+		{"j k", "choose the event, or the finding"},
+		{"space", "include or leave out the finding"},
+		{"e", "write the summary in $VISUAL or $EDITOR"},
+		{"m", "show the raw markdown or the rendered view"},
+		{"ctrl+d ctrl+u", "scroll the preview"},
+		{"enter", "pick the event, then post"},
+		{"esc", "back out a step"},
 	}},
 	{"Agent", []keyHint{
 		{"j k", "choose a tier"},
@@ -76,6 +87,24 @@ var footerKeys = map[View][]keyHint{
 	ViewWall:  {{"h/l", "lane"}, {"j/k", "card"}, {"space", "review"}, {"x", "hide"}, {"o", "open"}, {"/", "filter"}, {"a", "author"}},
 	ViewAgent: {{"j/k", "tier"}, {"enter", "pick"}, {"x", "clear"}, {"e", "edit config"}},
 	ViewDone:  {{"j/k", "row"}, {"x", "unhide"}, {"o", "open"}},
+}
+
+// The post flow's footer, by stage. m's hint names the view it switches to.
+var (
+	postLoadingKeys = []keyHint{{"esc", "cancel"}}
+	postRepostKeys  = []keyHint{{"y", "post again"}, {"n", "cancel"}}
+	postPickKeys    = []keyHint{{"j/k", "event"}, {"enter", "select"}, {"esc", "cancel"}}
+	postPostingKeys = []keyHint{{"", "posting to GitHub…"}}
+	postResultKeys  = []keyHint{{"esc", "close"}}
+)
+
+func postPreviewKeys(raw bool) []keyHint {
+	m := keyHint{"m", "raw"}
+	if raw {
+		m.help = "rendered"
+	}
+	return []keyHint{{"j/k", "finding"}, {"space", "toggle"}, {"e", "edit summary"}, m,
+		{"ctrl+d/ctrl+u", "scroll"}, {"enter", "post"}, {"esc", "back"}}
 }
 
 var footerGlobal = []keyHint{{"[ ]", "views"}, {"R", "poll"}, {"m", "mode"}, {"?", "help"}, {"q", "quit"}}

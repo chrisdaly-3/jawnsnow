@@ -24,9 +24,9 @@ type agentModel struct{ sel int }
 // editedMsg ends the editor that e opened on the config file.
 type editedMsg struct{ err error }
 
-// editorCommand is $VISUAL, else $EDITOR, else vi, run on the config file.
-// There is no shell: a value like "code -w" is split on spaces.
-func editorCommand() *exec.Cmd {
+// editorCommand is $VISUAL, else $EDITOR, else vi, run on path. There is no
+// shell: a value like "code -w" is split on spaces.
+func editorCommand(path string) *exec.Cmd {
 	fields := strings.Fields(os.Getenv("VISUAL"))
 	if len(fields) == 0 {
 		fields = strings.Fields(os.Getenv("EDITOR"))
@@ -34,7 +34,7 @@ func editorCommand() *exec.Cmd {
 	if len(fields) == 0 {
 		fields = []string{"vi"}
 	}
-	return exec.Command(fields[0], append(fields[1:], config.Path())...)
+	return exec.Command(fields[0], append(fields[1:], path)...)
 }
 
 func (m Model) sessionPick(t review.Tier) *config.Tier {
@@ -67,7 +67,7 @@ func (m Model) agentKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	case "x":
 		m = m.setSessionPick(tier, nil)
 	case "e":
-		return m, tea.ExecProcess(editorCommand(), func(err error) tea.Msg { return editedMsg{err: err} })
+		return m, m.execProcess(editorCommand(config.Path()), func(err error) tea.Msg { return editedMsg{err: err} })
 	}
 	return m, nil
 }
@@ -120,7 +120,7 @@ func (m Model) agentBody(width, height int) string {
 		line("  %s", q)
 	}
 	line("")
-	line("%s", th.Muted().Render("e edit config.toml in "+editorCommand().Args[0]))
+	line("%s", th.Muted().Render("e edit config.toml in "+editorCommand(config.Path()).Args[0]))
 
 	return strings.Join(fit(strings.TrimRight(b.String(), "\n"), width, height), "\n")
 }

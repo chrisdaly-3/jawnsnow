@@ -123,17 +123,17 @@ func TestAgentEditOpensEditor(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("e returned no command")
 	}
-	c := editorCommand()
+	c := editorCommand(config.Path())
 	if c.Args[0] != "my-editor" || c.Args[len(c.Args)-1] != config.Path() {
 		t.Errorf("editor command = %v, want my-editor %s", c.Args, config.Path())
 	}
 	t.Setenv("VISUAL", "my-visual")
-	if got := editorCommand().Args[0]; got != "my-visual" {
+	if got := editorCommand(config.Path()).Args[0]; got != "my-visual" {
 		t.Errorf("with VISUAL set the editor is %q, want my-visual", got)
 	}
 	t.Setenv("VISUAL", "")
 	t.Setenv("EDITOR", "")
-	if got := editorCommand().Args[0]; got != "vi" {
+	if got := editorCommand(config.Path()).Args[0]; got != "vi" {
 		t.Errorf("with neither set the editor is %q, want vi", got)
 	}
 }
@@ -141,7 +141,7 @@ func TestAgentEditOpensEditor(t *testing.T) {
 func TestEditorCommandSplitsArgs(t *testing.T) {
 	t.Setenv("VISUAL", "")
 	t.Setenv("EDITOR", "code --wait")
-	got := editorCommand().Args
+	got := editorCommand(config.Path()).Args
 	want := []string{"code", "--wait", config.Path()}
 	if !slices.Equal(got, want) {
 		t.Errorf("Args = %v, want %v", got, want)

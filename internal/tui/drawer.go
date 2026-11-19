@@ -25,11 +25,13 @@ const drawerFraction = 0.45
 // drawerTickMsg advances the drawer's slide one frame.
 type drawerTickMsg struct{}
 
-// drawerLoadedMsg carries a PR's stored reviews, newest first.
+// drawerLoadedMsg carries a PR's stored reviews, newest first, and the
+// newest post of each review that was posted.
 type drawerLoadedMsg struct {
 	PRID    string
 	Seq     int // which load request this answers; see drawerModel.issued
 	Reviews []store.Review
+	Posted  map[string]store.Posted // by review ID
 	Err     error
 }
 
@@ -60,6 +62,7 @@ type drawerModel struct {
 	spring           harmonica.Spring
 
 	reviews []store.Review
+	posted  map[string]store.Posted // the newest post of each review, by ID
 	loaded  bool
 	pass    int // index into reviews; 0 is the newest
 	sel     int // the selected finding, in orderedFindings order
@@ -103,7 +106,7 @@ func (m drawerModel) startSlide() (drawerModel, tea.Cmd) {
 // PR keeps the drawer where it is and forgets the old PR's reviews.
 func (m drawerModel) show(prID string, termW int) (drawerModel, tea.Cmd) {
 	if m.prID != prID {
-		m.reviews, m.loaded, m.pass, m.sel, m.scroll = nil, false, 0, 0, 0
+		m.reviews, m.posted, m.loaded, m.pass, m.sel, m.scroll = nil, nil, false, 0, 0, 0
 		m.understanding, m.assumptions = false, false
 	}
 	m.open, m.prID, m.target = true, prID, drawerTarget(termW)
@@ -167,7 +170,7 @@ func (m drawerModel) loadedReviews(msg drawerLoadedMsg) drawerModel {
 	// On the newest pass you follow the newest review, so a review you
 	// just asked for appears. On an older pass you stay on that review.
 	following := m.pass == 0 || !m.loaded
-	m.reviews, m.loaded = msg.Reviews, true
+	m.reviews, m.posted, m.loaded = msg.Reviews, msg.Posted, true
 	if following {
 		m.pass = 0
 	} else {
@@ -227,6 +230,14 @@ func (m drawerModel) key(msg tea.KeyPressMsg, c drawerCtx) (drawerModel, tea.Cmd
 		return m, nil, actionReview{ID: m.prID}
 	case "c":
 		return m, nil, actionPickModel{ID: m.prID}
+	case "P":
+		switch r := m.current(); {
+		case r == nil:
+		case r.Outcome == "complete" || r.Outcome == "incomplete":
+			return m, nil, actionPost{ReviewID: r.ID}
+		default:
+			m.flash = "a failed review can't be posted"
+		}
 	}
 	m.scroll = min(max(m.scroll, 0), m.maxScroll(c))
 	return m, nil, actionNone{}
@@ -395,6 +406,9 @@ func (m drawerModel) layout(c drawerCtx) (lines []string, anchors []int) {
 	if strings.TrimSpace(banner) != "" {
 		add(banner)
 	}
+	if p, ok := m.posted[r.ID]; ok {
+		add(th.Accent().Render(ansi.Truncate("Posted as "+cleanLine(p.Event)+" · "+postedAgo(c.Now.Sub(p.At)), inner, "…")))
+	}
 	if reason := cleanLine(r.VerdictReason); reason != "" {
 		add(wrap(reason)...)
 	}
@@ -542,7 +556,7 @@ func (m drawerModel) bottomLine(c drawerCtx, inner int) string {
 	case m.flash != "":
 		return th.Accent().Render(m.flash)
 	}
-	return th.Muted().Render(ansi.Truncate("j/k scroll · n/p finding · </> pass · y copy · O open line", inner, "…"))
+	return th.Muted().Render(ansi.Truncate("j/k scroll · n/p finding · </> pass · y copy · O open line · P post", inner, "…"))
 }
 
 // costText is a review's cost, saying so when a run's cost was never

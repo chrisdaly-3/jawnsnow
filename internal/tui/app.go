@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -78,6 +80,14 @@ type Deps struct {
 	// Claude is what startup detection found about the claude CLI. The zero
 	// value means detection didn't run, and nothing is refused.
 	Claude review.ClaudeInfo
+	// Poster makes the one GitHub write, a review posted from the post
+	// flow. It is nil when posting is unavailable, for the reason in
+	// PostOff.
+	Poster  github.Poster
+	PostOff string
+	// DataDir holds the post flow's temporary files. Empty means the
+	// directory of the store's default path.
+	DataDir string
 }
 
 type (
@@ -117,6 +127,8 @@ type (
 	actionOpenDrawer struct{ ID string }
 	// actionCopy puts Text on the clipboard.
 	actionCopy struct{ Text string }
+	// actionPost opens the post flow on one of the drawer's reviews.
+	actionPost struct{ ReviewID string }
 )
 
 func (actionNone) isAction()       {}
@@ -127,6 +139,7 @@ func (actionReview) isAction()     {}
 func (actionPickModel) isAction()  {}
 func (actionOpenDrawer) isAction() {}
 func (actionCopy) isAction()       {}
+func (actionPost) isAction()       {}
 
 // Model is the root Bubble Tea model.
 type Model struct {
@@ -142,6 +155,14 @@ type Model struct {
 	open    func(url string) error
 	// launch wraps each review's command; tests hold them back with it.
 	launch func(tea.Cmd) tea.Cmd
+	// execProcess runs the editor; tests record it instead.
+	execProcess func(*exec.Cmd, tea.ExecCallback) tea.Cmd
+
+	poster  github.Poster
+	postOff string
+	dataDir string
+	// post is the open post flow, or nil.
+	post *postFlow
 
 	reviews reviewsModel
 	// session is the Agent view's model picks for this session.
@@ -212,6 +233,10 @@ func New(d Deps) Model {
 	if now == nil {
 		now = time.Now
 	}
+	dataDir := d.DataDir
+	if dataDir == "" {
+		dataDir = filepath.Dir(store.DataPath())
+	}
 	mode := modeWatcher
 	if d.Config.Mode.Default == modeAuto && d.Reviewer != nil && claudeRefused(d.Claude) == "" {
 		mode = modeAuto
@@ -221,6 +246,7 @@ func New(d Deps) Model {
 		banners: d.Banners, loginWarning: d.LoginWarning, configBanner: d.ConfigBanner, reloads: d.Reloads, now: now, tick: tea.Tick,
 		open:   func(url string) error { return browser.New("", io.Discard, io.Discard).Browse(url) },
 		launch: func(c tea.Cmd) tea.Cmd { return c }, reviews: newReviews(d.Reviewer, d.ReviewsOff),
+		execProcess: tea.ExecProcess, poster: d.Poster, postOff: d.PostOff, dataDir: dataDir,
 		prs: map[string]tracker.Tracked{}, wall: newWall(), done: newDone(), drawer: newDrawer(), dirty: map[string]bool{}, deleted: map[string]bool{},
 		mode: mode, width: 80, height: 24,
 	}
@@ -280,6 +306,9 @@ func (m Model) spinInterval() time.Duration {
 
 func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 	if next, cmd, ok := m.updateReviews(msg); ok {
+		return next, cmd
+	}
+	if next, cmd, ok := m.updatePost(msg); ok {
 		return next, cmd
 	}
 	switch msg := msg.(type) {
@@ -361,6 +390,10 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	// A review question or the model picker takes every key but ctrl+c.
 	if m.reviews.capturing() && msg.String() != "ctrl+c" {
 		return m.reviewKey(msg)
+	}
+	// So does the post flow: nothing may reach GitHub but its own keys.
+	if m.post != nil && msg.String() != "ctrl+c" {
+		return m.postKey(msg)
 	}
 	// An open filter box or author picker takes every key, or typing "q"
 	// would quit. ctrl+c still quits.
@@ -450,7 +483,8 @@ func (m Model) drawerCtx() drawerCtx {
 	}
 }
 
-// loadDrawer reads a PR's reviews in a command.
+// loadDrawer reads a PR's reviews, and the newest post of each, in a
+// command.
 func (m Model) loadDrawer(id string) (Model, tea.Cmd) {
 	st := m.store
 	m.drawer.issued++
@@ -459,7 +493,20 @@ func (m Model) loadDrawer(id string) (Model, tea.Cmd) {
 		ctx, cancel := context.WithTimeout(context.Background(), inputsTimeout)
 		defer cancel()
 		rs, err := st.Reviews(ctx, id)
-		return drawerLoadedMsg{PRID: id, Seq: seq, Reviews: rs, Err: err}
+		if err != nil {
+			return drawerLoadedMsg{PRID: id, Seq: seq, Err: err}
+		}
+		posted := map[string]store.Posted{}
+		for _, r := range rs {
+			ps, err := st.PostedFor(ctx, r.ID)
+			if err != nil {
+				return drawerLoadedMsg{PRID: id, Seq: seq, Err: err}
+			}
+			if len(ps) > 0 {
+				posted[r.ID] = ps[0]
+			}
+		}
+		return drawerLoadedMsg{PRID: id, Seq: seq, Reviews: rs, Posted: posted}
 	}
 }
 
@@ -579,6 +626,8 @@ func (m Model) apply(a action) (Model, tea.Cmd) {
 		return m, tea.Batch(cmd, load)
 	case actionCopy:
 		return m, tea.SetClipboard(a.Text)
+	case actionPost:
+		return m.openPost(a.ReviewID)
 	}
 	return m, nil
 }
@@ -917,6 +966,9 @@ func (m Model) body(width, height int) string {
 	}
 	if m.reviews.picker != nil {
 		return m.pickerBody(width, height)
+	}
+	if m.post != nil {
+		return m.postBody(width, height)
 	}
 	switch m.view {
 	case ViewWall:

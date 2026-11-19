@@ -300,6 +300,9 @@ type opts struct {
 	// auto starts in auto mode; config edits the default config.
 	auto   bool
 	config func(*config.Config)
+	// poster makes posts; postOff is the reason posting is off without one.
+	poster  github.Poster
+	postOff string
 }
 
 // newHarness builds a model over a real store seeded with prs, runs Init and
@@ -334,6 +337,7 @@ func newHarness(t *testing.T, o opts, prs ...tracker.Tracked) *harness {
 	d := Deps{
 		Config: cfg, Theme: th, Store: st, Viewer: "me",
 		Reloads: o.reloads, Now: h.clock.Now, ReviewsOff: o.reviewsOff, Claude: o.claude,
+		Poster: o.poster, PostOff: o.postOff, DataDir: t.TempDir(),
 	}
 	if o.reviews {
 		h.reviewer = &fakeReviewer{store: st, clock: h.clock}
@@ -1162,8 +1166,9 @@ func TestModeToggle(t *testing.T) {
 
 func TestHelpListsEveryKey(t *testing.T) {
 	h := newHarness(t, opts{}, wallPR("1"))
-	// Tall enough for every section: the key list outgrew 30 lines.
-	h.m, _ = update(t, h.m, tea.WindowSizeMsg{Width: 160, Height: 50})
+	// Tall enough for every section: the key list outgrew 30 lines, then
+	// 50 with the post flow's keys.
+	h.m, _ = update(t, h.m, tea.WindowSizeMsg{Width: 160, Height: 64})
 	h.press(t, "?")
 	c := content(h.m)
 	for _, k := range allKeys() {

@@ -114,9 +114,12 @@ func (m Model) footer(width int) string {
 		return ansi.Truncate(" "+p, max(width, 0), "…")
 	}
 	hints := footerHints(m.view)
+	if m.post != nil {
+		hints = m.post.hints()
+	}
 	parts := make([]string, len(hints))
 	for i, k := range hints {
-		parts[i] = k.keys + " " + k.help
+		parts[i] = strings.TrimSpace(k.keys + " " + k.help)
 	}
 	return ansi.Truncate(" "+m.theme.Muted().Render(strings.Join(parts, " · ")), max(width, 0), "…")
 }
