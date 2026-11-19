@@ -85,8 +85,8 @@ type costModel struct {
 	// issued counts load requests; applied is the newest one whose answer
 	// was taken, so a slow older read can't replace a newer one.
 	issued, applied int
-	rows   []store.CostRow
-	err    string
+	rows            []store.CostRow
+	err             string
 	// labels maps PR IDs to "repo#n". A PR the store has no review for maps
 	// to "", so it isn't asked about again.
 	labels map[string]string
