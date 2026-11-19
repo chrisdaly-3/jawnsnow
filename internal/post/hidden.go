@@ -15,6 +15,11 @@ import (
 // A login, optionally with a team: @org/team-name.
 var mentionRe = regexp.MustCompile(`@([A-Za-z0-9][A-Za-z0-9-]*(?:/[A-Za-z0-9][A-Za-z0-9_.-]*)?)`)
 
+// "@" spelled as an entity still notifies once rendered.
+var atEntity = regexp.MustCompile(`&#0*64;|&#[xX]0*40;|&commat;`)
+
+var htmlComment = regexp.MustCompile(`(?s)<!--.*?(?:-->|$)`)
+
 var parserFor = goldmark.New(goldmark.WithExtensions(extension.GFM)).Parser()
 
 // HiddenContent names what a rendered view hides or acts on: HTML comments,
@@ -31,12 +36,33 @@ func HiddenContent(md string) []string {
 	var logins []string
 	seen := map[string]bool{}
 
+	addMentions := func(val []byte, prev byte) {
+		val = atEntity.ReplaceAll(val, []byte("@"))
+		for _, loc := range mentionRe.FindAllSubmatchIndex(val, -1) {
+			p := prev
+			if loc[0] > 0 {
+				p = val[loc[0]-1]
+			}
+			if isWordByte(p) {
+				continue
+			}
+			login := strings.TrimRight(string(val[loc[2]:loc[3]]), "-./")
+			if !seen[login] {
+				seen[login] = true
+				logins = append(logins, "@"+login)
+			}
+		}
+	}
+	// HTML is scanned as raw source: over-warning there is fine.
 	raw := func(b []byte) {
-		if bytes.HasPrefix(bytes.TrimSpace(b), []byte("<!--")) {
+		rest := htmlComment.ReplaceAll(b, nil)
+		if len(rest) < len(b) {
 			comment = true
+			html = html || bytes.Contains(rest, []byte("<"))
 		} else {
 			html = true
 		}
+		addMentions(b, 0)
 	}
 	_ = ast.Walk(root, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
 		if !entering {
@@ -52,24 +78,15 @@ func HiddenContent(md string) []string {
 		case *ast.Image:
 			image = true
 		case *ast.Text:
-			seg := n.Segment
-			val := seg.Value(src)
-			for _, loc := range mentionRe.FindAllSubmatchIndex(val, -1) {
-				prev := byte(0)
-				if loc[0] > 0 {
-					prev = val[loc[0]-1]
-				} else if seg.Start > 0 {
-					prev = src[seg.Start-1]
-				}
-				if isWordByte(prev) {
-					continue
-				}
-				login := strings.TrimRight(string(val[loc[2]:loc[3]]), "-./")
-				if !seen[login] {
-					seen[login] = true
-					logins = append(logins, "@"+login)
+			// Only a word character in the same run of text blocks a mention:
+			// after emphasis, a link or a line break an @ starts a word.
+			var prev byte
+			if t, ok := n.PreviousSibling().(*ast.Text); ok && !t.SoftLineBreak() && !t.HardLineBreak() {
+				if v := t.Segment.Value(src); len(v) > 0 {
+					prev = v[len(v)-1]
 				}
 			}
+			addMentions(n.Segment.Value(src), prev)
 		}
 		return ast.WalkContinue, nil
 	})
