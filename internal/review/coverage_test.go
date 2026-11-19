@@ -1,6 +1,7 @@
 package review
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -41,6 +42,20 @@ func newCovEnv(t *testing.T, changed ...string) covEnv {
 }
 
 func (e covEnv) abs(p string) string { return filepath.Join(e.wt, p) }
+
+// touch creates the files in the worktree and returns their paths.
+func (e covEnv) touch(paths ...string) []string {
+	for _, f := range paths {
+		p := e.abs(f)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			panic(err)
+		}
+		if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+			panic(err)
+		}
+	}
+	return paths
+}
 
 // completeRun reads everything a full review needs for pkg/a.go.
 func (e covEnv) completeRun() RunResult {
@@ -128,7 +143,43 @@ func TestGapsFullScope(t *testing.T) {
 		}, ""},
 		{"assumption cites nothing", func(_ covEnv, _ *RunResult, o *Output, _ *workspace.ReviewFiles) {
 			o.Assumptions = append(o.Assumptions, store.Assumption{Claim: "c2", Evidence: "see above"})
-		}, "read see above"},
+		}, ""},
+		{"assumption cites the same file twice", func(e covEnv, r *RunResult, o *Output, _ *workspace.ReviewFiles) {
+			o.Assumptions = append(o.Assumptions, store.Assumption{Claim: "c2", Evidence: "other/x.go:1074, other/x.go"})
+			r.Reads = append(r.Reads, e.abs("other/x.go"))
+		}, ""},
+		{"assumption cites two files, one read", func(e covEnv, r *RunResult, o *Output, _ *workspace.ReviewFiles) {
+			o.Assumptions = append(o.Assumptions, store.Assumption{Claim: "c2", Evidence: "other/x.go:10 and pkg/ev.go:20"})
+		}, ""},
+		{"assumption cites two files, neither read", func(e covEnv, r *RunResult, o *Output, _ *workspace.ReviewFiles) {
+			o.Assumptions = append(o.Assumptions, store.Assumption{Claim: "c2", Evidence: "other/x.go:10 and other/y.go:20"})
+		}, "read other/x.go, the evidence for assumption 2"},
+		{"slashed prose is not a path", func(_ covEnv, _ *RunResult, o *Output, _ *workspace.ReviewFiles) {
+			o.Assumptions = append(o.Assumptions, store.Assumption{Claim: "c2", Evidence: "and/or read/write"})
+		}, ""},
+		{"assumption cites only the diff", func(e covEnv, _ *RunResult, o *Output, _ *workspace.ReviewFiles) {
+			o.Assumptions = append(o.Assumptions, store.Assumption{Claim: "c2", Evidence: e.files.Diff + ":12"})
+		}, "cite repository code as evidence for assumption 2"},
+		{"bare name that does not exist is prose", func(e covEnv, r *RunResult, o *Output, _ *workspace.ReviewFiles) {
+			o.Assumptions = append(o.Assumptions, store.Assumption{Claim: "c2", Evidence: "x.go"})
+			r.Reads = append(r.Reads, e.abs("other/x.go"))
+		}, ""},
+		{"bare name matches a read by basename", func(e covEnv, r *RunResult, o *Output, _ *workspace.ReviewFiles) {
+			e.touch("x.go")
+			o.Assumptions = append(o.Assumptions, store.Assumption{Claim: "c2", Evidence: "x.go:3"})
+			r.Reads = append(r.Reads, e.abs("other/x.go"))
+		}, ""},
+		{"bare name not read", func(e covEnv, r *RunResult, o *Output, _ *workspace.ReviewFiles) {
+			e.touch("x.go")
+			o.Assumptions = append(o.Assumptions, store.Assumption{Claim: "c2", Evidence: "x.go:3"})
+		}, "read x.go, the evidence for assumption 2"},
+		{"go.mod is code", func(e covEnv, _ *RunResult, _ *Output, f *workspace.ReviewFiles) {
+			f.Changed = append(f.Changed, e.touch("go.mod")...)
+		}, "read the changed file go.mod"},
+		{"generated and vendored files need not be read", func(e covEnv, _ *RunResult, _ *Output, f *workspace.ReviewFiles) {
+			f.Changed = append(f.Changed, e.touch("pkg/api.pb.go", "pkg/zz_generated.deepcopy.go", "pkg/x_generated.go",
+				"pkg/y.gen.go", "vendor/m/m.go", "third_party/t/t.go", "pkg/vendor/v.go", "dist/a.tgz", "Cargo.lock")...)
+		}, ""},
 		{"empty understanding", func(_ covEnv, _ *RunResult, o *Output, _ *workspace.ReviewFiles) {
 			o.Understanding = "  \n"
 		}, "fill in understanding"},
@@ -144,7 +195,7 @@ func TestGapsFullScope(t *testing.T) {
 			e := newCovEnv(t, "pkg/a.go")
 			run, out, files := e.completeRun(), completeOut(), e.files
 			tt.mutate(e, &run, &out, &files)
-			got := ReviewGaps("full", files, e.wt, run, out)
+			got, _ := ReviewGaps(PassFull, "full", files, e.wt, run, out)
 			want := strings.ReplaceAll(tt.want, "DIFF", e.files.Diff)
 			switch {
 			case want == "" && len(got) != 0:
@@ -156,9 +207,89 @@ func TestGapsFullScope(t *testing.T) {
 	}
 }
 
+func TestEvidencePaths(t *testing.T) {
+	wt := t.TempDir()
+	if err := os.WriteFile(filepath.Join(wt, "x.go"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		ev   string
+		want []string
+	}{
+		{"a/x.go:1074, a/x.go", []string{"a/x.go", "a/x.go"}},
+		{"a/x.go:10 and b/y.go:20", []string{"a/x.go", "b/y.go"}},
+		{"`a/x.go:10-20`", []string{"a/x.go"}},
+		{"a/x.go#L10", []string{"a/x.go"}},
+		{"a/x.go#L10-L20", []string{"a/x.go"}},
+		{"a/x.go:10:5", []string{"a/x.go"}},
+		{"(a/x.go line 12).", []string{"a/x.go"}},
+		{`"a/x.go": the caller`, []string{"a/x.go"}},
+		{"see a/x.go.", []string{"a/x.go"}},
+		{"x.go:3 does it", []string{"x.go"}},
+		{"see above", nil},
+		{"and/or read/write", nil},
+		{"https://github.com/o/n/blob/main/a/x.go", nil},
+		{"y.go is not here", nil},
+	}
+	for _, tt := range tests {
+		if got := evidencePaths(tt.ev, wt); !slices.Equal(got, tt.want) {
+			t.Errorf("evidencePaths(%q) = %q, want %q", tt.ev, got, tt.want)
+		}
+	}
+}
+
+func TestGapsIncrementalPass(t *testing.T) {
+	e := newCovEnv(t, "pkg/a.go")
+	e.files.Since = filepath.Join(e.dir, "since.txt")
+	run := RunResult{Reads: []string{e.files.Since}}
+	gaps, _ := ReviewGaps(PassIncremental, "full", e.files, e.wt, run, Output{Understanding: "u"})
+	for _, g := range gaps {
+		if strings.Contains(g, "changed file") || strings.Contains(g, "README") || strings.Contains(g, "list assumptions") {
+			t.Errorf("incremental pass reading since.txt has gap %q", g)
+		}
+	}
+	// The diff, understanding and evidence rules still apply.
+	out := Output{Assumptions: []store.Assumption{{Claim: "c", Evidence: "other/x.go:3"}}}
+	gaps, _ = ReviewGaps(PassIncremental, "full", e.files, e.wt, RunResult{}, out)
+	for _, want := range []string{"read the diff file", "fill in understanding", "read other/x.go, the evidence for assumption 1"} {
+		if !slices.ContainsFunc(gaps, func(g string) bool { return strings.Contains(g, want) }) {
+			t.Errorf("incremental gaps %q lack %q", gaps, want)
+		}
+	}
+	// diff.txt satisfies the per-file rule too.
+	gaps, _ = ReviewGaps(PassIncremental, "full", e.files, e.wt, RunResult{Reads: []string{e.files.Diff}}, Output{Understanding: "u"})
+	if slices.ContainsFunc(gaps, func(g string) bool { return strings.Contains(g, "changed file") }) {
+		t.Errorf("incremental pass reading diff.txt has gaps %q", gaps)
+	}
+}
+
+func TestGapsCapPerFileChecks(t *testing.T) {
+	changed := make([]string, 0, 45)
+	for i := range 45 {
+		changed = append(changed, fmt.Sprintf("pkg/f%02d.go", i))
+	}
+	slices.Reverse(changed)
+	e := newCovEnv(t, changed...)
+	run := e.completeRun()
+	for _, f := range changed[5:] { // read pkg/f00.go..f39.go, the first 40 sorted
+		run.Reads = append(run.Reads, e.abs(f))
+	}
+	gaps, note := ReviewGaps(PassFull, "full", e.files, e.wt, run, completeOut())
+	if len(gaps) != 0 {
+		t.Errorf("gaps = %q, want none: only the first 40 changed files are checked", gaps)
+	}
+	if note != "(checked 40 of 45 changed files)" {
+		t.Errorf("note = %q", note)
+	}
+	small := newCovEnv(t, "pkg/a.go")
+	if _, note := ReviewGaps(PassFull, "full", small.files, small.wt, small.completeRun(), completeOut()); note != "" {
+		t.Errorf("uncapped note = %q, want none", note)
+	}
+}
+
 func TestGapsReportEveryMissingRule(t *testing.T) {
 	e := newCovEnv(t, "pkg/a.go")
-	got := ReviewGaps("full", e.files, e.wt, RunResult{}, Output{})
+	got, _ := ReviewGaps(PassFull, "full", e.files, e.wt, RunResult{}, Output{})
 	if len(got) != 7 {
 		t.Fatalf("want 7 gaps (diff, file, docs, search, tests, assumptions, understanding), got %d: %q", len(got), got)
 	}
@@ -169,17 +300,17 @@ func TestGapsSinceCountsAsDiff(t *testing.T) {
 	e.files.Since = filepath.Join(e.dir, "since.txt")
 	run := e.completeRun()
 	run.Reads[0] = e.files.Since
-	if got := ReviewGaps("full", e.files, e.wt, run, completeOut()); len(got) != 0 {
+	if got, _ := ReviewGaps(PassFull, "full", e.files, e.wt, run, completeOut()); len(got) != 0 {
 		t.Fatalf("gaps = %q", got)
 	}
 }
 
 func TestGapsPROnlyScope(t *testing.T) {
 	e := newCovEnv(t, "pkg/a.go")
-	if got := ReviewGaps("pr-only", e.files, e.wt, RunResult{Reads: []string{e.files.Diff}}, Output{}); len(got) != 0 {
+	if got, _ := ReviewGaps(PassFull, "pr-only", e.files, e.wt, RunResult{Reads: []string{e.files.Diff}}, Output{}); len(got) != 0 {
 		t.Fatalf("diff read: gaps = %q", got)
 	}
-	got := ReviewGaps("pr-only", e.files, e.wt, RunResult{}, Output{})
+	got, _ := ReviewGaps(PassFull, "pr-only", e.files, e.wt, RunResult{}, Output{})
 	if len(got) != 1 || !strings.Contains(got[0], "read the diff file "+e.files.Diff) {
 		t.Fatalf("gaps = %q", got)
 	}
@@ -191,7 +322,7 @@ func TestGapsAreCapped(t *testing.T) {
 		changed = append(changed, "pkg/f"+string(rune('a'+i%26))+string(rune('a'+i/26))+".go")
 	}
 	e := newCovEnv(t, changed...)
-	got := ReviewGaps("full", e.files, e.wt, RunResult{}, Output{})
+	got, _ := ReviewGaps(PassFull, "full", e.files, e.wt, RunResult{}, Output{})
 	if len(got) != 11 || !strings.HasPrefix(got[10], "and ") {
 		t.Fatalf("got %d gaps: %q", len(got), got)
 	}
@@ -201,8 +332,8 @@ func TestVerifiedExaminedFilters(t *testing.T) {
 	e := newCovEnv(t, "pkg/a.go")
 	ex := Examined{
 		Docs:   []string{"README.md", "docs/guide.md"},
-		Code:   []string{"pkg/a.go", e.abs("other/x.go")},
-		Usages: []string{"./other/../other/x.go"},
+		Code:   []string{"pkg/a.go:12", e.abs("other/x.go")},
+		Usages: []string{"./other/../other/x.go", "`other/x.go#L4-L9`"},
 		Tests:  []string{"pkg/a_test.go"},
 	}
 	run := RunResult{Reads: []string{
@@ -211,8 +342,8 @@ func TestVerifiedExaminedFilters(t *testing.T) {
 	got := VerifiedExamined(ex, run, e.wt)
 	want := Examined{
 		Docs:   []string{"README.md"},
-		Code:   []string{"pkg/a.go", e.abs("other/x.go")},
-		Usages: []string{"./other/../other/x.go"},
+		Code:   []string{"pkg/a.go:12", e.abs("other/x.go")},
+		Usages: []string{"./other/../other/x.go", "`other/x.go#L4-L9`"},
 		Tests:  []string{},
 	}
 	if !reflect.DeepEqual(got, want) {

@@ -276,6 +276,7 @@ func (e *Engine) review(ctx context.Context, req Request, rv *store.Review, onEv
 		gaps, lint []string
 		kept       []store.Finding
 		notes      []string
+		coverNote  string // which changed files the per-file rule checked
 		runOutcome string
 		stopped    string // why the loop stopped early, for the note
 	)
@@ -296,7 +297,7 @@ func (e *Engine) review(ctx context.Context, req Request, rv *store.Review, onEv
 		runOutcome = outcomeFailed
 		if runErr == nil {
 			out, raw = parsed, res.Output
-			gaps = ReviewGaps(rc.Scope, files, worktree, seen, out)
+			gaps, coverNote = ReviewGaps(pass, rc.Scope, files, worktree, seen, out)
 			kept, notes, lint = CheckFindings(out, files)
 			runOutcome = outcomeComplete
 			if len(gaps) > 0 {
@@ -336,6 +337,9 @@ func (e *Engine) review(ctx context.Context, req Request, rv *store.Review, onEv
 		// Only a continuation gets here failed: the review keeps the last
 		// parseable run's output.
 		rv.Outcome = outcomeIncomplete
+	}
+	if coverNote != "" {
+		notes = append(notes, coverNote)
 	}
 	if stopped != "" {
 		notes = append(notes, stopped)

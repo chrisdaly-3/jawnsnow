@@ -5,8 +5,8 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/chrisdaly-3/jawnsnow/internal/workspace"
@@ -40,23 +40,53 @@ func isTestFile(p string) bool {
 		strings.Contains(base, ".test.") || strings.Contains(base, ".spec.")
 }
 
+// maxPerFileChecks is the most changed code files a pass must each read. A
+// larger PR is judged on the first ones, sorted, and its other checks.
+const maxPerFileChecks = 40
+
+// isGenerated reports whether a changed file is generated, vendored or an
+// archive: nobody reviews it by reading it.
+func isGenerated(p string) bool {
+	p = filepath.ToSlash(p)
+	base := path.Base(p)
+	switch {
+	case strings.HasSuffix(base, ".pb.go"), strings.HasSuffix(base, "_generated.go"),
+		strings.HasPrefix(base, "zz_generated"), strings.HasSuffix(base, ".gen.go"):
+		return true
+	case strings.HasPrefix(p, "vendor/"), strings.Contains(p, "/vendor/"),
+		strings.HasPrefix(p, "third_party/"), strings.Contains(p, "/third_party/"):
+		return true
+	}
+	switch strings.ToLower(path.Ext(base)) {
+	case ".zip", ".tar", ".gz", ".tgz":
+		return true
+	}
+	return false
+}
+
 // ReviewGaps lists what the reviewer skipped of the reading it is required
 // to do before judging, one short line per gap, fit to go into the
-// continuation prompt. Scope "pr-only" requires only the diff. Paths from
-// the reviewer are compared, never opened.
-func ReviewGaps(scope string, files workspace.ReviewFiles, worktree string, run RunResult, out Output) []string {
+// continuation prompt, and a note when the per-file rule checked only some
+// of the changed files. Scope "pr-only" requires only the diff. An
+// incremental pass builds on the full review that read the docs and listed
+// the assumptions, so reading the diff since then (or the whole diff)
+// counts as reading each changed file. Paths from the reviewer are
+// compared, never opened.
+func ReviewGaps(pass PassKind, scope string, files workspace.ReviewFiles, worktree string, run RunResult, out Output) ([]string, string) {
 	read := newReadSet(run.Reads, worktree)
+	readDiff := read.has(files.Diff) || files.Since != "" && read.has(files.Since)
 	var gaps []string
-	if !read.has(files.Diff) && (files.Since == "" || !read.has(files.Since)) {
+	if !readDiff {
 		gaps = append(gaps, "read the diff file "+files.Diff)
 	}
 	if scope == "pr-only" {
-		return capGaps(gaps)
+		return capGaps(gaps), ""
 	}
+	full := pass != PassIncremental
 
 	var code []string
 	for _, f := range files.Changed {
-		if isData(f) {
+		if isData(f) || isGenerated(f) {
 			continue
 		}
 		if _, err := os.Stat(filepath.Join(worktree, f)); err != nil {
@@ -64,12 +94,20 @@ func ReviewGaps(scope string, files workspace.ReviewFiles, worktree string, run 
 		}
 		code = append(code, f)
 	}
-	for _, f := range code {
-		if !read.has(f) {
-			gaps = append(gaps, "read the changed file "+f)
+	var note string
+	if full || !readDiff {
+		checked := slices.Sorted(slices.Values(code))
+		if len(checked) > maxPerFileChecks {
+			note = fmt.Sprintf("(checked %d of %d changed files)", maxPerFileChecks, len(checked))
+			checked = checked[:maxPerFileChecks]
+		}
+		for _, f := range checked {
+			if !read.has(f) {
+				gaps = append(gaps, "read the changed file "+f)
+			}
 		}
 	}
-	if len(files.Changed) > 0 && !readDocsFor(run.Reads, worktree, files.Changed) {
+	if full && len(files.Changed) > 0 && !readDocsFor(run.Reads, worktree, files.Changed) {
 		gaps = append(gaps, "read a README, doc.go, docs/ or CLAUDE.md for the changed code")
 	}
 	if len(code) > 0 {
@@ -79,7 +117,7 @@ func ReviewGaps(scope string, files workspace.ReviewFiles, worktree string, run 
 		if !slices.ContainsFunc(run.Reads, isTestFile) {
 			gaps = append(gaps, "read an existing test file")
 		}
-		if len(out.Assumptions) == 0 {
+		if full && len(out.Assumptions) == 0 {
 			gaps = append(gaps, "list assumptions, and read the code that shows each holds")
 		}
 		if strings.TrimSpace(out.Understanding) == "" {
@@ -87,15 +125,39 @@ func ReviewGaps(scope string, files workspace.ReviewFiles, worktree string, run 
 		}
 	}
 	for i, a := range out.Assumptions {
-		p := evidencePath(a.Evidence)
-		switch {
-		case p == "" || within(read.abs(p), files.Dir):
-			gaps = append(gaps, fmt.Sprintf("cite repository code as evidence for assumption %d", i+1))
-		case !read.has(p):
-			gaps = append(gaps, fmt.Sprintf("read %s, the evidence for assumption %d", p, i+1))
+		if g := evidenceGap(a.Evidence, i+1, read, files.Dir, run.Reads); g != "" {
+			gaps = append(gaps, g)
 		}
 	}
-	return capGaps(gaps)
+	return capGaps(gaps), note
+}
+
+// evidenceGap is the gap for assumption n, or "" when its evidence is
+// prose or any repository file it cites was read. Citing only the review
+// directory's files (the diff) doesn't show the code outside the diff.
+func evidenceGap(evidence string, n int, read readSet, reviewDir string, reads []string) string {
+	paths := evidencePaths(evidence, read.worktree)
+	var repo []string
+	for _, p := range paths {
+		if !within(read.abs(p), reviewDir) {
+			repo = append(repo, p)
+		}
+	}
+	switch {
+	case len(paths) == 0:
+		return ""
+	case len(repo) == 0:
+		return fmt.Sprintf("cite repository code as evidence for assumption %d", n)
+	}
+	for _, p := range repo {
+		if read.has(p) {
+			return ""
+		}
+		if !strings.Contains(p, "/") && slices.ContainsFunc(reads, func(r string) bool { return filepath.Base(r) == p }) {
+			return ""
+		}
+	}
+	return fmt.Sprintf("read %s, the evidence for assumption %d", repo[0], n)
 }
 
 func capGaps(gaps []string) []string {
@@ -186,35 +248,57 @@ func within(p, dir string) bool {
 	return err == nil && filepath.IsLocal(rel)
 }
 
-// evidencePath is the file an assumption's evidence names, without its
-// backticks or :line / :start-end suffix.
-func evidencePath(evidence string) string {
-	p := strings.Trim(strings.TrimSpace(evidence), "`")
-	if i := strings.LastIndexByte(p, ':'); i > 0 && isLineSpec(p[i+1:]) {
-		p = p[:i]
-	}
-	return p
+// lineSuffix matches a line reference after a path: :N, :N-M, :N:M, #LN
+// or #LN-LM.
+var lineSuffix = regexp.MustCompile(`(?::\d+(?:[-:]\d+)?|#L\d+(?:-L?\d+)?)$`)
+
+// cleanPathWord strips the quotes, brackets and punctuation around a word
+// and any line reference after it.
+func cleanPathWord(w string) string {
+	const open, closing = "\"'`([{<", "\"'`)]}>,;:.!?"
+	w = strings.TrimLeft(w, open)
+	w = strings.TrimRight(w, closing)
+	w = lineSuffix.ReplaceAllString(w, "")
+	return strings.TrimRight(w, closing)
 }
 
-func isLineSpec(s string) bool {
-	from, to, isRange := strings.Cut(s, "-")
-	if _, err := strconv.Atoi(from); err != nil {
-		return false
+// evidencePaths are the files an assumption's evidence names, in order,
+// without line references. A word is a path when it has a "/" and its last
+// segment an extension, or when it names an existing file, relative to the
+// worktree or absolute. URLs and prose give none.
+func evidencePaths(evidence, worktree string) []string {
+	var out []string
+	for _, w := range strings.Fields(evidence) {
+		if strings.Contains(w, "://") {
+			continue
+		}
+		p := cleanPathWord(w)
+		if p == "" {
+			continue
+		}
+		if strings.Contains(p, "/") && path.Ext(path.Base(p)) != "" {
+			out = append(out, p)
+			continue
+		}
+		abs := p
+		if !filepath.IsAbs(abs) {
+			abs = filepath.Join(worktree, p)
+		}
+		if fi, err := os.Stat(abs); err == nil && fi.Mode().IsRegular() {
+			out = append(out, p)
+		}
 	}
-	if isRange {
-		_, err := strconv.Atoi(to)
-		return err == nil
-	}
-	return true
+	return out
 }
 
-// VerifiedExamined keeps only the examined paths that appear in run.Reads.
-// The list is shown to the user, so it must not claim reads that didn't
-// happen. Relative paths are joined to the worktree.
+// VerifiedExamined keeps only the examined paths that appear in run.Reads,
+// ignoring a line reference after a path. The list is shown to the user, so
+// it must not claim reads that didn't happen. Relative paths are joined to
+// the worktree.
 func VerifiedExamined(ex Examined, run RunResult, worktree string) Examined {
 	read := newReadSet(run.Reads, worktree)
 	keep := func(paths []string) []string {
-		return slices.DeleteFunc(slices.Clone(paths), func(p string) bool { return !read.has(p) })
+		return slices.DeleteFunc(slices.Clone(paths), func(p string) bool { return !read.has(cleanPathWord(p)) })
 	}
 	return Examined{
 		Docs:   keep(ex.Docs),
