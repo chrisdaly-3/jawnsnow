@@ -1,4 +1,4 @@
-# jawnSnow
+# jawnSnow - a Watcher on your Wall of PR's 👑❄️
 
 <p align="center">
   <img src="docs/assets/logo.png" alt="jawnSnow logo" width="256">
