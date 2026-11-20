@@ -31,6 +31,8 @@ type contextNode struct {
 	Context    string `json:"context"`
 	State      string `json:"state"`
 	IsRequired bool   `json:"isRequired"`
+	DetailsURL string `json:"detailsUrl"`
+	TargetURL  string `json:"targetUrl"`
 }
 
 type contextsPage struct {
@@ -250,9 +252,9 @@ func checksFrom(nodes []contextNode) []Check {
 	for _, n := range nodes {
 		switch n.Typename {
 		case "CheckRun":
-			out = append(out, Check{n.Name, checkRunState(n.Status, n.Conclusion), n.IsRequired})
+			out = append(out, Check{Name: n.Name, State: checkRunState(n.Status, n.Conclusion), Required: n.IsRequired, URL: n.DetailsURL})
 		case "StatusContext":
-			out = append(out, Check{n.Context, statusContextState(n.State), n.IsRequired})
+			out = append(out, Check{Name: n.Context, State: statusContextState(n.State), Required: n.IsRequired, URL: n.TargetURL})
 		}
 	}
 	return out

@@ -29,6 +29,10 @@ type Check struct {
 	Name     string
 	State    CheckState
 	Required bool
+	// URL is the check's own page (a CheckRun's detailsUrl, a
+	// StatusContext's targetUrl). It's empty when the check has none, and in
+	// snapshots stored before snow fetched it.
+	URL string `json:",omitempty"`
 }
 
 // Review State is one of APPROVED, CHANGES_REQUESTED, COMMENTED, DISMISSED, PENDING.

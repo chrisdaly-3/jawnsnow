@@ -86,7 +86,7 @@ func TestDetailPaginatesChecks(t *testing.T) {
 	assertEq(t, d.calls[1].vars["after"].(string), "CK1")
 	p0 := snaps[0]
 	assertEq(t, len(p0.Checks), 3)
-	assertEq(t, p0.Checks[2], Check{"legacy/deploy", CheckFailure, true})
+	assertEq(t, p0.Checks[2], Check{Name: "legacy/deploy", State: CheckFailure, Required: true, URL: "https://ci.example.com/deploy/3"})
 }
 
 // echoBatch answers a Details batch with a bare PR for each ID variable, and a

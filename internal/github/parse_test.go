@@ -32,8 +32,8 @@ func TestParseDetail(t *testing.T) {
 	assertEq(t, snap.Author, "chrisdaly-3")
 	assertEq(t, snap.HeadCommittedAt.UTC().Format("15:04"), "09:00")
 	assertEq(t, len(snap.Checks), 2)
-	assertEq(t, snap.Checks[0], Check{"ci/build", CheckPending, true})
-	assertEq(t, snap.Checks[1], Check{"lint", CheckSuccess, false})
+	assertEq(t, snap.Checks[0], Check{Name: "ci/build", State: CheckPending, Required: true, URL: "https://github.com/chainguard-dev/mono/actions/runs/1/job/2"})
+	assertEq(t, snap.Checks[1], Check{Name: "lint", State: CheckSuccess})
 	// The viewer's own review arrives only in "mine"; the other "mine" entry
 	// repeats alice's and is dropped. Reviews run oldest to newest.
 	assertEq(t, len(snap.Reviews), 4)

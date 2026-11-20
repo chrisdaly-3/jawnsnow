@@ -32,8 +32,8 @@ const fingerprintsQuery = `query Fingerprints($ids: [ID!]!) {
 // checkContextNodes is the selection for a page of check contexts. %s is the
 // variable holding the pull request ID that isRequired is evaluated against.
 const checkContextNodes = `pageInfo{hasNextPage endCursor} nodes{__typename ` +
-	`... on CheckRun{name status conclusion isRequired(pullRequestId: %[1]s)} ` +
-	`... on StatusContext{context state isRequired(pullRequestId: %[1]s)}}`
+	`... on CheckRun{name status conclusion detailsUrl isRequired(pullRequestId: %[1]s)} ` +
+	`... on StatusContext{context state targetUrl isRequired(pullRequestId: %[1]s)}}`
 
 const reviewNodes = `nodes{author{login} state body submittedAt commit{oid}}`
 

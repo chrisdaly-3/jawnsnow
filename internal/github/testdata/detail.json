@@ -46,6 +46,7 @@
          {
           "__typename": "CheckRun",
           "name": "ci/build",
+          "detailsUrl": "https://github.com/chainguard-dev/mono/actions/runs/1/job/2",
           "status": "IN_PROGRESS",
           "conclusion": null,
           "isRequired": true
@@ -53,6 +54,7 @@
          {
           "__typename": "CheckRun",
           "name": "lint",
+          "detailsUrl": null,
           "status": "COMPLETED",
           "conclusion": "SUCCESS",
           "isRequired": false
