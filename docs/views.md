@@ -141,6 +141,7 @@ Labels, colours and spinners can be changed in [`[theme.status]`](configuration.
 How checks are rolled up:
 
 - Checks matching `github.ignore_checks` or the repo's `ignore_checks` are dropped first.
+- So are checks that GitHub reports as `ACTION_REQUIRED`: held until a person acts through the check's details link, such as a job waiting for a reviewer to approve the head. A PR held only that way is `Ready for you`.
 - Every other check counts, whether branch protection requires it or not. A failing optional check still makes CI failed.
 - Any failure makes CI failed. Otherwise any pending check makes CI pending. Otherwise CI is green. A PR with no checks, or only ignored ones, is green.
 
