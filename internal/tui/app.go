@@ -353,7 +353,7 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.drawer, cmd = m.drawer.resize(msg.Width)
 		return m, cmd
-	case drawerTickMsg:
+	case drawerTickMsg, drawerJumpMsg:
 		return m.drawerUpdate(msg)
 	case drawerLoadedMsg:
 		if msg.Err != nil {

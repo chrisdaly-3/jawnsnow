@@ -74,6 +74,7 @@ type drawerModel struct {
 	checkSel    int  // the selected check, in orderedChecks order
 	checkScroll int  // the Checks tab's scroll
 	showPassed  bool // the Checks tab lists passed checks
+	jump        jump // a J or K scroll in flight on the open tab
 
 	understanding, assumptions bool
 	flash                      string // a note for the bottom line, until the next key
@@ -121,6 +122,7 @@ func (m drawerModel) show(prID string, termW int) (drawerModel, tea.Cmd) {
 		m.checkSel, m.checkScroll, m.showPassed = 0, 0, false
 	}
 	// Opening the drawer shows the review, whichever tab was last open.
+	m = m.finishJump()
 	m.tab = tabReview
 	m.wantReview = ""
 	m.open, m.prID, m.target = true, prID, drawerTarget(termW)
@@ -187,6 +189,9 @@ func (m drawerModel) update(msg tea.Msg, c drawerCtx) (drawerModel, tea.Cmd, act
 			return m, nil, actionNone{}
 		}
 		return m, c.Tick(scrollTick, func(time.Time) tea.Msg { return drawerTickMsg{} }), actionNone{}
+	case drawerJumpMsg:
+		m, cmd := m.jumpFrame(c)
+		return m, cmd, actionNone{}
 	case drawerLoadedMsg:
 		return m.loadedReviews(msg), nil, actionNone{}
 	case tea.KeyPressMsg:
@@ -240,6 +245,14 @@ func (m drawerModel) current() *store.Review {
 }
 
 func (m drawerModel) key(msg tea.KeyPressMsg, c drawerCtx) (drawerModel, tea.Cmd, action) {
+	switch k := msg.String(); k {
+	case "J", "K":
+		return m.jumpKey(k, c)
+	case "h", "left", "l", "right":
+		m = m.finishJump()
+	default:
+		m = m.stopJump()
+	}
 	switch msg.String() {
 	case "h", "left":
 		m.tab = max(m.tab-1, 0)

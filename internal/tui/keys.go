@@ -53,6 +53,7 @@ var keyMap = []keySection{
 		{"esc", "close the drawer"},
 		{"h l", "Review or Checks tab"},
 		{"j k", "scroll"},
+		{"J K", "jump to the bottom or top"},
 		{"n N", "next or previous finding, or check"},
 		{"< >", "older or newer pass"},
 		{"u a", "show or hide understanding, assumptions"},
