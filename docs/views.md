@@ -126,10 +126,10 @@ Each PR has exactly one status. The rules are checked in this order and the firs
 | --- | --- | --- | --- | --- | --- |
 | 1 | `MERGED` | `Merged` | `140` | none | the PR merged |
 | 2 | `CLOSED` | `Closed` | `244` | none | the PR closed without merging |
-| 3 | `APPROVED` | `Approved` | `41` | none | GitHub's review decision is approved |
+| 3 | `APPROVED` | `Approved` | `41` | none | at least two people approved (see below) |
 | 4 | `CI_FAILED` | `CI failed` | `203` | none (`✗`) | a check that counts (see below) failed at the head |
 | 5 | `NEW_CHANGES` | `New changes` | `141` | `dot`, while CI runs | you have reviewed, and the PR has commits since the commit you reviewed |
-| 6 | `APPROVED_BY_YOU` | `Approved by you · needs more` | `41`, outlined | none | your review approves, but GitHub doesn't count the PR as approved yet |
+| 6 | `APPROVED_BY_YOU` | `Approved by you · needs more` | `41`, outlined | none | your review approves, but the PR doesn't have two approvals yet |
 | 7 | `CHANGES_REQUESTED` | `Waiting on author` | `208` | none | your review requests changes, comments or was dismissed |
 | 8 | `CI_WAITING` | `Waiting on CI` | `214` | `dot` | you haven't reviewed, and a check that counts is pending at the head |
 | 9 | `READY_FOR_REVIEW` | `Ready for you` | `39` | none | you haven't reviewed, and CI is green or there are no checks |
@@ -137,6 +137,13 @@ Each PR has exactly one status. The rules are checked in this order and the firs
 The [Drafted pill](#the-drafted-pill) is not a status: it changes only what a card shows, never its lane.
 
 Labels, colours and spinners can be changed in [`[theme.status]`](configuration.md#themestatusstatus). A running review spins the card's own spinner only when its status has one (by default `CI_WAITING` and `NEW_CHANGES`); otherwise the running review shows only in the badge, `⣾ Claude reviewing…`.
+
+When a PR counts as approved:
+
+- At least two people approved it. Each reviewer counts once, by their newest review that approves, requests changes or was dismissed, so an approval later taken back doesn't count. You count as one of the two.
+- Bots don't count, and nor do deleted users. A repo's rules can ask for one approval from anyone, bots included, so GitHub's own review decision isn't enough on its own.
+- GitHub's review decision doesn't disagree: it's approved, or there is none because the repo has no review rules. When the repo's rules want an approval of the last push, the PR waits for it.
+- One approval from someone else, with no review from you, leaves the PR `Ready for you`.
 
 How checks are rolled up (the drawer's [Checks tab](#the-checks-tab) shows how each check counted):
 
