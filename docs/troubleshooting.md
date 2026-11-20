@@ -171,6 +171,8 @@ A common refusal is an inline comment on a line that is no longer in the PR's di
 | `could not clean up after a review: <error>`, `could not prune idle worktrees: <error>` | a git cleanup step failed; the startup sweep removes leftover worktrees and refs, and the idle prune (every 10 minutes) removes idle slots, but a leftover directory under `reviews/` stays until you delete it, which is [safe](files.md#what-is-safe-to-delete) |
 | `worktree cleanup: <error>` | the startup sweep failed for a repo, often a `repos.<name>.path` that isn't a repository |
 | `config reload is off: <error>` | edits to the config need a restart |
+| `could not load activity: <error>` | the drawer's Activity tab couldn't fetch the PR's timeline; it tries again the next time you open the drawer on that PR |
+| `Rate limited — activity loads after GitHub's limit resets` | GitHub's rate limit is spent, so the Activity tab didn't fetch; open the drawer again after the reset |
 | `cancelling N running reviews…` | quitting; snow waits up to 5 seconds for them to save |
 
 ## Resetting state

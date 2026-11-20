@@ -165,9 +165,9 @@ Draft PRs are left out unless the feed sets `include_drafts = true`.
 
 ![The review drawer](assets/drawer.png)
 
-The drawer has two tabs, Review and Checks. `h` and `l` move between them, and `enter` always opens the drawer on Review. Above either tab's content:
+The drawer has three tabs: Review, Checks and Activity. `h` and `l` move between them, and `enter` always opens the drawer on Review. Above every tab's content:
 
-- The tab row: `Review` and `Checks`, with the open tab filled in charcoal. With `NO_COLOR` set, the open tab is in brackets: `[Review] Checks`.
+- The tab row: `Review`, `Checks` and `Activity`, with the open tab filled in charcoal. With `NO_COLOR` set, the open tab is in brackets: `[Review] Checks  Activity`.
 - The PR's title, its status chip, and `owner/name#number`.
 - The lane line: the PR's checks counted by how they counted towards its lane. Only groups with checks are shown, and the passed checks always have a row of their own:
 
@@ -199,7 +199,7 @@ The Review tab, top to bottom:
 9. `▸ Assumptions  a`: each assumption the change relies on, with the evidence the reviewer cited under it, or `None.` Collapsed until you press `a`.
 10. `Check notes`: one line per note from the reviewer and from snow's checks. See [check notes](reviews.md#check-notes).
 
-The bottom line shows the running review's latest tool call (`reading internal/foo/bar.go`, `searching internal`, `listing …`), a short message after a key (`copied the finding`), or the key hints: `j/k scroll · n/N finding · </> pass · y copy · O open line · P post` on the Review tab, `h/l tab · j/k scroll · n/N check · s passed · O open · y copy` on the Checks tab.
+The bottom line shows the running review's latest tool call (`reading internal/foo/bar.go`, `searching internal`, `listing …`), a short message after a key (`copied the finding`), or the key hints: `j/k scroll · n/N finding · </> pass · y copy · O open line · P post` on the Review tab, `h/l tab · j/k scroll · n/N check · s passed · O open · y copy` on the Checks tab, `h/l tab · j/k scroll · n/N item · b bots · O open · y copy` on the Activity tab.
 
 Before reviews load it says `Loading reviews…`; a PR with none says `No reviews yet. Press space to review.` The drawer follows the newest pass while you are on it, so a review you just started appears when it finishes. On an older pass it stays on that pass. When the drawer's PR stops being tracked, the drawer closes.
 
@@ -220,6 +220,31 @@ The Checks tab lists every check at the PR's head, grouped by how it counted tow
 A check that branch protection requires is tagged `required`. Within a group, checks are listed as GitHub lists them. A PR with no checks says `No checks.` The tab reads the PR's stored data with the current config, so it needs no reviews, and a change to `ignore_checks` shows at once.
 
 `n` and `N` select a check, marked `▸`, and `J` and `K` jump to the last or first one. `O` opens the check's own page, or the PR's checks page when snow has no link for it yet (a PR stored before snow fetched check links gets them at its next detail fetch). `y` copies the check's name.
+
+### The Activity tab
+
+![The drawer's Activity tab](assets/drawer-activity.png)
+
+The Activity tab lists what happened on the PR, newest first: commits, force-pushes, reviews and conversation comments, up to the last 50. snow fetches them from GitHub in the background as the drawer opens, so they are usually there by the time you switch to the tab; until then it says `Loading…`.
+
+When you have reviewed the PR on GitHub, a divider marks your latest review, such as `── your review · commented · 20h ago ──`. What happened since sits above it, and older entries below. Without a review of yours there is no divider.
+
+Each entry is one line, with its first lines of text under it:
+
+| Glyph | Entry |
+| --- | --- |
+| `◆` | a commit: `carol pushed d4f6182 · 35m ago`, its headline under it. Commits in a row by one author are one entry, `carol pushed 3 commits`, with up to three headlines and `+N more`. |
+| `↻` | a force-push: `alice force-pushed 1a2b3c4 → 5d6e7f8` |
+| `✓` `✗` `◇` | a review that approved, requested changes, or commented or was dismissed, with its number of inline comments, such as `3 comments` |
+| `›` | a conversation comment |
+
+A review's or comment's text shows its first 2 lines; `O` opens the rest on GitHub.
+
+Bots, such as CI and preview bots, are muted and folded at the bottom of each side of the divider, as `▸ 2 bot items  b`. `b` shows or hides them. A bot's entry from after your review stays above the divider.
+
+`n` and `N` select an entry, and `J` and `K` jump to the last or first one. `O` opens the entry on GitHub (the PR for a force-push), and `y` copies its text, or a run's headlines.
+
+snow keeps each PR's timeline for the session. Opening the drawer again on a PR that hasn't changed uses it; a PR that changed, including one whose drawer is open when a poll brings the change, is fetched again. A PR with 50 entries ends with `Older activity isn't shown.` The tab can also say `Rate limited — activity loads after GitHub's limit resets`, `could not load activity: <error>` or `No activity`.
 
 ## The Done view
 
