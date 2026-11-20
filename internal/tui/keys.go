@@ -52,7 +52,7 @@ var keyMap = []keySection{
 	{"Drawer", []keyHint{
 		{"esc", "close the drawer"},
 		{"j k", "scroll"},
-		{"n p", "next or previous finding"},
+		{"n N", "next or previous finding"},
 		{"< >", "older or newer pass"},
 		{"u a", "show or hide understanding, assumptions"},
 		{"o", "open the PR"},

@@ -60,7 +60,7 @@ These work when the drawer has focus. Opening it with `enter` focuses it, and `t
 | --- | --- |
 | `esc` | close the drawer |
 | `j` `k` | scroll |
-| `n` `p` | next or previous finding |
+| `n` `N` | next or previous finding |
 | `<` `>` | older or newer pass |
 | `u` `a` | show or hide understanding, assumptions |
 | `o` | open the PR |
@@ -71,7 +71,7 @@ These work when the drawer has focus. Opening it with `enter` focuses it, and `t
 
 More on these:
 
-- `n` and `p` select a finding and scroll to it. Findings are listed blocking first, then those starting `nit:`, `non-blocking:` and `question:`, then the rest.
+- `n` and `N` select a finding and scroll to it. Findings are listed blocking first, then those starting `nit:`, `non-blocking:` and `question:`, then the rest.
 - `<` moves to an older pass (review) of the PR and `>` to a newer one. The header shows `pass 2/3` when there is more than one.
 - `O` opens the PR's Files tab in the browser at the selected finding's file, and at its line when the finding is anchored.
 - `y` copies the selected finding's body to the clipboard, using the terminal's OSC 52 support, and shows `copied the finding`.
