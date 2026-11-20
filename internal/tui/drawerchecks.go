@@ -54,14 +54,20 @@ func checkRows(c drawerCtx) []status.CheckRow {
 }
 
 // laneLines rolls the checks up by group, the way they counted towards the
-// PR's lane: `✗ 1 failed · ◌ 1 ignored · ✓ 44 passed`. When that doesn't
-// fit on one line, the groups go two to a line in aligned columns, so no
-// line breaks at an odd place; when two don't fit, one to a line.
+// PR's lane, with the passed checks always on a line of their own:
+//
+//	✗ 1 failed · ◌ 1 ignored
+//	✓ 44 passed
+//
+// When the other groups don't fit on one line, they go two to a line in
+// aligned columns, so no line breaks at an odd place; when two don't fit,
+// one to a line.
 func laneLines(rows []status.CheckRow, th theme.Theme, inner int) []string {
 	if len(rows) == 0 {
 		return []string{th.Muted().Render("No checks")}
 	}
 	var parts []string
+	passed := ""
 	for _, cg := range checkGroups {
 		n := 0
 		for _, r := range rows {
@@ -69,9 +75,28 @@ func laneLines(rows []status.CheckRow, th theme.Theme, inner int) []string {
 				n++
 			}
 		}
-		if n > 0 {
-			parts = append(parts, groupGlyph(th, cg.group)+" "+strconv.Itoa(n)+" "+cg.summary)
+		if n == 0 {
+			continue
 		}
+		part := groupGlyph(th, cg.group) + " " + strconv.Itoa(n) + " " + cg.summary
+		if cg.group == status.GroupPassed {
+			passed = ansi.Truncate(part, inner, "…")
+		} else {
+			parts = append(parts, part)
+		}
+	}
+	lines := groupLines(parts, th, inner)
+	if passed != "" {
+		lines = append(lines, passed)
+	}
+	return lines
+}
+
+// groupLines lays out the lane line's groups: on one line when they fit,
+// else two to a line in aligned columns, else one to a line.
+func groupLines(parts []string, th theme.Theme, inner int) []string {
+	if len(parts) == 0 {
+		return nil
 	}
 	if one := strings.Join(parts, th.Muted().Render(" · ")); ansi.StringWidth(one) <= inner {
 		return []string{one}

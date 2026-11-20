@@ -50,7 +50,12 @@ func TestLaneLineEdgeCases(t *testing.T) {
 	if got := line(gate, []string{"codeowners-gate"}, 60); got != "◌ 1 ignored" {
 		t.Errorf("only ignored: %q", got)
 	}
-	want := "✗ 1 failed · ⏸ 1 waiting on you · ● 1 running · ◌ 1 ignored · ✓ 2 passed"
+	ok := []github.Check{{Name: "build", State: github.CheckSuccess}, {Name: "lint", State: github.CheckSkipped}}
+	if got := line(ok, nil, 60); got != "✓ 2 passed" {
+		t.Errorf("only passed: %q", got)
+	}
+	// Passed checks always get a line of their own, even with room to spare.
+	want := "✗ 1 failed · ⏸ 1 waiting on you · ● 1 running · ◌ 1 ignored\n✓ 2 passed"
 	if got := line(mixedChecks(), []string{"codeowners-gate*"}, 200); got != want {
 		t.Errorf("one of each:\n got %q\nwant %q", got, want)
 	}

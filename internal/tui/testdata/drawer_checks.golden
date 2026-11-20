@@ -1,8 +1,7 @@
 │ Review   Checks                                                       
 │ feat(policies): fill Decision.repo_name from the registry             
 │  Ready for you   chainguard-dev/mono#85180                            
-│ ✗ 1 failed    ⏸ 1 waiting on you                                      
-│ ● 1 running   ◌ 1 ignored                                             
+│ ✗ 1 failed · ⏸ 1 waiting on you · ● 1 running · ◌ 1 ignored           
 │ ✓ 2 passed                                                            
 │                                                                       
 │ Failing                                                               
@@ -18,6 +17,7 @@
 │   ◌ codeowners-gate  required · matches "codeowners-gate*"            
 │                                                                       
 │ ▸ Passed (2)  s                                                       
+│                                                                       
 │                                                                       
 │                                                                       
 │                                                                       
