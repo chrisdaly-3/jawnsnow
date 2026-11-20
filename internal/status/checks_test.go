@@ -13,13 +13,43 @@ func TestEvalCIIgnoresGlobs(t *testing.T) {
 	}
 }
 
-func TestEvalCIRequiredOnly(t *testing.T) {
+func TestEvalCIOptionalFailureCounts(t *testing.T) {
 	checks := []github.Check{
-		{Name: "lint", State: github.CheckFailure},
+		{Name: "skillup", State: github.CheckFailure},
+		{Name: "codeowners-gate", State: github.CheckPending, Required: true},
+	}
+	if got := EvalCI(checks, nil); got != CIFailedState {
+		t.Errorf("got %q, want failed", got)
+	}
+}
+
+func TestEvalCIOptionalPendingCounts(t *testing.T) {
+	checks := []github.Check{
+		{Name: "lint", State: github.CheckPending},
 		{Name: "build", State: github.CheckSuccess, Required: true},
 	}
-	if got := EvalCI(checks, nil); got != CIGreen {
+	if got := EvalCI(checks, nil); got != CIPending {
+		t.Errorf("got %q, want pending", got)
+	}
+}
+
+func TestEvalCIOnlyIgnoredChecksIsGreen(t *testing.T) {
+	checks := []github.Check{
+		{Name: "codeowners-gate", State: github.CheckPending, Required: true},
+		{Name: "codeowners-gate check", State: github.CheckFailure, Required: true},
+	}
+	if got := EvalCI(checks, []string{"codeowners-gate*"}); got != CIGreen {
 		t.Errorf("got %q, want green", got)
+	}
+}
+
+func TestEvalCIIgnoringTheOnlyRequiredCheckLeavesTheRest(t *testing.T) {
+	checks := []github.Check{
+		{Name: "codeowners-gate", State: github.CheckPending, Required: true},
+		{Name: "skillup", State: github.CheckFailure},
+	}
+	if got := EvalCI(checks, []string{"codeowners-gate"}); got != CIFailedState {
+		t.Errorf("got %q, want failed", got)
 	}
 }
 

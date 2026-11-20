@@ -749,8 +749,9 @@ func (m Model) startPoll() (Model, tea.Cmd) {
 			continue
 		}
 		watch = append(watch, id)
-		// The rollup stays PENDING while an optional check runs, so it can't
-		// tell when the required checks finish. Fetch these every poll.
+		// The rollup can stay PENDING after the checks snow counts have
+		// finished, such as while an ignored gate waits. Fetch these every
+		// poll.
 		if t.Status.CI == status.CIPending {
 			force = append(force, id)
 		}
