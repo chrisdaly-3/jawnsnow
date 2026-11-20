@@ -232,9 +232,9 @@ func TestBannerFillsWithTheIndexAndContrastingText(t *testing.T) {
 func TestTabFillsTheCurrentOne(t *testing.T) {
 	th := mustNew(t, config.ThemeConfig{})
 	cur, other := th.Tab("Review", true), th.Tab("Review", false)
-	fg := "38;5;" + strconv.Itoa(ContrastFG(153))
-	if !strings.Contains(cur, "48;5;153") || !strings.Contains(cur, fg) {
-		t.Errorf("current Tab = %q, want %s text on accent 153", cur, fg)
+	fg := "38;5;" + strconv.Itoa(ContrastFG(67))
+	if !strings.Contains(cur, "48;5;67") || !strings.Contains(cur, fg) {
+		t.Errorf("current Tab = %q, want %s text on muted 67", cur, fg)
 	}
 	if strings.Contains(other, "48;5;") || !strings.Contains(other, "38;5;67") {
 		t.Errorf("other Tab = %q, want muted 67 text and no background", other)
