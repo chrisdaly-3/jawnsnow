@@ -29,7 +29,7 @@ idle_poll_interval = "15m"
 # Use this for gates that wait on a review rather than on CI, such as a code-owner
 # approval check, so the PR isn't stuck in "Waiting on CI". Combined with each
 # repo's own ignore_checks below.
-# Default: [] (every required check counts)
+# Default: [] (every check counts)
 ignore_checks = []
 
 # ─── Feeds: which PRs you're subscribed to ────────────────────────────────────

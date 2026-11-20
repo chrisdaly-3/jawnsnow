@@ -141,8 +141,8 @@ Labels, colours and spinners can be changed in [`[theme.status]`](configuration.
 How checks are rolled up:
 
 - Checks matching `github.ignore_checks` or the repo's `ignore_checks` are dropped first.
-- If any remaining check is required by branch protection, only required checks count. Otherwise every check counts.
-- Any failure makes CI failed. Otherwise any pending check makes CI pending. Otherwise CI is green. A PR with no checks is green.
+- Every other check counts, whether branch protection requires it or not. A failing optional check still makes CI failed.
+- Any failure makes CI failed. Otherwise any pending check makes CI pending. Otherwise CI is green. A PR with no checks, or only ignored ones, is green.
 
 How "commits since you reviewed" is judged for `NEW_CHANGES`:
 

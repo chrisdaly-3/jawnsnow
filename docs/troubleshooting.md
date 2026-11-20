@@ -73,7 +73,7 @@ A `no longer in a feed` PR returns to the Wall if a current feed finds it again,
 
 ## A PR stuck in Waiting on CI
 
-A required check that waits on a review, such as a code-owner gate, stays pending until someone approves, which keeps the PR in "Waiting on CI" and out of auto mode. Add its name to `github.ignore_checks` or the repo's `ignore_checks`, as a glob such as `"codeowners-gate*"`. The change applies at once.
+A check that waits on a review, such as a code-owner gate, stays pending until someone approves, which keeps the PR in "Waiting on CI" and out of auto mode. Add its name to `github.ignore_checks` or the repo's `ignore_checks`, as a glob such as `"codeowners-gate*"`. The change applies at once.
 
 ## Poll errors and rate limits
 
