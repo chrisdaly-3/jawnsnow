@@ -138,7 +138,7 @@ The [Drafted pill](#the-drafted-pill) is not a status: it changes only what a ca
 
 Labels, colours and spinners can be changed in [`[theme.status]`](configuration.md#themestatusstatus). A running review spins the card's own spinner only when its status has one (by default `CI_WAITING` and `NEW_CHANGES`); otherwise the running review shows only in the badge, `⣾ Claude reviewing…`.
 
-How checks are rolled up:
+How checks are rolled up (the drawer's [Checks tab](#the-checks-tab) shows how each check counted):
 
 - Checks matching `github.ignore_checks` or the repo's `ignore_checks` are dropped first.
 - So are checks that GitHub reports as `ACTION_REQUIRED`: held until a person acts through the check's details link, such as a job waiting for a reviewer to approve the head. A PR held only that way is `Ready for you`.
@@ -158,23 +158,46 @@ Draft PRs are left out unless the feed sets `include_drafts = true`.
 
 ![The review drawer](assets/drawer.png)
 
-Top to bottom:
+The drawer has two tabs, Review and Checks. `h` and `l` move between them, and `enter` always opens the drawer on Review. Above either tab's content:
 
-1. The PR's title, its status chip, and `owner/name#number`.
-2. The pass's details: tier, model, effort, cost, age (`12m ago`) and, when the PR has more than one review, `pass 2/3`. The cost is `$1.84`, `$1.84+? (some cost unknown)` or `? (cost unknown)`; see [cost accounting](reviews.md#cost-accounting).
-3. The verdict as a filled banner: `APPROVE`, `REQUEST CHANGES` or `COMMENT`. After it, `incomplete` or `failed` when the review was.
-4. `Posted as Approve · 2h ago` (or `just now`) when you posted this review.
-5. The reviewer's reason for the verdict.
-6. For a failed review, the error.
-7. The earlier-findings summary, such as `2 fixed · 1 still open · 3 new`. See [the ledger](reviews.md#the-earlier-findings-ledger).
-8. The findings, or `No findings.` Each has a header line with its location (`path:line`, `path:start-end`, or `path · unanchored`), `blocking` when it is, its category, and its ledger tag (`[fixed]`, `[still open]` or `[answered]`) for a finding carried from an earlier pass. The body is rendered markdown. Blocking findings come first, then those starting `nit:`, `non-blocking:` and `question:`, then the rest. The selected one has a `▸` mark.
-9. `▸ Understanding  u`: the reviewer's account of what the touched code does and how the PR changes it. Collapsed until you press `u`.
-10. `▸ Assumptions  a`: each assumption the change relies on, with the evidence the reviewer cited under it, or `None.` Collapsed until you press `a`.
-11. `Check notes`: one line per note from the reviewer and from snow's checks. See [check notes](reviews.md#check-notes).
+- The tab row: `Review   Checks`, with the open tab in the accent colour.
+- The PR's title, its status chip, and `owner/name#number`.
+- The lane line: the PR's checks counted by how they counted towards its lane, such as `✗ 1 failed · ⏸ 1 waiting on you · ◌ 1 ignored · ✓ 44 passed`. Only groups with checks are shown, and the line wraps between groups. A PR with no checks shows `No checks`. The groups are those of [the Checks tab](#the-checks-tab).
 
-The bottom line shows the running review's latest tool call (`reading internal/foo/bar.go`, `searching internal`, `listing …`), a short message after a key (`copied the finding`), or the key hints `j/k scroll · n/p finding · </> pass · y copy · O open line · P post`.
+The Review tab, top to bottom:
+
+1. The pass's details: tier, model, effort, cost, age (`12m ago`) and, when the PR has more than one review, `pass 2/3`. The cost is `$1.84`, `$1.84+? (some cost unknown)` or `? (cost unknown)`; see [cost accounting](reviews.md#cost-accounting).
+2. The verdict as a filled banner: `APPROVE`, `REQUEST CHANGES` or `COMMENT`. After it, `incomplete` or `failed` when the review was.
+3. `Posted as Approve · 2h ago` (or `just now`) when you posted this review.
+4. The reviewer's reason for the verdict.
+5. For a failed review, the error.
+6. The earlier-findings summary, such as `2 fixed · 1 still open · 3 new`. See [the ledger](reviews.md#the-earlier-findings-ledger).
+7. The findings, or `No findings.` Each has a header line with its location (`path:line`, `path:start-end`, or `path · unanchored`), `blocking` when it is, its category, and its ledger tag (`[fixed]`, `[still open]` or `[answered]`) for a finding carried from an earlier pass. The body is rendered markdown. Blocking findings come first, then those starting `nit:`, `non-blocking:` and `question:`, then the rest. The selected one has a `▸` mark.
+8. `▸ Understanding  u`: the reviewer's account of what the touched code does and how the PR changes it. Collapsed until you press `u`.
+9. `▸ Assumptions  a`: each assumption the change relies on, with the evidence the reviewer cited under it, or `None.` Collapsed until you press `a`.
+10. `Check notes`: one line per note from the reviewer and from snow's checks. See [check notes](reviews.md#check-notes).
+
+The bottom line shows the running review's latest tool call (`reading internal/foo/bar.go`, `searching internal`, `listing …`), a short message after a key (`copied the finding`), or the key hints: `j/k scroll · n/N finding · </> pass · y copy · O open line · P post` on the Review tab, `h/l tab · j/k scroll · n/N check · s passed · O open · y copy` on the Checks tab.
 
 Before reviews load it says `Loading reviews…`; a PR with none says `No reviews yet. Press space to review.` The drawer follows the newest pass while you are on it, so a review you just started appears when it finishes. On an older pass it stays on that pass. When the drawer's PR stops being tracked, the drawer closes.
+
+### The Checks tab
+
+![The drawer's Checks tab](assets/drawer-checks.png)
+
+The Checks tab lists every check at the PR's head, grouped by how it counted towards the PR's lane (see [how checks are rolled up](#statuses)):
+
+| Group | Glyph | Means |
+| --- | --- | --- |
+| `Failing` | `✗` | the check failed, so CI is failed |
+| `Waiting on you` | `⏸` | GitHub reports `ACTION_REQUIRED`: the check waits for a person, such as a reviewer approving the head. It doesn't count. |
+| `Running` | `●` | the check is pending, so CI is pending |
+| `Ignored` | `◌` | the check matches `github.ignore_checks` or the repo's `ignore_checks`, so it doesn't count. The row shows the glob, as `matches "codeowners-gate*"`. |
+| `Passed (N)` | `✓` | the check passed, or finished neutral or skipped. Folded until you press `s`. |
+
+A check that branch protection requires is tagged `required`. Within a group, checks are listed as GitHub lists them. A PR with no checks says `No checks.` The tab reads the PR's stored data with the current config, so it needs no reviews, and a change to `ignore_checks` shows at once.
+
+`n` and `N` select a check, marked `▸`. `O` opens the check's own page, or the PR's checks page when snow has no link for it yet (a PR stored before snow fetched check links gets them at its next detail fetch). `y` copies the check's name.
 
 ## The Done view
 

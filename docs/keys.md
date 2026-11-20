@@ -59,22 +59,26 @@ These work when the drawer has focus. Opening it with `enter` focuses it, and `t
 | Key | Does |
 | --- | --- |
 | `esc` | close the drawer |
+| `h` `l` | Review or Checks tab |
 | `j` `k` | scroll |
-| `n` `N` | next or previous finding |
+| `n` `N` | next or previous finding, or check |
 | `<` `>` | older or newer pass |
 | `u` `a` | show or hide understanding, assumptions |
+| `s` | show or hide passed checks |
 | `o` | open the PR |
-| `O` | open the finding's line |
-| `y` | copy the finding |
+| `O` | open the finding's line, or the check |
+| `y` | copy the finding, or the check's name |
 | `space` `c` | review again, or pick a model |
 | `P` | post this review to GitHub, after a preview |
 
 More on these:
 
+- `h` and `l` (or `←` and `→`) move between the [Review and Checks tabs](views.md#the-drawer). Opening the drawer with `enter` always shows the Review tab. Each tab keeps its own scroll. `<`, `>`, `u` and `a` act on the Review tab, and `s` on the Checks tab; the other keys act on whichever tab is open.
 - `n` and `N` select a finding and scroll to it. Findings are listed blocking first, then those starting `nit:`, `non-blocking:` and `question:`, then the rest.
 - `<` moves to an older pass (review) of the PR and `>` to a newer one. The header shows `pass 2/3` when there is more than one.
 - `O` opens the PR's Files tab in the browser at the selected finding's file, and at its line when the finding is anchored.
 - `y` copies the selected finding's body to the clipboard, using the terminal's OSC 52 support, and shows `copied the finding`.
+- On the Checks tab, `n` and `N` select a check, `O` opens the check's own page (or the PR's checks page when snow has no link for it), `y` copies its name and shows `copied the check's name`, and `s` shows or hides the passed checks.
 - `P` opens the [post flow](posting.md) on the pass on screen. A failed review can't be posted: the drawer says `a failed review can't be posted`.
 
 ## Post
