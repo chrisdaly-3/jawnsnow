@@ -240,9 +240,9 @@ func (m drawerModel) key(msg tea.KeyPressMsg, c drawerCtx) (drawerModel, tea.Cmd
 		m.scroll++
 	case "k", "up":
 		m.scroll--
-	case "n", "p":
+	case "n", "N":
 		if len(fs) > 0 {
-			m.sel = min(max(m.sel+map[string]int{"n": 1, "p": -1}[k], 0), len(fs)-1)
+			m.sel = min(max(m.sel+map[string]int{"n": 1, "N": -1}[k], 0), len(fs)-1)
 			m.scroll = anchors[m.sel]
 		}
 	case "<", ">":
@@ -604,7 +604,7 @@ func (m drawerModel) bottomLine(c drawerCtx, inner int) string {
 	case m.flash != "":
 		return th.Accent().Render(m.flash)
 	}
-	return th.Muted().Render(ansi.Truncate("j/k scroll · n/p finding · </> pass · y copy · O open line · P post", inner, "…"))
+	return th.Muted().Render(ansi.Truncate("j/k scroll · n/N finding · </> pass · y copy · O open line · P post", inner, "…"))
 }
 
 // dollars is an amount of money the way every view writes it.

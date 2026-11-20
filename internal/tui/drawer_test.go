@@ -169,9 +169,19 @@ func TestDrawerFindingNavigationAndScroll(t *testing.T) {
 	if d.sel != 3 {
 		t.Errorf("n past the last finding: sel %d, want 3", d.sel)
 	}
+	d, _, _ = d.update(key("N"), c)
+	if d.sel != 2 {
+		t.Errorf("N: sel %d, want 2", d.sel)
+	}
 	d, _, _ = d.update(key("p"), c)
 	if d.sel != 2 {
-		t.Errorf("p: sel %d, want 2", d.sel)
+		t.Errorf("p is unbound in the drawer: sel %d, want 2", d.sel)
+	}
+	for range 5 {
+		d, _, _ = d.update(key("N"), c)
+	}
+	if d.sel != 0 {
+		t.Errorf("N past the first finding: sel %d, want 0", d.sel)
 	}
 	d, _, _ = d.update(key("j"), c)
 	before := d.scroll
