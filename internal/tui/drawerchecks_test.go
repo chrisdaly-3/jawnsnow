@@ -91,14 +91,16 @@ func TestDrawerTabSwitch(t *testing.T) {
 	if d.tab != tabReview {
 		t.Errorf("h on the first tab: tab %d, want it to stay on Review", d.tab)
 	}
-	if row, want := d.tabRow(c.Theme), c.Theme.Tab("Review", true)+" "+c.Theme.Tab("Checks", false); row != want {
+	if row, want := d.tabRow(c.Theme), c.Theme.Tab("Review", true)+" "+c.Theme.Tab("Checks", false)+" "+c.Theme.Tab("Activity", false); row != want {
 		t.Errorf("tab row on Review = %q, want Review filled: %q", row, want)
 	}
-	d, _, _ = d.update(key("l"), c)
-	d, _, _ = d.update(key("l"), c)
-	if d.tab != tabChecks {
-		t.Errorf("l past the last tab: tab %d, want it to stay on Checks", d.tab)
+	for range 3 {
+		d, _, _ = d.update(key("l"), c)
 	}
+	if d.tab != tabActivity {
+		t.Errorf("l past the last tab: tab %d, want it to stay on Activity", d.tab)
+	}
+	d, _, _ = d.update(key("h"), c)
 	d, _, _ = d.update(key("j"), c)
 	if d.scroll != reviewScroll || d.checkScroll != 1 {
 		t.Errorf("j on Checks: review scroll %d, checks scroll %d; want %d and 1", d.scroll, d.checkScroll, reviewScroll)

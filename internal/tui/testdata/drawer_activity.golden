@@ -1,0 +1,30 @@
+│  Review   Checks   Activity                                           
+│ feat(policies): fill Decision.repo_name from the registry             
+│  Ready for you   chainguard-dev/mono#85180                            
+│ No checks                                                             
+│                                                                       
+│ ▸ › ann commented · 20m ago                                           
+│     One more thing.                                                   
+│     Can we log the retry count?                                       
+│   ✓ ann approved · 2 comments · 40m ago                               
+│     LGTM                                                              
+│   ↻ sam force-pushed ccccccc → ddddddd · 50m ago                      
+│   ◆ sam pushed 2 commits · 59m ago                                    
+│     ccccccc Test the retry                                            
+│     bbbbbbb Fix the retry                                             
+│   ▸ 1 bot item  b                                                     
+│                                                                       
+│ ── your review · changes requested · 4h ago ───────────────────────── 
+│                                                                       
+│   ◆ sam First pass · aaaaaaa · 5h ago                                 
+│   ▸ 1 bot item  b                                                     
+│                                                                       
+│                                                                       
+│                                                                       
+│                                                                       
+│                                                                       
+│                                                                       
+│                                                                       
+│                                                                       
+│                                                                       
+│ h/l tab · j/k scroll · n/N item · b bots · O open · y copy            

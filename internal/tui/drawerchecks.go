@@ -16,9 +16,10 @@ import (
 const (
 	tabReview = iota
 	tabChecks
+	tabActivity
 )
 
-var tabNames = []string{"Review", "Checks"}
+var tabNames = []string{"Review", "Checks", "Activity"}
 
 // checkGroups says how the lane line and the Checks tab show each group, in
 // the order both list them: most urgent first, as EvalCI weighs them.

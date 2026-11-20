@@ -229,6 +229,11 @@ type Model struct {
 	costRestored, costSaving bool
 	costPending              []byte
 
+	// activity is each PR's timeline for the drawer's Activity tab, kept for
+	// the session (plan 5 G1); activitySeq numbers the fetches.
+	activity    map[string]activityState
+	activitySeq int
+
 	configBanner string
 	// loginWarning is the startup warning, or one set when GitHub rejects
 	// the login; a successful poll clears it.
@@ -355,6 +360,8 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 		return m, cmd
 	case drawerTickMsg, drawerJumpMsg:
 		return m.drawerUpdate(msg)
+	case activityMsg:
+		return m.applyActivity(msg)
 	case drawerLoadedMsg:
 		if msg.Err != nil {
 			m.notice = "could not read reviews: " + msg.Err.Error()
@@ -532,6 +539,7 @@ func (m Model) drawerCtx() drawerCtx {
 		PR: m.prs[id], Running: s.running, Ticker: s.ticker, Frame: m.spinFrame,
 		Focused: m.view == m.drawerView && m.focus == m.drawerPane(), Now: m.now(), Theme: m.theme, Tick: m.tick, Height: h,
 		IgnoreChecks: m.cfg.IgnoreChecksFor(m.prs[id].PR.Repo),
+		Activity:     m.activity[id], Viewer: m.viewer,
 	}
 }
 
@@ -701,7 +709,8 @@ func (m Model) apply(a action) (Model, tea.Cmd) {
 		// Opening the drawer focuses it, so its keys work at once.
 		m.focus = m.drawerPane()
 		m, load := m.loadDrawer(a.ID)
-		return m, tea.Batch(cmd, load)
+		m, act := m.fetchActivity(a.ID)
+		return m, tea.Batch(cmd, load, act)
 	case actionOpenReview:
 		if _, ok := m.prs[a.PRID]; !ok {
 			m.notice = "that PR is no longer tracked"
@@ -712,7 +721,8 @@ func (m Model) apply(a action) (Model, tea.Cmd) {
 		m.drawer, cmd = m.drawer.showReview(a.PRID, a.ReviewID, m.width)
 		m.focus = m.drawerPane()
 		m, load := m.loadDrawer(a.PRID)
-		return m, tea.Batch(cmd, load)
+		m, act := m.fetchActivity(a.PRID)
+		return m, tea.Batch(cmd, load, act)
 	case actionCopy:
 		return m, tea.SetClipboard(a.Text)
 	case actionPost:
@@ -829,6 +839,9 @@ func (m Model) finishPoll(res poll.Result) (Model, tea.Cmd) {
 		m, save = m.flush()
 		m, release = m.placesChanged(prev)
 		m, load = m.loadReviewInputs()
+		var act tea.Cmd
+		m, act = m.refreshActivity()
+		load = tea.Batch(load, act)
 	}
 	wait, reason := m.quota.Next(m.cfg.GitHub.PollInterval.Duration, m.now())
 	m.rateNote = reason

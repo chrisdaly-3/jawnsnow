@@ -42,6 +42,11 @@ type fakeClient struct {
 
 	viewerErrs  []error
 	viewerCalls int
+
+	// activity answers Activity by PR ID; activityErr fails it.
+	activity      map[string][]github.ActivityItem
+	activityErr   error
+	activityCalls []string
 }
 
 // Viewer fails with each of viewerErrs in turn, then answers "me".
@@ -1351,6 +1356,11 @@ func TestTinyWindowDoesNotPanic(t *testing.T) {
 
 func (f *fakeClient) ReviewContext(context.Context, string) (github.PRContext, github.RateLimit, error) {
 	return github.PRContext{}, github.RateLimit{}, nil
+}
+
+func (f *fakeClient) Activity(_ context.Context, id string) ([]github.ActivityItem, github.RateLimit, error) {
+	f.activityCalls = append(f.activityCalls, id)
+	return f.activity[id], f.rate, f.activityErr
 }
 
 func TestLoginWarningIsFirstBanner(t *testing.T) {

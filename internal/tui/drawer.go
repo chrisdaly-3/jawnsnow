@@ -50,6 +50,10 @@ type drawerCtx struct {
 	Height int
 	// IgnoreChecks is the current config's ignore globs for the PR's repo.
 	IgnoreChecks []string
+	// Activity is the PR's timeline for the Activity tab; Viewer is your
+	// login, to find your review in it.
+	Activity activityState
+	Viewer   string
 }
 
 // drawerModel is the right-hand drawer: one PR's reviews, one pass at a
@@ -75,6 +79,9 @@ type drawerModel struct {
 	checkScroll int  // the Checks tab's scroll
 	showPassed  bool // the Checks tab lists passed checks
 	jump        jump // a J or K scroll in flight on the open tab
+	actSel      int  // the selected Activity entry, in shownActivity order
+	actScroll   int  // the Activity tab's scroll
+	showBots    bool // the Activity tab lists bot entries
 
 	understanding, assumptions bool
 	flash                      string // a note for the bottom line, until the next key
@@ -120,6 +127,7 @@ func (m drawerModel) show(prID string, termW int) (drawerModel, tea.Cmd) {
 		m.reviews, m.posted, m.loaded, m.pass, m.sel, m.scroll = nil, nil, false, 0, 0, 0
 		m.understanding, m.assumptions = false, false
 		m.checkSel, m.checkScroll, m.showPassed = 0, 0, false
+		m.actSel, m.actScroll, m.showBots = 0, 0, false
 	}
 	// Opening the drawer shows the review, whichever tab was last open.
 	m = m.finishJump()
@@ -261,8 +269,11 @@ func (m drawerModel) key(msg tea.KeyPressMsg, c drawerCtx) (drawerModel, tea.Cmd
 		m.tab = min(m.tab+1, len(tabNames)-1)
 		return m, nil, actionNone{}
 	}
-	if m.tab == tabChecks {
+	switch m.tab {
+	case tabChecks:
 		return m.checksKey(msg, c)
+	case tabActivity:
+		return m.activityKey(msg, c)
 	}
 	return m.reviewKey(msg, c)
 }
@@ -466,6 +477,9 @@ func (m drawerModel) layout(c drawerCtx) (lines []string, anchors []int) {
 	add(ansi.Truncate(chip+th.Muted().Render("  "+cleanLine(c.PR.PR.Repo)+"#"+strconv.Itoa(c.PR.PR.Number)), inner, "…"))
 	add(laneLines(checkRows(c), th, inner)...)
 
+	if m.tab == tabActivity {
+		return m.activityLayout(c, lines, inner)
+	}
 	if m.tab == tabChecks {
 		return m.checksLayout(c, lines, inner)
 	}
@@ -627,10 +641,7 @@ func (m drawerModel) view(width, height int, c drawerCtx) string {
 	c.Height = height
 	lines, _ := m.layout(c)
 	bodyH := m.bodyHeight(height)
-	scroll := m.scroll
-	if m.tab == tabChecks {
-		scroll = m.checkScroll
-	}
+	scroll := m.tabScroll()
 	scroll = min(max(scroll, 0), max(len(lines)-bodyH, 0))
 	lines = lines[min(scroll, len(lines)):]
 	lines = fit(strings.Join(lines, "\n"), 1<<20, bodyH)
@@ -663,8 +674,11 @@ func (m drawerModel) bottomLine(c drawerCtx, inner int) string {
 		return th.Accent().Render(m.flash)
 	}
 	hints := "j/k scroll · n/N finding · </> pass · y copy · O open line · P post"
-	if m.tab == tabChecks {
+	switch m.tab {
+	case tabChecks:
 		hints = "h/l tab · j/k scroll · n/N check · s passed · O open · y copy"
+	case tabActivity:
+		hints = "h/l tab · j/k scroll · n/N item · b bots · O open · y copy"
 	}
 	return th.Muted().Render(ansi.Truncate(hints, inner, "…"))
 }

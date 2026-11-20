@@ -26,16 +26,22 @@ type jump struct {
 
 // tabScroll is the open tab's scroll.
 func (m drawerModel) tabScroll() int {
-	if m.tab == tabChecks {
+	switch m.tab {
+	case tabChecks:
 		return m.checkScroll
+	case tabActivity:
+		return m.actScroll
 	}
 	return m.scroll
 }
 
 func (m drawerModel) withTabScroll(v int) drawerModel {
-	if m.tab == tabChecks {
+	switch m.tab {
+	case tabChecks:
 		m.checkScroll = v
-	} else {
+	case tabActivity:
+		m.actScroll = v
+	default:
 		m.scroll = v
 	}
 	return m
@@ -49,10 +55,16 @@ func (m drawerModel) jumpKey(k string, c drawerCtx) (drawerModel, tea.Cmd, actio
 	if k == "J" {
 		target = m.maxScroll(c)
 	}
-	if m.tab == tabChecks {
+	switch m.tab {
+	case tabChecks:
 		m.checkSel = 0
 		if n := len(orderedChecks(checkRows(c), m.showPassed)); k == "J" && n > 0 {
 			m.checkSel = n - 1
+		}
+	case tabActivity:
+		m.actSel = 0
+		if n := len(shownActivity(activityView(c), m.showBots)); k == "J" && n > 0 && c.Activity.Loaded {
+			m.actSel = n - 1
 		}
 	}
 	m, cmd := m.startJump(target)
