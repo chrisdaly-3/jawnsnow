@@ -1,5 +1,7 @@
 # jawnSnow
 
+![jawnSnow logo](docs/assets/logo.png)
+
 `snow` is a terminal UI that watches the GitHub PRs your team asks you to review, shows each PR's status, runs read-only Claude reviews, and lets you post a review you've read as your own after a preview.
 
 [What it does](#what-it-does) · [Requirements](#requirements) · [Install](#install) · [Quickstart](#quickstart) · [Screenshots](#screenshots) · [Configuration](#configuration) · [Documentation](#documentation) · [Development](#development) · [Credits](#credits) · [License](#license)
