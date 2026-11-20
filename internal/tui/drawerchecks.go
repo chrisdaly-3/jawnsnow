@@ -54,8 +54,9 @@ func checkRows(c drawerCtx) []status.CheckRow {
 }
 
 // laneLines rolls the checks up by group, the way they counted towards the
-// PR's lane: `✗ 1 failed · ◌ 1 ignored · ✓ 44 passed`. It wraps between
-// groups rather than cut one off.
+// PR's lane: `✗ 1 failed · ◌ 1 ignored · ✓ 44 passed`. When that doesn't
+// fit on one line, the groups go two to a line in aligned columns, so no
+// line breaks at an odd place; when two don't fit, one to a line.
 func laneLines(rows []status.CheckRow, th theme.Theme, inner int) []string {
 	if len(rows) == 0 {
 		return []string{th.Muted().Render("No checks")}
@@ -72,23 +73,31 @@ func laneLines(rows []status.CheckRow, th theme.Theme, inner int) []string {
 			parts = append(parts, groupGlyph(th, cg.group)+" "+strconv.Itoa(n)+" "+cg.summary)
 		}
 	}
-	sep := th.Muted().Render(" · ")
-	var lines []string
-	cur := ""
-	for _, p := range parts {
-		switch {
-		case cur == "":
-			cur = p
-		case ansi.StringWidth(cur+sep+p) <= inner:
-			cur += sep + p
-		default:
-			lines = append(lines, cur)
-			cur = p
-		}
+	if one := strings.Join(parts, th.Muted().Render(" · ")); ansi.StringWidth(one) <= inner {
+		return []string{one}
 	}
-	lines = append(lines, cur)
-	for i, l := range lines {
-		lines[i] = ansi.Truncate(l, inner, "…")
+	const gap = "   "
+	left := 0
+	for i := 0; i < len(parts); i += 2 {
+		left = max(left, ansi.StringWidth(parts[i]))
+	}
+	right := 0
+	for i := 1; i < len(parts); i += 2 {
+		right = max(right, ansi.StringWidth(parts[i]))
+	}
+	var lines []string
+	if left+len(gap)+right <= inner {
+		for i := 0; i < len(parts); i += 2 {
+			l := parts[i]
+			if i+1 < len(parts) {
+				l += strings.Repeat(" ", left-ansi.StringWidth(parts[i])) + gap + parts[i+1]
+			}
+			lines = append(lines, l)
+		}
+		return lines
+	}
+	for _, p := range parts {
+		lines = append(lines, ansi.Truncate(p, inner, "…"))
 	}
 	return lines
 }

@@ -54,12 +54,17 @@ func TestLaneLineEdgeCases(t *testing.T) {
 	if got := line(mixedChecks(), []string{"codeowners-gate*"}, 200); got != want {
 		t.Errorf("one of each:\n got %q\nwant %q", got, want)
 	}
-	wrapped := "✗ 1 failed · ⏸ 1 waiting on you · ● 1 running\n◌ 1 ignored · ✓ 2 passed"
-	if got := line(mixedChecks(), []string{"codeowners-gate*"}, 50); got != wrapped {
-		t.Errorf("wraps between groups:\n got %q\nwant %q", got, wrapped)
+	// Too wide for one line: two groups to a line, the second column
+	// lined up.
+	columns := "✗ 1 failed    ⏸ 1 waiting on you\n● 1 running   ◌ 1 ignored\n✓ 2 passed"
+	if got := line(mixedChecks(), []string{"codeowners-gate*"}, 50); got != columns {
+		t.Errorf("two columns:\n got %q\nwant %q", got, columns)
 	}
-	if got := line(mixedChecks(), []string{"codeowners-gate*"}, 12); !strings.Contains(got, "⏸ 1 waiting…") {
-		t.Errorf("a group wider than the drawer is cut with …: %q", got)
+	// Too narrow for two columns: one group to a line, cut with … when one
+	// is wider than the drawer.
+	single := "✗ 1 failed\n⏸ 1 waiting…\n● 1 running\n◌ 1 ignored\n✓ 2 passed"
+	if got := line(mixedChecks(), []string{"codeowners-gate*"}, 12); got != single {
+		t.Errorf("one column:\n got %q\nwant %q", got, single)
 	}
 }
 
