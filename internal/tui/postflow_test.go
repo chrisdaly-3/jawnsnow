@@ -1190,7 +1190,10 @@ func TestGitHubSnapshotReplacesPostedReview(t *testing.T) {
 	s := h.client.snaps["1"]
 	s.UpdatedAt = s.UpdatedAt.Add(time.Minute)
 	s.ReviewDecision = "APPROVED"
-	s.Reviews = []github.Review{{Author: "me", State: "APPROVED", CommitOID: "head-1", SubmittedAt: h.clock.now.Add(time.Second)}}
+	s.Reviews = []github.Review{
+		{Author: "me", State: "APPROVED", CommitOID: "head-1", SubmittedAt: h.clock.now.Add(time.Second)},
+		{Author: "carol", State: "APPROVED", CommitOID: "head-1", SubmittedAt: h.clock.now.Add(2 * time.Second)},
+	}
 	h.client.snaps["1"] = s
 	h.press(t, "R")
 	got := h.m.prs["1"]

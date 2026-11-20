@@ -7,7 +7,8 @@ import (
 )
 
 type loginNode struct {
-	Login string `json:"login"`
+	Typename string `json:"__typename"` // asked for only where a bot matters
+	Login    string `json:"login"`
 }
 
 // A deleted user ("ghost") arrives as a null author.
@@ -70,7 +71,7 @@ type reviewsPage struct {
 func (p reviewsPage) reviews() []Review {
 	var out []Review
 	for _, r := range p.Nodes {
-		rev := Review{Author: login(r.Author), State: r.State, Body: r.Body, SubmittedAt: r.SubmittedAt}
+		rev := Review{Author: login(r.Author), Bot: r.Author != nil && r.Author.Typename == "Bot", State: r.State, Body: r.Body, SubmittedAt: r.SubmittedAt}
 		if r.Commit != nil {
 			rev.CommitOID = r.Commit.OID
 		}

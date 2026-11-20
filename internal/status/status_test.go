@@ -27,6 +27,41 @@ func rev(state, body, oid string, at int) github.Review {
 	return github.Review{Author: viewer, State: state, Body: body, CommitOID: oid, SubmittedAt: t0.Add(time.Duration(at) * time.Minute)}
 }
 
+// other is a review by someone other than the viewer, at minute at.
+func other(author, state string, at int) github.Review {
+	return github.Review{Author: author, State: state, CommitOID: "B", SubmittedAt: t0.Add(time.Duration(at) * time.Minute)}
+}
+
+func TestApprovedByPeople(t *testing.T) {
+	bot := other("renovate", "APPROVED", 3)
+	bot.Bot = true
+	tests := []struct {
+		name     string
+		decision string
+		reviews  []github.Review
+		want     bool
+	}{
+		{"two people", "APPROVED", []github.Review{other("ann", "APPROVED", 1), other("ben", "APPROVED", 2)}, true},
+		{"no review rules", "", []github.Review{other("ann", "APPROVED", 1), other("ben", "APPROVED", 2)}, true},
+		{"GitHub wants a review of the last push", "REVIEW_REQUIRED", []github.Review{other("ann", "APPROVED", 1), other("ben", "APPROVED", 2)}, false},
+		{"GitHub sees changes requested", "CHANGES_REQUESTED", []github.Review{other("ann", "APPROVED", 1), other("ben", "APPROVED", 2)}, false},
+		{"one person twice", "APPROVED", []github.Review{other("ann", "APPROVED", 1), other("ann", "APPROVED", 2)}, false},
+		{"a bot doesn't count", "APPROVED", []github.Review{other("ann", "APPROVED", 1), bot}, false},
+		{"a deleted user doesn't count", "APPROVED", []github.Review{other("ann", "APPROVED", 1), other("", "APPROVED", 2)}, false},
+		{"an approval taken back", "APPROVED", []github.Review{other("ann", "APPROVED", 1), other("ben", "APPROVED", 2), other("ben", "CHANGES_REQUESTED", 3)}, false},
+		{"a comment after an approval keeps it", "APPROVED", []github.Review{other("ann", "APPROVED", 1), other("ben", "APPROVED", 2), other("ben", "COMMENTED", 3)}, true},
+		{"a dismissed approval", "APPROVED", []github.Review{other("ann", "APPROVED", 1), other("ben", "APPROVED", 2), other("ben", "DISMISSED", 3)}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pr := snap(func(s *github.Snapshot) { s.ReviewDecision, s.Reviews = tt.decision, tt.reviews })
+			if got := approvedByPeople(pr); got != tt.want {
+				t.Errorf("approvedByPeople = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestDerivePrecedence(t *testing.T) {
 	failing := []github.Check{{Name: "build", State: github.CheckFailure}}
 	pending := []github.Check{{Name: "build", State: github.CheckPending}}
@@ -40,7 +75,22 @@ func TestDerivePrecedence(t *testing.T) {
 	}{
 		{"merged beats everything", snap(func(s *github.Snapshot) { s.State = github.PRMerged; s.Checks = failing }), Merged, false},
 		{"closed", snap(func(s *github.Snapshot) { s.State = github.PRClosed; s.Checks = failing }), Closed, false},
-		{"approved overall beats CI failed", snap(func(s *github.Snapshot) { s.ReviewDecision = "APPROVED"; s.Checks = failing }), Approved, false},
+		{"approved by two people beats CI failed", snap(func(s *github.Snapshot) {
+			s.ReviewDecision, s.Checks = "APPROVED", failing
+			s.Reviews = []github.Review{other("ann", "APPROVED", 1), other("ben", "APPROVED", 2)}
+		}), Approved, false},
+		{"one other approval still needs you", snap(func(s *github.Snapshot) {
+			s.ReviewDecision, s.Checks = "APPROVED", green
+			s.Reviews = []github.Review{other("ann", "APPROVED", 1)}
+		}), ReadyForReview, false},
+		{"your approval and one other is two", snap(func(s *github.Snapshot) {
+			s.ReviewDecision = "APPROVED"
+			s.Reviews = []github.Review{rev("APPROVED", "", "B", 1), other("ann", "APPROVED", 2)}
+		}), Approved, false},
+		{"your approval alone, GitHub satisfied", snap(func(s *github.Snapshot) {
+			s.ReviewDecision = "APPROVED"
+			s.Reviews = []github.Review{rev("APPROVED", "", "B", 1)}
+		}), ApprovedByYou, false},
 		{"CI failed", snap(func(s *github.Snapshot) { s.Checks = failing }), CIFailed, false},
 		{"CI failed beats your review", snap(func(s *github.Snapshot) {
 			s.Checks = failing

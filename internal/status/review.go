@@ -27,6 +27,39 @@ func YourLatestReview(reviews []github.Review, viewer string) *github.Review {
 	return best
 }
 
+// approvedByPeople reports whether at least two people approved (A9). Each
+// reviewer counts once, by their latest approve, request-changes or
+// dismissed review, so an approval later taken back doesn't count. Bots
+// and deleted users don't count. GitHub's own decision must not disagree:
+// it is APPROVED, or empty on a repo with no review rules.
+func approvedByPeople(pr github.Snapshot) bool {
+	if pr.ReviewDecision != "APPROVED" && pr.ReviewDecision != "" {
+		return false
+	}
+	latest := map[string]*github.Review{}
+	for i := range pr.Reviews {
+		r := &pr.Reviews[i]
+		if r.Bot || r.Author == "" {
+			continue
+		}
+		switch r.State {
+		case "APPROVED", "CHANGES_REQUESTED", "DISMISSED":
+		default:
+			continue
+		}
+		if l := latest[r.Author]; l == nil || r.SubmittedAt.After(l.SubmittedAt) {
+			latest[r.Author] = r
+		}
+	}
+	n := 0
+	for _, r := range latest {
+		if r.State == "APPROVED" {
+			n++
+		}
+	}
+	return n >= 2
+}
+
 func counts(r *github.Review) bool {
 	switch r.State {
 	case "APPROVED", "CHANGES_REQUESTED", "DISMISSED":

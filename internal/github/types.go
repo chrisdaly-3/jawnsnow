@@ -39,6 +39,10 @@ type Check struct {
 type Review struct {
 	Author, State, Body, CommitOID string
 	SubmittedAt                    time.Time
+	// Bot is set when a GitHub App or other bot account wrote the review.
+	// Snapshots stored before snow asked are false until the PR is fetched
+	// again.
+	Bot bool `json:",omitempty"`
 	// NewThreads is how many of the review's comments start a thread rather
 	// than reply in one. Only the viewer's own reviews carry it; same ignores
 	// it so a review isn't seen as two when only one fetch asked for it.

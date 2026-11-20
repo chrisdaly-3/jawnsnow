@@ -56,7 +56,7 @@ func Derive(in Input) Result {
 		res.Status = Merged
 	case pr.State == github.PRClosed:
 		res.Status = Closed
-	case pr.ReviewDecision == "APPROVED":
+	case approvedByPeople(pr):
 		res.Status = Approved
 	case ci == CIFailedState:
 		res.Status = CIFailed

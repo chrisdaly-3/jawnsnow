@@ -125,6 +125,19 @@
     },
     {
      "author": {
+      "__typename": "Bot",
+      "login": "renovate"
+     },
+     "state": "APPROVED",
+     "body": "",
+     "submittedAt": "2026-11-17T11:00:00Z",
+     "commit": {
+      "oid": "c2"
+     }
+    },
+    {
+     "author": {
+      "__typename": "User",
       "login": "bob"
      },
      "state": "APPROVED",

@@ -35,9 +35,9 @@ const checkContextNodes = `pageInfo{hasNextPage endCursor} nodes{__typename ` +
 	`... on CheckRun{name status conclusion detailsUrl isRequired(pullRequestId: %[1]s)} ` +
 	`... on StatusContext{context state targetUrl isRequired(pullRequestId: %[1]s)}}`
 
-const reviewNodes = `nodes{author{login} state body submittedAt commit{oid}}`
+const reviewNodes = `nodes{author{__typename login} state body submittedAt commit{oid}}`
 
-const mineReviewNodes = `nodes{author{login} state body submittedAt commit{oid} comments(first:5){nodes{replyTo{id}}}}`
+const mineReviewNodes = `nodes{author{__typename login} state body submittedAt commit{oid} comments(first:5){nodes{replyTo{id}}}}`
 
 // Each alias inlines its own ID variable because isRequired takes the pull
 // request ID, which rules out a shared fragment. %[1]s is that variable.

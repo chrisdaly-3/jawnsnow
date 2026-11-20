@@ -118,11 +118,14 @@ func snapshots(now time.Time) []github.Snapshot {
 	add(pr{repo: "acme/web", number: 230, title: "Drop the legacy session cookie", author: "alice",
 		age: 26 * time.Hour, updated: 22 * time.Hour, add: 23, del: 117},
 		yours("CHANGES_REQUESTED", "Old sessions are logged out with no warning; see inline.", 22*time.Hour, atHead))
-	// Approved, by the required reviewers.
+	// Approved by two people.
 	add(pr{repo: "acme/infra", number: 95, title: "Pin the Terraform provider versions", author: "bob",
 		age: 28 * time.Hour, updated: 3 * time.Hour, add: 18, del: 18}, func(s *github.Snapshot) {
 		s.ReviewDecision = "APPROVED"
-		s.Reviews = []github.Review{{Author: "carol", State: "APPROVED", CommitOID: s.HeadOID, SubmittedAt: now.Add(-3 * time.Hour)}}
+		s.Reviews = []github.Review{
+			{Author: "carol", State: "APPROVED", CommitOID: s.HeadOID, SubmittedAt: now.Add(-4 * time.Hour)},
+			{Author: "dave", State: "APPROVED", CommitOID: s.HeadOID, SubmittedAt: now.Add(-3 * time.Hour)},
+		}
 	})
 	// Approved by you, still waiting on another reviewer.
 	add(pr{repo: "acme/api", number: 401, title: "Add request IDs to the structured logs", author: "alice",
