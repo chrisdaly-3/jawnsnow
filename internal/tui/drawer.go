@@ -48,6 +48,8 @@ type drawerCtx struct {
 	Tick    func(time.Duration, func(time.Time) tea.Msg) tea.Cmd
 	// Height is the room the drawer gets, for scrolling to a finding.
 	Height int
+	// IgnoreChecks is the current config's ignore globs for the PR's repo.
+	IgnoreChecks []string
 }
 
 // drawerModel is the right-hand drawer: one PR's reviews, one pass at a
@@ -66,7 +68,12 @@ type drawerModel struct {
 	loaded  bool
 	pass    int // index into reviews; 0 is the newest
 	sel     int // the selected finding, in orderedFindings order
-	scroll  int
+	scroll  int // the Review tab's scroll
+
+	tab         int  // tabReview or tabChecks
+	checkSel    int  // the selected check, in orderedChecks order
+	checkScroll int  // the Checks tab's scroll
+	showPassed  bool // the Checks tab lists passed checks
 
 	understanding, assumptions bool
 	flash                      string // a note for the bottom line, until the next key
@@ -111,7 +118,10 @@ func (m drawerModel) show(prID string, termW int) (drawerModel, tea.Cmd) {
 	if m.prID != prID {
 		m.reviews, m.posted, m.loaded, m.pass, m.sel, m.scroll = nil, nil, false, 0, 0, 0
 		m.understanding, m.assumptions = false, false
+		m.checkSel, m.checkScroll, m.showPassed = 0, 0, false
 	}
+	// Opening the drawer shows the review, whichever tab was last open.
+	m.tab = tabReview
 	m.wantReview = ""
 	m.open, m.prID, m.target = true, prID, drawerTarget(termW)
 	return m.startSlide()
@@ -230,6 +240,22 @@ func (m drawerModel) current() *store.Review {
 }
 
 func (m drawerModel) key(msg tea.KeyPressMsg, c drawerCtx) (drawerModel, tea.Cmd, action) {
+	switch msg.String() {
+	case "h", "left":
+		m.tab = max(m.tab-1, 0)
+		return m, nil, actionNone{}
+	case "l", "right":
+		m.tab = min(m.tab+1, len(tabNames)-1)
+		return m, nil, actionNone{}
+	}
+	if m.tab == tabChecks {
+		return m.checksKey(msg, c)
+	}
+	return m.reviewKey(msg, c)
+}
+
+// reviewKey handles a key on the Review tab.
+func (m drawerModel) reviewKey(msg tea.KeyPressMsg, c drawerCtx) (drawerModel, tea.Cmd, action) {
 	_, anchors := m.layout(c)
 	var fs []store.Finding
 	if r := m.current(); r != nil {
@@ -254,8 +280,6 @@ func (m drawerModel) key(msg tea.KeyPressMsg, c drawerCtx) (drawerModel, tea.Cmd
 		m.understanding = !m.understanding
 	case "a":
 		m.assumptions = !m.assumptions
-	case "o":
-		return m, nil, actionOpen{URL: c.PR.PR.URL}
 	case "O":
 		if len(fs) > 0 && m.sel < len(fs) {
 			return m, nil, actionOpen{URL: findingURL(c.PR.PR.URL, fs[m.sel])}
@@ -265,6 +289,18 @@ func (m drawerModel) key(msg tea.KeyPressMsg, c drawerCtx) (drawerModel, tea.Cmd
 			m.flash = "copied the finding"
 			return m, nil, actionCopy{Text: cleanBlock(fs[m.sel].Body)}
 		}
+	default:
+		return m.sharedKey(k, c)
+	}
+	m.scroll = min(max(m.scroll, 0), m.maxScroll(c))
+	return m, nil, actionNone{}
+}
+
+// sharedKey handles the keys that act on the PR in every tab.
+func (m drawerModel) sharedKey(k string, c drawerCtx) (drawerModel, tea.Cmd, action) {
+	switch k {
+	case "o":
+		return m, nil, actionOpen{URL: c.PR.PR.URL}
 	case "space":
 		return m, nil, actionReview{ID: m.prID}
 	case "c":
@@ -278,7 +314,6 @@ func (m drawerModel) key(msg tea.KeyPressMsg, c drawerCtx) (drawerModel, tea.Cmd
 			m.flash = "a failed review can't be posted"
 		}
 	}
-	m.scroll = min(max(m.scroll, 0), m.maxScroll(c))
 	return m, nil, actionNone{}
 }
 
@@ -410,11 +445,17 @@ func (m drawerModel) layout(c drawerCtx) (lines []string, anchors []int) {
 	add := func(ls ...string) { lines = append(lines, ls...) }
 	wrap := func(s string) []string { return strings.Split(ansi.Wrap(s, inner, ""), "\n") }
 
+	add(m.tabRow(th))
 	for _, l := range wrap(cleanLine(c.PR.PR.Title)) {
 		add(th.Accent().Bold(true).Render(l))
 	}
 	chip := th.ChipLine(string(c.PR.Status.Status))
 	add(ansi.Truncate(chip+th.Muted().Render("  "+cleanLine(c.PR.PR.Repo)+"#"+strconv.Itoa(c.PR.PR.Number)), inner, "…"))
+	add(laneLines(checkRows(c), th, inner)...)
+
+	if m.tab == tabChecks {
+		return m.checksLayout(c, lines, inner)
+	}
 
 	r := m.current()
 	switch {
@@ -573,7 +614,11 @@ func (m drawerModel) view(width, height int, c drawerCtx) string {
 	c.Height = height
 	lines, _ := m.layout(c)
 	bodyH := m.bodyHeight(height)
-	scroll := min(max(m.scroll, 0), max(len(lines)-bodyH, 0))
+	scroll := m.scroll
+	if m.tab == tabChecks {
+		scroll = m.checkScroll
+	}
+	scroll = min(max(scroll, 0), max(len(lines)-bodyH, 0))
 	lines = lines[min(scroll, len(lines)):]
 	lines = fit(strings.Join(lines, "\n"), 1<<20, bodyH)
 	lines = append(lines, m.bottomLine(c, innerWidth(m.layoutWidth(width))))
@@ -604,7 +649,11 @@ func (m drawerModel) bottomLine(c drawerCtx, inner int) string {
 	case m.flash != "":
 		return th.Accent().Render(m.flash)
 	}
-	return th.Muted().Render(ansi.Truncate("j/k scroll · n/N finding · </> pass · y copy · O open line · P post", inner, "…"))
+	hints := "j/k scroll · n/N finding · </> pass · y copy · O open line · P post"
+	if m.tab == tabChecks {
+		hints = "h/l tab · j/k scroll · n/N check · s passed · O open · y copy"
+	}
+	return th.Muted().Render(ansi.Truncate(hints, inner, "…"))
 }
 
 // dollars is an amount of money the way every view writes it.

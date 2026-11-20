@@ -526,6 +526,7 @@ func (m Model) drawerCtx() drawerCtx {
 	return drawerCtx{
 		PR: m.prs[id], Running: s.running, Ticker: s.ticker, Frame: m.spinFrame,
 		Focused: m.view == m.drawerView && m.focus == m.drawerPane(), Now: m.now(), Theme: m.theme, Tick: m.tick, Height: h,
+		IgnoreChecks: m.cfg.IgnoreChecksFor(m.prs[id].PR.Repo),
 	}
 }
 
