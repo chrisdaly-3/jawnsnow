@@ -219,7 +219,7 @@ The Checks tab lists every check at the PR's head, grouped by how it counted tow
 
 A check that branch protection requires is tagged `required`. Within a group, checks are listed as GitHub lists them. A PR with no checks says `No checks.` The tab reads the PR's stored data with the current config, so it needs no reviews, and a change to `ignore_checks` shows at once.
 
-`n` and `N` select a check, marked `▸`. `O` opens the check's own page, or the PR's checks page when snow has no link for it yet (a PR stored before snow fetched check links gets them at its next detail fetch). `y` copies the check's name.
+`n` and `N` select a check, marked `▸`, and `J` and `K` jump to the last or first one. `O` opens the check's own page, or the PR's checks page when snow has no link for it yet (a PR stored before snow fetched check links gets them at its next detail fetch). `y` copies the check's name.
 
 ## The Done view
 

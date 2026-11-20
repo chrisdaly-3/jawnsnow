@@ -61,6 +61,7 @@ These work when the drawer has focus. Opening it with `enter` focuses it, and `t
 | `esc` | close the drawer |
 | `h` `l` | Review or Checks tab |
 | `j` `k` | scroll |
+| `J` `K` | jump to the bottom or top |
 | `n` `N` | next or previous finding, or check |
 | `<` `>` | older or newer pass |
 | `u` `a` | show or hide understanding, assumptions |
@@ -74,6 +75,7 @@ These work when the drawer has focus. Opening it with `enter` focuses it, and `t
 More on these:
 
 - `h` and `l` (or `←` and `→`) move between the [Review and Checks tabs](views.md#the-drawer). Opening the drawer with `enter` always shows the Review tab. Each tab keeps its own scroll. `<`, `>`, `u` and `a` act on the Review tab, and `s` on the Checks tab; the other keys act on whichever tab is open.
+- `J` and `K` (`shift+j` and `shift+k`) jump the open tab to its bottom or top, with a short eased scroll. On the Checks tab they also select the last or first check. Pressing `J` or `K` again mid-jump turns it around; any other key stops it where it is.
 - `n` and `N` select a finding and scroll to it. Findings are listed blocking first, then those starting `nit:`, `non-blocking:` and `question:`, then the rest.
 - `<` moves to an older pass (review) of the PR and `>` to a newer one. The header shows `pass 2/3` when there is more than one.
 - `O` opens the PR's Files tab in the browser at the selected finding's file, and at its line when the finding is anchored.
