@@ -1,6 +1,8 @@
 # jawnSnow
 
-![jawnSnow logo](docs/assets/logo.png)
+<p align="center">
+  <img src="docs/assets/logo.png" alt="jawnSnow logo" width="256">
+</p>
 
 `snow` is a terminal UI that watches the GitHub PRs your team asks you to review, shows each PR's status, runs read-only Claude reviews, and lets you post a review you've read as your own after a preview.
 
