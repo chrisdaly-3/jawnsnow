@@ -53,6 +53,14 @@ Sleep 500ms
 Type "n"
 Sleep 1500ms
 
+# The Checks tab: how each check counted towards the PR's lane.
+Type "l"
+Sleep 1500ms
+Screenshot docs/assets/drawer-checks.png
+Sleep 500ms
+Type "h"
+Sleep 800ms
+
 # 4. Back on the Wall, review an unreviewed PR with the fake reviewer.
 Tab
 Sleep 500ms
