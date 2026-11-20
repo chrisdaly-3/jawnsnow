@@ -162,7 +162,14 @@ The drawer has two tabs, Review and Checks. `h` and `l` move between them, and `
 
 - The tab row: `Review   Checks`, with the open tab in the accent colour.
 - The PR's title, its status chip, and `owner/name#number`.
-- The lane line: the PR's checks counted by how they counted towards its lane, such as `✗ 1 failed · ⏸ 1 waiting on you · ◌ 1 ignored · ✓ 44 passed`. Only groups with checks are shown. When they don't fit on one line, they go two to a line in aligned columns, or one to a line when the drawer is too narrow for two:
+- The lane line: the PR's checks counted by how they counted towards its lane. Only groups with checks are shown, and the passed checks always have a row of their own:
+
+  ```
+  ✗ 1 failed · ⏸ 1 waiting on you · ◌ 1 ignored
+  ✓ 44 passed
+  ```
+
+  When the other groups don't fit on one row, they go two to a row in aligned columns, or one to a row when the drawer is too narrow for two:
 
   ```
   ✗ 1 failed    ⏸ 1 waiting on you
