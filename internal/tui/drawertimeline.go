@@ -180,8 +180,10 @@ func activityEntryLines(th theme.Theme, e status.ActivityEntry, selected bool, n
 				body = append(body, shortOID(cleanLine(cm.OID))+" "+cleanLine(cm.Text))
 			}
 		} else {
-			what = cleanLine(it.Text)
-			meta = append(meta, shortOID(cleanLine(it.OID)))
+			// The headline goes under the line, as a run's do, so a long
+			// one can't push the age off the edge.
+			what = "pushed " + shortOID(cleanLine(it.OID))
+			body = []string{cleanLine(it.Text)}
 		}
 	case github.ActivityForcePush:
 		what = "force-pushed " + shortOID(cleanLine(it.BeforeOID)) + " → " + shortOID(cleanLine(it.OID))
