@@ -160,7 +160,7 @@ Draft PRs are left out unless the feed sets `include_drafts = true`.
 
 The drawer has two tabs, Review and Checks. `h` and `l` move between them, and `enter` always opens the drawer on Review. Above either tab's content:
 
-- The tab row: `Review` and `Checks`, with the open tab filled in the accent colour. With `NO_COLOR` set, the open tab is in brackets: `[Review] Checks`.
+- The tab row: `Review` and `Checks`, with the open tab filled in slate, the colour of muted text. With `NO_COLOR` set, the open tab is in brackets: `[Review] Checks`.
 - The PR's title, its status chip, and `owner/name#number`.
 - The lane line: the PR's checks counted by how they counted towards its lane. Only groups with checks are shown, and the passed checks always have a row of their own:
 
