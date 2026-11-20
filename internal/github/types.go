@@ -20,6 +20,9 @@ const (
 	CheckFailure CheckState = "FAILURE"
 	CheckNeutral CheckState = "NEUTRAL"
 	CheckSkipped CheckState = "SKIPPED"
+	// CheckActionRequired is a check run held until a person acts through
+	// its details link, such as approving the PR's head.
+	CheckActionRequired CheckState = "ACTION_REQUIRED"
 )
 
 type Check struct {

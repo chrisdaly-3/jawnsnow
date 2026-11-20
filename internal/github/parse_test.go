@@ -71,7 +71,7 @@ func TestCheckStateMapping(t *testing.T) {
 		{"COMPLETED", "SUCCESS", CheckSuccess}, {"COMPLETED", "NEUTRAL", CheckNeutral},
 		{"COMPLETED", "SKIPPED", CheckSkipped}, {"COMPLETED", "FAILURE", CheckFailure},
 		{"COMPLETED", "CANCELLED", CheckFailure}, {"COMPLETED", "TIMED_OUT", CheckFailure},
-		{"COMPLETED", "ACTION_REQUIRED", CheckFailure}, {"COMPLETED", "STARTUP_FAILURE", CheckFailure},
+		{"COMPLETED", "ACTION_REQUIRED", CheckActionRequired}, {"COMPLETED", "STARTUP_FAILURE", CheckFailure},
 		{"COMPLETED", "STALE", CheckFailure},
 	} {
 		assertEq(t, checkRunState(c.status, c.concl), c.want)

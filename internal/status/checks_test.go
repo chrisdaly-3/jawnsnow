@@ -33,6 +33,16 @@ func TestEvalCIOptionalPendingCounts(t *testing.T) {
 	}
 }
 
+func TestEvalCIActionRequiredDoesNotCount(t *testing.T) {
+	held := github.Check{Name: "presubmit / tf-verify-sentinel-chainops", State: github.CheckActionRequired}
+	if got := EvalCI([]github.Check{held, {Name: "build", State: github.CheckSuccess}}, nil); got != CIGreen {
+		t.Errorf("held only: got %q, want green", got)
+	}
+	if got := EvalCI([]github.Check{held, {Name: "skillup", State: github.CheckFailure}}, nil); got != CIFailedState {
+		t.Errorf("held and failing: got %q, want failed", got)
+	}
+}
+
 func TestEvalCIOnlyIgnoredChecksIsGreen(t *testing.T) {
 	checks := []github.Check{
 		{Name: "codeowners-gate", State: github.CheckPending, Required: true},

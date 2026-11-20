@@ -269,6 +269,8 @@ func checkRunState(status, conclusion string) CheckState {
 		return CheckNeutral
 	case "SKIPPED":
 		return CheckSkipped
+	case "ACTION_REQUIRED":
+		return CheckActionRequired
 	}
 	return CheckFailure
 }

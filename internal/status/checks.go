@@ -17,13 +17,16 @@ const (
 )
 
 // EvalCI rolls checks up into one state. Checks whose name matches an ignore
-// glob are dropped. Every other check counts, required by branch protection
-// or not, because an optional check that fails still needs fixing before the
-// PR is worth a review. A PR with no checks, or only ignored ones, is green.
+// glob are dropped, and so are checks held for a person to act
+// (ACTION_REQUIRED): on mono that's a job waiting for a reviewer to approve
+// the head, so it mustn't keep the PR from the reviewer. Every other check
+// counts, required by branch protection or not, because an optional check
+// that fails still needs fixing before the PR is worth a review. A PR with
+// no checks, or only ignored ones, is green.
 func EvalCI(checks []github.Check, ignore []string) CI {
 	pending := false
 	for _, c := range checks {
-		if ignored(c.Name, ignore) {
+		if c.State == github.CheckActionRequired || ignored(c.Name, ignore) {
 			continue
 		}
 		switch c.State {
