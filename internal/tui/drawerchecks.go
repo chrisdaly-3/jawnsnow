@@ -127,7 +127,8 @@ func groupLines(parts []string, th theme.Theme, inner int) []string {
 	return lines
 }
 
-// tabRow names the drawer's tabs, the current one filled in charcoal.
+// tabRow names the drawer's tabs, the current one filled in lavender
+// grey.
 func (m drawerModel) tabRow(th theme.Theme) string {
 	parts := make([]string, len(tabNames))
 	for i, n := range tabNames {
