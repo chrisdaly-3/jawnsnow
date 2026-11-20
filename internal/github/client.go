@@ -39,6 +39,9 @@ type Client interface {
 	// ReviewContext fetches what a review reads besides the diff: the PR body,
 	// comments, review threads and up to 500 changed file paths.
 	ReviewContext(ctx context.Context, id string) (PRContext, RateLimit, error)
+	// Activity fetches the PR's last 50 commits, force-pushes, reviews and
+	// conversation comments, oldest first, for the drawer's Activity tab.
+	Activity(ctx context.Context, id string) ([]ActivityItem, RateLimit, error)
 }
 
 // Doer is the slice of go-gh's GraphQLClient the client uses.

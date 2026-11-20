@@ -1,0 +1,54 @@
+{
+ "node": {
+  "timelineItems": {
+   "nodes": [
+    {
+     "__typename": "PullRequestCommit",
+     "url": "https://github.com/acme/widgets/pull/7/commits/aaa111",
+     "commit": {"oid": "aaa111", "messageHeadline": "Add the retry budget", "committedDate": "2026-11-18T09:00:00Z",
+      "author": {"name": "Alice Example", "user": {"login": "alice"}}}
+    },
+    {
+     "__typename": "IssueComment",
+     "url": "https://github.com/acme/widgets/pull/7#issuecomment-1",
+     "createdAt": "2026-11-18T09:05:00Z",
+     "author": {"__typename": "Bot", "login": "ci-helper"},
+     "bodyText": "Preview deployed.\nDetails inside."
+    },
+    {
+     "__typename": "PullRequestReview",
+     "url": "https://github.com/acme/widgets/pull/7#pullrequestreview-2",
+     "state": "CHANGES_REQUESTED",
+     "submittedAt": "2026-11-18T10:00:00Z",
+     "author": {"__typename": "User", "login": "me"},
+     "bodyText": "Two problems, see inline.",
+     "comments": {"totalCount": 3}
+    },
+    {
+     "__typename": "HeadRefForcePushedEvent",
+     "createdAt": "2026-11-18T11:00:00Z",
+     "actor": {"__typename": "User", "login": "alice"},
+     "beforeCommit": {"oid": "aaa111"},
+     "afterCommit": {"oid": "bbb222"}
+    },
+    {
+     "__typename": "PullRequestCommit",
+     "url": "https://github.com/acme/widgets/pull/7/commits/ccc333",
+     "commit": {"oid": "ccc333", "messageHeadline": "Bump the linter", "committedDate": "2026-11-18T11:30:00Z",
+      "author": {"name": "renovate[bot]", "user": null}}
+    },
+    {
+     "__typename": "IssueComment",
+     "url": "https://github.com/acme/widgets/pull/7#issuecomment-3",
+     "createdAt": "2026-11-18T12:00:00Z",
+     "author": null,
+     "bodyText": "from a deleted account"
+    },
+    {
+     "__typename": "SomethingNew"
+    }
+   ]
+  }
+ },
+ "rateLimit": {"remaining": 4999, "cost": 1, "resetAt": "2026-11-18T13:00:00Z"}
+}

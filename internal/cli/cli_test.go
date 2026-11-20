@@ -320,6 +320,10 @@ func (fakeClient) ReviewContext(context.Context, string) (github.PRContext, gith
 	return github.PRContext{}, github.RateLimit{}, nil
 }
 
+func (fakeClient) Activity(context.Context, string) ([]github.ActivityItem, github.RateLimit, error) {
+	return nil, github.RateLimit{}, nil
+}
+
 // fakeClaude puts a claude on PATH that answers detection and nothing else.
 func fakeClaude(t *testing.T, loggedIn bool) {
 	t.Helper()

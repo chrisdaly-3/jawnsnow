@@ -464,3 +464,7 @@ func TestFetchSucceedsWhenALookupReachesAPR(t *testing.T) {
 func (f *fakeClient) ReviewContext(context.Context, string) (github.PRContext, github.RateLimit, error) {
 	return github.PRContext{}, github.RateLimit{}, nil
 }
+
+func (f *fakeClient) Activity(context.Context, string) ([]github.ActivityItem, github.RateLimit, error) {
+	return nil, github.RateLimit{}, nil
+}
