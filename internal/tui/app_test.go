@@ -1413,3 +1413,25 @@ func TestUnauthorizedPollResultSetsLoginWarning(t *testing.T) {
 		t.Errorf("loginWarning = %q after a good poll, want it cleared", h.m.loginWarning)
 	}
 }
+
+func TestTopLineFillsTheCurrentView(t *testing.T) {
+	h := newHarness(t, opts{})
+	th := h.m.theme
+	want := func(cur View) string {
+		var b strings.Builder
+		for v := range viewCount {
+			b.WriteString(th.Tab(v.String(), v == cur))
+		}
+		return th.Muted().Render("‹") + b.String() + th.Muted().Render("›")
+	}
+	if got := h.m.tabs(); got != want(ViewWall) {
+		t.Errorf("tabs on the Wall = %q, want Wall filled: %q", got, want(ViewWall))
+	}
+	h.m, _ = update(t, h.m, key("]"))
+	if got := h.m.tabs(); got != want(h.m.view) || h.m.view == ViewWall {
+		t.Errorf("tabs after ] = %q, want %v filled", got, h.m.view)
+	}
+	if got := ansi.Strip(h.m.tabs()); got != "‹ Wall  Done  Reviews  Cost  Agent ›" {
+		t.Errorf("tabs text = %q, want the same spacing as before the fill", got)
+	}
+}

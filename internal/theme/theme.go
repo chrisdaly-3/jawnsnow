@@ -65,10 +65,9 @@ var defaults = map[string]defaultStyle{
 const (
 	defaultAccent = "153"
 	defaultMuted  = "67"
-	// tabFill is the open tab's fill: lavender grey, light enough for black
-	// text to read well and greyer than the accent and the status colours.
-	// It isn't configurable.
-	tabFill = 146
+	// tabFill is the open tab's fill: charcoal, which reads as a raised tab
+	// and has no hue to be taken for a status. It isn't configurable.
+	tabFill = 238
 )
 
 var spinners = map[string]spinner.Spinner{
@@ -245,9 +244,9 @@ func (t Theme) Banner(index int, text string) string {
 }
 
 // Tab is one tab in a row of tabs, padded by a space each side. The
-// current tab is filled in lavender grey, in the black or white that reads
-// on it, so it stands out from the muted others without looking like a
-// status chip; with NO_COLOR it is in brackets instead. Every tab is the label's width plus two, so a row
+// current tab is filled in charcoal, in the black or white that reads on
+// it, so it stands out from the muted others without looking like a status
+// chip; with NO_COLOR it is in brackets instead. Every tab is the label's width plus two, so a row
 // doesn't shift as the current tab moves.
 func (t Theme) Tab(label string, current bool) string {
 	if t.noColor {

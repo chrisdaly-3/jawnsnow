@@ -55,17 +55,15 @@ func (m Model) ghRemaining() string {
 	return "GH " + strconv.Itoa(r)
 }
 
+// tabs names the views, the current one filled like the drawer's open tab.
+// Each tab's padding spaces them, so the row reads ‹ Wall  Done … ›.
 func (m Model) tabs() string {
 	th := m.theme
 	parts := make([]string, viewCount)
 	for v := range viewCount {
-		if v == m.view {
-			parts[v] = th.Accent().Render(v.String())
-		} else {
-			parts[v] = th.Muted().Render(v.String())
-		}
+		parts[v] = th.Tab(v.String(), v == m.view)
 	}
-	return th.Muted().Render("‹ ") + strings.Join(parts, "  ") + th.Muted().Render(" ›")
+	return th.Muted().Render("‹") + strings.Join(parts, "") + th.Muted().Render("›")
 }
 
 // bannerLines are the notes under the top line: startup banners, config
