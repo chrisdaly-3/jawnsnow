@@ -293,6 +293,12 @@ func (m Model) updateCost(msg tea.Msg) (_ Model, _ tea.Cmd, ok bool) {
 	case costLabelsMsg:
 		m.cost = m.cost.withLabels(msg.Labels)
 		return m, nil, true
+	case costStateLoadedMsg:
+		m, cmd := m.restoreCostState(msg)
+		return m, cmd, true
+	case costStateSavedMsg:
+		m, cmd := m.costStateSaved(msg)
+		return m, cmd, true
 	case tea.PasteMsg:
 		if m.view == ViewCost && m.cost.typing {
 			m.cost.input, _ = m.cost.input.Update(msg)

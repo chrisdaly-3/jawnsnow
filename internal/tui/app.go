@@ -223,6 +223,11 @@ type Model struct {
 	deleted map[string]bool
 	// quitting is set when q waits for the running save to land.
 	quitting bool
+	// The Cost view's saved state (A8): costRestored is set once the saved
+	// state arrives or the view changes first, and its saves run one at a
+	// time like the PRs'.
+	costRestored, costSaving bool
+	costPending              []byte
 
 	configBanner string
 	// loginWarning is the startup warning, or one set when GitHub rejects
@@ -282,7 +287,7 @@ func (m Model) Init() tea.Cmd {
 		prs, err := st.LoadTracked(context.Background())
 		return loadedMsg{prs: prs, err: err}
 	}
-	return tea.Batch(load, m.clockTick(), m.reviewTicks(), m.listenReloads())
+	return tea.Batch(load, m.loadCostState(), m.clockTick(), m.reviewTicks(), m.listenReloads())
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -505,7 +510,7 @@ func (m Model) updateView(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	case ViewAgent:
 		return m.agentKey(msg)
 	case ViewCost:
-		return m.costKey(msg)
+		return m.costKeySaved(msg)
 	}
 	return m, nil
 }
@@ -956,6 +961,7 @@ func (m Model) quit() (Model, tea.Cmd) {
 		_ = write(ctx) // the screen is going away; there is nowhere to show an error
 		cancel()
 	}
+	m.flushCostState(finalSaveTimeout)
 	return m, tea.Quit
 }
 

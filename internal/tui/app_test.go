@@ -364,9 +364,12 @@ func newHarness(t *testing.T, o opts, prs ...tracker.Tracked) *harness {
 	msgs, _ := runCmd(t, m.Init())
 	var loaded []tea.Msg
 	for _, msg := range msgs {
-		if _, ok := msg.(loadedMsg); ok {
+		switch msg.(type) {
+		case loadedMsg:
 			loaded = append(loaded, msg)
-		} else {
+		case costStateLoadedMsg:
+			m, _ = update(t, m, msg) // the Cost view's saved state, as at startup
+		default:
 			h.initMsgs = append(h.initMsgs, msg)
 		}
 	}

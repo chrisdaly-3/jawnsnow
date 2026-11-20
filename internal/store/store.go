@@ -62,6 +62,11 @@ var migrations = []string{
 	CREATE INDEX posted_reviews_review_id ON posted_reviews (review_id)`,
 	// Each review's cost runs, counted on every review read.
 	`CREATE INDEX cost_ledger_review_id ON cost_ledger (review_id)`,
+	// What a view remembers across restarts, by view.
+	`CREATE TABLE view_state (
+		key TEXT PRIMARY KEY,
+		data TEXT
+	)`,
 }
 
 type Store struct {
