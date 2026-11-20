@@ -89,6 +89,21 @@ Sleep 600ms
 Escape
 Sleep 800ms
 
+# The Activity tab on a PR you reviewed: what happened since your review,
+# with the bots folded. Back on the Wall, down three cards to acme/api#398.
+Tab
+Sleep 500ms
+Type "jjj"
+Sleep 800ms
+Enter
+Sleep 1500ms
+Type "ll"
+Sleep 1500ms
+Screenshot docs/assets/drawer-activity.png
+Sleep 500ms
+Escape
+Sleep 800ms
+
 # 6. The Cost view: group by model, move the cursor.
 Type "4"
 Sleep 2s
