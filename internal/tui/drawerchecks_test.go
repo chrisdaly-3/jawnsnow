@@ -91,6 +91,9 @@ func TestDrawerTabSwitch(t *testing.T) {
 	if d.tab != tabReview {
 		t.Errorf("h on the first tab: tab %d, want it to stay on Review", d.tab)
 	}
+	if row, want := d.tabRow(c.Theme), c.Theme.Tab("Review", true)+" "+c.Theme.Tab("Checks", false); row != want {
+		t.Errorf("tab row on Review = %q, want Review filled: %q", row, want)
+	}
 	d, _, _ = d.update(key("l"), c)
 	d, _, _ = d.update(key("l"), c)
 	if d.tab != tabChecks {

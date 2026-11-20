@@ -2,6 +2,7 @@ package theme
 
 import (
 	"image/color"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -225,6 +226,26 @@ func TestBannerFillsWithTheIndexAndContrastingText(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	if got := mustNew(t, config.ThemeConfig{}).Banner(203, "X"); got != " X " {
 		t.Errorf("NO_COLOR Banner = %q, want plain text", got)
+	}
+}
+
+func TestTabFillsTheCurrentOne(t *testing.T) {
+	th := mustNew(t, config.ThemeConfig{})
+	cur, other := th.Tab("Review", true), th.Tab("Review", false)
+	fg := "38;5;" + strconv.Itoa(ContrastFG(153))
+	if !strings.Contains(cur, "48;5;153") || !strings.Contains(cur, fg) {
+		t.Errorf("current Tab = %q, want %s text on accent 153", cur, fg)
+	}
+	if strings.Contains(other, "48;5;") || !strings.Contains(other, "38;5;67") {
+		t.Errorf("other Tab = %q, want muted 67 text and no background", other)
+	}
+	if a, b := ansi.Strip(cur), ansi.Strip(other); a != " Review " || b != " Review " {
+		t.Errorf("Tab text = %q and %q, want both %q", a, b, " Review ")
+	}
+	t.Setenv("NO_COLOR", "1")
+	plain := mustNew(t, config.ThemeConfig{})
+	if a, b := plain.Tab("Review", true), plain.Tab("Review", false); a != "[Review]" || b != " Review " {
+		t.Errorf("NO_COLOR Tab = %q and %q, want the current one in brackets", a, b)
 	}
 }
 

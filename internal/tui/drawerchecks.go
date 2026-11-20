@@ -127,17 +127,14 @@ func groupLines(parts []string, th theme.Theme, inner int) []string {
 	return lines
 }
 
-// tabRow names the drawer's tabs, the current one in the accent colour.
+// tabRow names the drawer's tabs, the current one filled in the accent
+// colour.
 func (m drawerModel) tabRow(th theme.Theme) string {
 	parts := make([]string, len(tabNames))
 	for i, n := range tabNames {
-		if i == m.tab {
-			parts[i] = th.Accent().Bold(true).Render(n)
-		} else {
-			parts[i] = th.Muted().Render(n)
-		}
+		parts[i] = th.Tab(n, i == m.tab)
 	}
-	return strings.Join(parts, "   ")
+	return strings.Join(parts, " ")
 }
 
 // orderedChecks is the Checks tab's rows in the order it lists them: by

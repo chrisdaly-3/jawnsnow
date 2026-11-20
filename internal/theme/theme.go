@@ -28,6 +28,7 @@ type statusDef struct {
 type Theme struct {
 	statuses    map[string]statusDef
 	accentColor color.Color
+	accentFg    color.Color // black or white, whichever reads on accentColor
 	mutedColor  color.Color
 	noColor     bool
 	markdown    string
@@ -124,7 +125,7 @@ func New(cfg config.ThemeConfig) (Theme, error) {
 		muted = cfg.Chrome.Muted
 	}
 	var err error
-	if t.accentColor, _, err = parseColor(accent); err != nil {
+	if t.accentColor, t.accentFg, err = parseColor(accent); err != nil {
 		return Theme{}, fmt.Errorf("theme.chrome.accent: %w", err)
 	}
 	if t.mutedColor, _, err = parseColor(muted); err != nil {
@@ -238,6 +239,25 @@ func (t Theme) Banner(index int, text string) string {
 	return lipgloss.NewStyle().Bold(true).
 		Foreground(lipgloss.Color(strconv.Itoa(ContrastFG(index)))).
 		Background(lipgloss.Color(strconv.Itoa(index))).Render(text)
+}
+
+// Tab is one tab in a row of tabs, padded by a space each side. The
+// current tab is filled with the accent colour, in the black or white that
+// reads on it, so it stands out from the muted others; with NO_COLOR it is
+// in brackets instead. Every tab is the label's width plus two, so a row
+// doesn't shift as the current tab moves.
+func (t Theme) Tab(label string, current bool) string {
+	if t.noColor {
+		if current {
+			return "[" + label + "]"
+		}
+		return " " + label + " "
+	}
+	text := " " + label + " "
+	if current {
+		return lipgloss.NewStyle().Bold(true).Foreground(t.accentFg).Background(t.accentColor).Render(text)
+	}
+	return t.Muted().Render(text)
 }
 
 // NoColor reports whether NO_COLOR asked for plain text.
