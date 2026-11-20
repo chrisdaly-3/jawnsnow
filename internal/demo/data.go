@@ -7,6 +7,8 @@ package demo
 import (
 	"crypto/sha1"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/chrisdaly-3/jawnsnow/internal/github"
@@ -164,4 +166,47 @@ func contextFor(id string) github.PRContext {
 		return c
 	}
 	return github.PRContext{Body: "A demo pull request.", Files: []string{"README.md"}}
+}
+
+// activityFor is a demo PR's timeline, oldest first, dated relative to
+// now. acme/api#398 has your review in it, so the Activity tab shows the
+// divider with a bot on each side; the rest have none or a short one.
+func activityFor(id string, now time.Time) []github.ActivityItem {
+	ago := func(d time.Duration) time.Time { return now.Add(-d) }
+	url := func(repo string, n int, frag string) string {
+		return "https://github.com/" + repo + "/pull/" + strconv.Itoa(n) + frag
+	}
+	commit := func(repo string, n int, author, oid, headline string, at time.Duration) github.ActivityItem {
+		return github.ActivityItem{Kind: github.ActivityCommit, Author: author, At: ago(at), OID: oid, Text: headline,
+			URL: url(repo, n, "/commits/"+oid), Bot: strings.HasSuffix(author, "[bot]")}
+	}
+	comment := func(repo string, n int, author string, bot bool, body string, at time.Duration, frag string) github.ActivityItem {
+		return github.ActivityItem{Kind: github.ActivityComment, Author: author, Bot: bot, At: ago(at), Text: body,
+			URL: url(repo, n, "#issuecomment-"+frag)}
+	}
+	switch id {
+	case prID("acme/api", 398):
+		const r, n = "acme/api", 398
+		return []github.ActivityItem{
+			commit(r, n, "carol", "a1c3e5f", "Stream the audit log export a page at a time", 21*time.Hour),
+			comment(r, n, "preview-bot", true, "Preview environment ready.\nIt is torn down when the PR closes.", 20*time.Hour+50*time.Minute, "1"),
+			{Kind: github.ActivityReview, Author: Viewer, At: ago(20 * time.Hour), State: "COMMENTED", InlineComments: 2,
+				Text: "The cursor needs a tiebreak; details inline.", URL: url(r, n, "#pullrequestreview-2")},
+			commit(r, n, "carol", "b2d4f60", "Break cursor ties by row ID", 2*time.Hour),
+			commit(r, n, "carol", "c3e5071", "Test the tiebreak with duplicate timestamps", 115*time.Minute),
+			comment(r, n, "dave", false, "The tiebreak reads right to me.\nCan we also cap the page size? A 50k-row page will time out.", time.Hour, "3"),
+			comment(r, n, "coverage-bot", true, "Coverage 84.2% (+0.6%) on internal/audit.", 50*time.Minute, "4"),
+			commit(r, n, "carol", "d4f6182", "Cap the export page size at 500 rows", 35*time.Minute),
+			comment(r, n, "carol", false, "Capped at 500 in d4f6182.", 30*time.Minute, "5"),
+		}
+	case prID("acme/api", 405):
+		const r, n = "acme/api", 405
+		return []github.ActivityItem{
+			commit(r, n, "bob", "e5071a2", "Verify the signature before decoding", 3*time.Hour),
+			commit(r, n, "bob", "f6182b3", "Reject deliveries with no signature header", 170*time.Minute),
+			comment(r, n, "preview-bot", true, "Preview environment ready.", 160*time.Minute, "6"),
+			comment(r, n, "alice", false, "Does this also cover the retry path?", 2*time.Hour, "7"),
+		}
+	}
+	return nil
 }

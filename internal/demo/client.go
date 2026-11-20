@@ -73,3 +73,7 @@ func (c *Client) Details(_ context.Context, _ string, ids []string) ([]github.Sn
 func (c *Client) ReviewContext(_ context.Context, id string) (github.PRContext, github.RateLimit, error) {
 	return contextFor(id), c.rateLimit(), nil
 }
+
+func (c *Client) Activity(_ context.Context, id string) ([]github.ActivityItem, github.RateLimit, error) {
+	return activityFor(id, c.now), c.rateLimit(), nil
+}
