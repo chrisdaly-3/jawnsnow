@@ -1,2 +1,5 @@
 # Local agent workspaces (build ledgers, review packages); never committed.
 .superpowers/
+
+# Maintainer-only agent context; points at the design and plans kept outside the repo.
+AGENTS.local.md
