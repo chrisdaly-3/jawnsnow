@@ -1,6 +1,6 @@
 # Views
 
-snow has five views: the Wall, Done, Reviews, Cost and Agent. The top line shows them as tabs, `‹ Wall  Done  Reviews  Cost  Agent ›`, with the current one in the accent colour. `[` and `]` cycle through them and `1` to `5` jump to one. The drawer opens beside the Wall, the Done view or the Reviews view. [keys.md](keys.md) lists every key.
+snow has five views: the Wall, Done, Reviews, Cost and Agent. The top line shows them as tabs, `‹ Wall  Done  Reviews  Cost  Agent ›`, with the current one filled in charcoal, like the drawer's open tab. With `NO_COLOR` set, the current one is in brackets. `[` and `]` cycle through them and `1` to `5` jump to one. The drawer opens beside the Wall, the Done view or the Reviews view. [keys.md](keys.md) lists every key.
 
 ## The status bar and banners
 
@@ -160,7 +160,7 @@ Draft PRs are left out unless the feed sets `include_drafts = true`.
 
 The drawer has two tabs, Review and Checks. `h` and `l` move between them, and `enter` always opens the drawer on Review. Above either tab's content:
 
-- The tab row: `Review` and `Checks`, with the open tab filled in lavender grey. With `NO_COLOR` set, the open tab is in brackets: `[Review] Checks`.
+- The tab row: `Review` and `Checks`, with the open tab filled in charcoal. With `NO_COLOR` set, the open tab is in brackets: `[Review] Checks`.
 - The PR's title, its status chip, and `owner/name#number`.
 - The lane line: the PR's checks counted by how they counted towards its lane. Only groups with checks are shown, and the passed checks always have a row of their own:
 
