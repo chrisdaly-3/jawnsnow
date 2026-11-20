@@ -10,6 +10,14 @@ import (
 	"github.com/chrisdaly-3/jawnsnow/internal/tracker"
 )
 
+// Config is the demo's config: the defaults, ignoring the code-owner gate as
+// the docs suggest.
+func Config() config.Config {
+	cfg := config.Defaults()
+	cfg.GitHub.IgnoreChecks = []string{"codeowners-gate*"}
+	return cfg
+}
+
 // Seed writes the demo's PRs, as a poll at now would have tracked them,
 // the reviews of some of them, and a month of reviews before that with
 // their cost rows.
@@ -17,9 +25,9 @@ func Seed(ctx context.Context, st *store.Store, now time.Time) error {
 	snaps := snapshots(now)
 	found := map[string][]string{}
 	for _, s := range snaps {
-		found[s.ID] = []string{config.Defaults().Feeds[0].Name}
+		found[s.ID] = []string{Config().Feeds[0].Name}
 	}
-	prs, _ := tracker.Apply(nil, tracker.PollInput{Found: found, Snapshots: snaps, Viewer: Viewer, Now: now}, config.Defaults())
+	prs, _ := tracker.Apply(nil, tracker.PollInput{Found: found, Snapshots: snaps, Viewer: Viewer, Now: now}, Config())
 	var ts []tracker.Tracked
 	for _, s := range snaps {
 		t := prs[s.ID]

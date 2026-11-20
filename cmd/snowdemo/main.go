@@ -16,7 +16,6 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/chrisdaly-3/jawnsnow/internal/config"
 	"github.com/chrisdaly-3/jawnsnow/internal/demo"
 	"github.com/chrisdaly-3/jawnsnow/internal/review"
 	"github.com/chrisdaly-3/jawnsnow/internal/store"
@@ -44,7 +43,7 @@ func run() error {
 		}
 	}
 
-	cfg := config.Defaults()
+	cfg := demo.Config()
 	th, err := theme.New(cfg.Theme)
 	if err != nil {
 		return err

@@ -92,12 +92,20 @@ func snapshots(now time.Time) []github.Snapshot {
 	// CI failed.
 	add(pr{repo: "acme/infra", number: 97, title: "Raise the worker Postgres connection pool", author: "carol",
 		age: 50 * time.Minute, updated: 40 * time.Minute, add: 12, del: 4}, func(s *github.Snapshot) {
-		s.Checks = append(green("build", "lint"), github.Check{Name: "terraform-plan", State: github.CheckFailure, Required: true})
+		// An optional check: it fails the PR all the same.
+		s.Checks = append(green("build", "lint"), github.Check{Name: "terraform-plan", State: github.CheckFailure})
 		s.RollupState = "FAILURE"
 	})
-	// Ready for you.
+	// Ready for you. The code-owner gate waits on a review and the demo
+	// config ignores it; the deploy preview waits for a reviewer to approve.
+	// Neither keeps the PR out of the lane.
 	add(pr{repo: "acme/api", number: 405, title: "Verify webhook signatures before parsing the body", author: "bob",
-		age: 3 * time.Hour, updated: 2 * time.Hour, add: 142, del: 58, labels: []string{"security"}}, nil)
+		age: 3 * time.Hour, updated: 2 * time.Hour, add: 142, del: 58, labels: []string{"security"}}, func(s *github.Snapshot) {
+		s.Checks = append(green("build", "lint", "test"),
+			github.Check{Name: "codeowners-gate", State: github.CheckPending, Required: true},
+			github.Check{Name: "deploy-preview", State: github.CheckActionRequired})
+		s.RollupState = "PENDING"
+	})
 	add(pr{repo: "acme/web", number: 241, title: "Fix the date picker in Safari", author: "carol",
 		age: 90 * time.Minute, updated: 80 * time.Minute, add: 38, del: 11}, nil)
 	add(pr{repo: "acme/infra", number: 101, title: "Move the staging DNS records to Terraform", author: "alice",
