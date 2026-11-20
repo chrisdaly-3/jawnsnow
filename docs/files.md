@@ -36,6 +36,7 @@ jawnsnow/
 | `findings` | each review's findings: path, lines, category, blocking, body, unanchored, ledger state, and the GitHub thread ID once posted |
 | `cost_ledger` | one row per `claude` run, for the Cost view and the daily budget |
 | `posted_reviews` | each review you posted: GitHub review ID and URL, event, commit, the findings included, and when |
+| `view_state` | what a view remembers across restarts: the Cost view's filter bar |
 | `worktree_slots` | each worktree slot: repo, path, the PR and commit it last held, whether it is in use, and when it was last used |
 | `schema_version` | the schema version, for upgrades |
 

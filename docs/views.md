@@ -289,6 +289,8 @@ Filters  range 30d · group none · bucket day · per bucket · filter any
 - `per bucket` or `running total`, toggled with `t`.
 - Filter: `any`, or the chosen values such as `model=claude-opus-5-5 tier=first_pass`. Several values in one dimension match any of them; values in different dimensions must all match. `f` opens the picker.
 
+snow remembers the filter bar across restarts. A preset range is remembered by name, so `30d` reopens on the last 30 days from today; a custom range keeps its dates. A chosen value with no spend in the range stays chosen. The chart cursor and the selected top PR aren't remembered.
+
 Below that:
 
 - The chart, titled `Spend per day` or `Running total by day`. The cursor marks one bucket; `h` and `l` move it. It starts on the newest bucket and goes back there when the number of buckets changes.

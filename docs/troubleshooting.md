@@ -167,7 +167,7 @@ A common refusal is an inline comment on a line that is no longer in the PR's di
 | `that PR is no longer tracked` | the review's PR has left tracking; the review is still in the Reviews and Cost views |
 | `could not open the browser: <error>` | snow opens links the way `gh` does: `$GH_BROWSER`, then `gh`'s `browser` setting, then `$BROWSER`, then the system default |
 | `could not run the editor: <error>` | set `$VISUAL` or `$EDITOR` to a command on your `PATH` |
-| `could not save PRs: <error>`, `could not read reviews: <error>` | a database read or write failed; check disk space and the data directory |
+| `could not save PRs: <error>`, `could not read reviews: <error>`, `could not save the Cost view's filters: <error>` | a database read or write failed; check disk space and the data directory |
 | `could not clean up after a review: <error>`, `could not prune idle worktrees: <error>` | a git cleanup step failed; the startup sweep removes leftover worktrees and refs, and the idle prune (every 10 minutes) removes idle slots, but a leftover directory under `reviews/` stays until you delete it, which is [safe](files.md#what-is-safe-to-delete) |
 | `worktree cleanup: <error>` | the startup sweep failed for a repo, often a `repos.<name>.path` that isn't a repository |
 | `config reload is off: <error>` | edits to the config need a restart |
