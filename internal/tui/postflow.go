@@ -108,8 +108,8 @@ type postFlow struct {
 	box               textarea.Model
 	inBox, enterPosts bool
 	cursor            int // the checklist row, in orderedFindings order
-	scroll  int
-	raw     bool
+	scroll            int
+	raw               bool
 	// inFlight is set from the confirming enter until the post's result
 	// arrives; every key but ctrl+c is ignored meanwhile, so a second
 	// enter sends nothing. editing is the same for the editor. quitArmed
