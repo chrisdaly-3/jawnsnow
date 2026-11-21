@@ -69,7 +69,7 @@ These work when the drawer has focus. Opening it with `enter` focuses it, and `t
 | `b` | show or hide bot entries |
 | `o` | open the PR |
 | `O` | open the finding's line, the check or the entry |
-| `y` `Y` | copy the finding, check or entry, or the check notes |
+| `y` | copy the finding, the check's name or the entry |
 | `space` `c` | review again, or pick a model |
 | `P` | post this review to GitHub, after a preview |
 
