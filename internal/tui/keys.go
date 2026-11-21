@@ -56,7 +56,6 @@ var keyMap = []keySection{
 		{"J K", "jump to the bottom or top"},
 		{"n N", "next or previous finding, check or entry"},
 		{"< >", "older or newer pass"},
-		{"u a", "show or hide understanding, assumptions"},
 		{"s", "show or hide passed checks"},
 		{"b", "show or hide bot entries"},
 		{"o", "open the PR"},
