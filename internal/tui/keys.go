@@ -56,8 +56,6 @@ var keyMap = []keySection{
 		{"J K", "jump to the bottom or top"},
 		{"n N", "next or previous finding, check or entry"},
 		{"< >", "older or newer pass"},
-		{"s", "show or hide passed checks"},
-		{"b", "show or hide bot entries"},
 		{"o", "open the PR"},
 		{"O", "open the finding's line, the check or the entry"},
 		{"y", "copy the finding, the check's name or the entry"},
