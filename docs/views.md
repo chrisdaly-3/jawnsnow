@@ -201,7 +201,7 @@ The Review tab, top to bottom:
 9. `▸ Assumptions ● Press a to show`: each assumption the change relies on, with the evidence the reviewer cited under it, or `None.` Collapsed until you press `a`.
 10. `Check notes ● Press Y to copy`: one line per note from the reviewer and from snow's checks. `Y` copies them all. See [check notes](reviews.md#check-notes).
 
-The bottom line shows the running review's latest tool call (`reading internal/foo/bar.go`, `searching internal`, `listing …`), a short message after a key (`copied the finding`), or the key hints: `j/k scroll · n/N finding · </> pass · y copy · O open line · P post` on the Review tab, `h/l tab · j/k scroll · n/N check · s passed · O open · y copy` on the Checks tab, `h/l tab · j/k scroll · n/N item · b bots · O open · y copy` on the Activity tab.
+The bottom line shows the running review's latest tool call (`reading internal/foo/bar.go`, `searching internal`, `listing …`), a short message after a key (`copied the finding`), or the key hints: `j/k scroll · n/N finding · </> pass · y copy · O open line · P post` on the Review tab, `h/l tab · j/k scroll · n/N check · O open · y copy` on the Checks tab, `h/l tab · j/k scroll · n/N item · O open · y copy` on the Activity tab.
 
 Before reviews load it says `Loading reviews…`; a PR with none says `No reviews yet. Press space to review.` The drawer follows the newest pass while you are on it, so a review you just started appears when it finishes. On an older pass it stays on that pass. When the drawer's PR stops being tracked, the drawer closes.
 
