@@ -106,9 +106,7 @@ func TestPoolConcurrentAcquireAndFetch(t *testing.T) {
 	paths := make([]string, 2)
 	errs := make([]error, 2)
 	for i, n := range []int{7, 8} {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			head, _, err := r.FetchPR(ctx, n, "main")
 			if err != nil {
 				errs[i] = err
@@ -116,7 +114,7 @@ func TestPoolConcurrentAcquireAndFetch(t *testing.T) {
 			}
 			path, _, err := p.Acquire(ctx, n, head)
 			paths[i], errs[i] = path, err
-		}()
+		})
 	}
 	wg.Wait()
 	for _, err := range errs {
@@ -215,7 +213,7 @@ func TestPoolDoesNotRunPRHooks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for i := 0; i < 2; i++ { // add, then checkout on reuse
+	for range 2 { // add, then checkout on reuse
 		_, release, err := p.Acquire(ctx, 9, head)
 		if err != nil {
 			t.Fatal(err)

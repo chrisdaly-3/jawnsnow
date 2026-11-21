@@ -368,7 +368,7 @@ func TestWallSortsNewestHeadFirst(t *testing.T) {
 
 func TestWallLaneHeaderCountsAndSpinner(t *testing.T) {
 	out := ansi.Strip(renderWall(t, testWall(160, 30), 160, 30, wallPRs()))
-	first := strings.Split(out, "\n")[0]
+	first, _, _ := strings.Cut(out, "\n")
 	for _, want := range []string{"CI ⣾ 2", "Ready for you 2", "New changes ⣾ 2", "Waiting on author 1", "Approved 1"} {
 		if !strings.Contains(first, want) {
 			t.Errorf("header line missing %q: %q", want, first)
@@ -529,7 +529,7 @@ func TestCardAgeUsesHeadCommitTime(t *testing.T) {
 func TestOutlinedChipIsOneLineOnACard(t *testing.T) {
 	out := ansi.Strip(renderWall(t, testWall(90, 12), 90, 12, wallPRs()[7:]))
 	var chip string
-	for _, l := range strings.Split(out, "\n") {
+	for l := range strings.SplitSeq(out, "\n") {
 		if strings.Contains(l, "Approved by you") {
 			chip = l
 		}
@@ -585,7 +585,7 @@ func TestWallScrollsOverDraftedCards(t *testing.T) {
 			id := strconv.Itoa(want)
 			out := ansi.Strip(renderWall(t, w, size[0], size[1], prs))
 			var marked []string
-			for _, l := range strings.Split(out, "\n") {
+			for l := range strings.SplitSeq(out, "\n") {
 				if strings.Contains(l, "▌") {
 					marked = append(marked, l)
 				}

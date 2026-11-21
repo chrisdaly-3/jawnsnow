@@ -218,7 +218,7 @@ func activityEntryLines(th theme.Theme, e status.ActivityEntry, selected bool, n
 // excerpt is a body's first non-blank lines, each cleaned to one line.
 func excerpt(text string) []string {
 	var out []string
-	for _, l := range strings.Split(text, "\n") {
+	for l := range strings.SplitSeq(text, "\n") {
 		if l = cleanLine(l); l != "" {
 			out = append(out, l)
 			if len(out) == activityBodyLines {

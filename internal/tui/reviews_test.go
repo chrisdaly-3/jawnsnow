@@ -705,7 +705,7 @@ func TestStatusBarShowsTodaysSpend(t *testing.T) {
 				}
 			}
 			h.finishPoll(t)
-			top := strings.SplitN(content(h.m), "\n", 2)[0]
+			top, _, _ := strings.Cut(content(h.m), "\n")
 			if !strings.Contains(top, tt.spend) {
 				t.Errorf("top line missing %q:\n%s", tt.spend, top)
 			}

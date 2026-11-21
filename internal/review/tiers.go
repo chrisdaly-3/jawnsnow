@@ -3,6 +3,7 @@ package review
 
 import (
 	"path"
+	"slices"
 	"strings"
 
 	"github.com/chrisdaly-3/jawnsnow/internal/config"
@@ -140,12 +141,7 @@ func authorMatch(pattern, login string) bool {
 }
 
 func contains(list []string, s string) bool {
-	for _, v := range list {
-		if v == s {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(list, s)
 }
 
 func anyPathMatches(globs, files []string) bool {

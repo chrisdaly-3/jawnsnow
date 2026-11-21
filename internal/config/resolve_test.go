@@ -1,5 +1,7 @@
 package config
 
+import "slices"
+
 import "testing"
 
 func TestResolve(t *testing.T) {
@@ -27,12 +29,7 @@ func TestResolve(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			exists := func(p string) bool {
-				for _, f := range tt.files {
-					if f == p {
-						return true
-					}
-				}
-				return false
+				return slices.Contains(tt.files, p)
 			}
 			path, found, skipped := Resolve(func(k string) string { return tt.env[k] }, exists)
 			if path != tt.wantPath || found != tt.wantFound || skipped != tt.wantSkip {

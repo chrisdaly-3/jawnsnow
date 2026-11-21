@@ -83,7 +83,7 @@ func (m Model) postFrame(width, height int) (top, body []string, cursorRow, rows
 	rows = max(height-2, 1)
 	wrap := func(s string, style lipgloss.Style) []string {
 		var out []string
-		for _, l := range strings.Split(ansi.Wrap(s, inner, ""), "\n") {
+		for l := range strings.SplitSeq(ansi.Wrap(s, inner, ""), "\n") {
 			out = append(out, style.Render(l))
 		}
 		return out
@@ -157,16 +157,17 @@ func (m Model) postFrame(width, height int) (top, body []string, cursorRow, rows
 		if included(p.sel, f.ID) {
 			box = "[x] "
 		}
-		row := mark + box + findingLocation(f)
+		var row strings.Builder
+		row.WriteString(mark + box + findingLocation(f))
 		for _, l := range ledgerLabels[:3] {
 			if f.Ledger == l.ledger {
-				row += th.Muted().Render("  [" + l.label + "]")
+				row.WriteString(th.Muted().Render("  [" + l.label + "]"))
 			}
 		}
 		if f.ThreadID != "" {
-			row += th.Muted().Render("  [posted]")
+			row.WriteString(th.Muted().Render("  [posted]"))
 		}
-		body = append(body, ansi.Truncate(row, inner, "…"))
+		body = append(body, ansi.Truncate(row.String(), inner, "…"))
 	}
 	if len(fs) > 0 {
 		body = append(body, "")

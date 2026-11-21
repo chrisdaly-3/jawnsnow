@@ -220,8 +220,8 @@ func TestRenderClampsOutOfPaletteColors(t *testing.T) {
 			t.Errorf("Color %d: want fallback 244 in %q", c, out)
 		}
 		for _, m := range sgr.FindAllStringSubmatch(out, -1) {
-			if strings.HasPrefix(m[1], "38;5;") {
-				n, _ := strconv.Atoi(strings.TrimPrefix(m[1], "38;5;"))
+			if after, ok := strings.CutPrefix(m[1], "38;5;"); ok {
+				n, _ := strconv.Atoi(after)
 				if n < 16 || n > 255 {
 					t.Errorf("Color %d: emitted %q", c, m[0])
 				}

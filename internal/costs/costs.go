@@ -3,6 +3,7 @@
 package costs
 
 import (
+	"slices"
 	"sort"
 	"time"
 
@@ -102,12 +103,7 @@ func contains(set []string, v string) bool {
 	if len(set) == 0 {
 		return true
 	}
-	for _, s := range set {
-		if s == v {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(set, v)
 }
 
 func keep(r store.CostRow, f store.CostFilter) bool {

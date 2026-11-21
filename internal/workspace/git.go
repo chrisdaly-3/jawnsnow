@@ -185,7 +185,7 @@ func (r Repo) RemoteFor(ctx context.Context) (string, error) {
 		return "", err
 	}
 	var match []string
-	for _, remote := range strings.Fields(string(out)) {
+	for remote := range strings.FieldsSeq(string(out)) {
 		u, err := Git(ctx, r.dir(), "remote", "get-url", remote)
 		if err != nil {
 			continue
@@ -223,8 +223,8 @@ func sameRepo(url, name string) bool {
 // urlHost returns the host of an scp-style or scheme URL, or "" for a
 // local path.
 func urlHost(u string) string {
-	if i := strings.Index(u, "://"); i >= 0 {
-		host := u[i+3:]
+	if _, after, ok := strings.Cut(u, "://"); ok {
+		host := after
 		if j := strings.IndexByte(host, '/'); j >= 0 {
 			host = host[:j]
 		}

@@ -268,7 +268,7 @@ func cleanPathWord(w string) string {
 // worktree or absolute. URLs and prose give none.
 func evidencePaths(evidence, worktree string) []string {
 	var out []string
-	for _, w := range strings.Fields(evidence) {
+	for w := range strings.FieldsSeq(evidence) {
 		if strings.Contains(w, "://") {
 			continue
 		}

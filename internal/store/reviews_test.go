@@ -23,7 +23,7 @@ func sampleReview(id, prID string, started time.Time, n int) Review {
 		Outcome:     "complete", CostUSD: 1.25,
 		StartedAt: started, EndedAt: started.Add(time.Minute),
 	}
-	for i := 0; i < n; i++ {
+	for i := range n {
 		r.Findings = append(r.Findings, Finding{
 			Path: "a.go", Line: 10 + i, StartLine: 5, Category: "bug", Blocking: i == 0,
 			Body: "body", Unanchored: i == 2, Ledger: "new", ThreadID: "",

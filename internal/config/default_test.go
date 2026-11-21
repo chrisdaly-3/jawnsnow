@@ -13,14 +13,14 @@ import (
 // compares equal to an unset field.
 func normalize(v reflect.Value) {
 	switch v.Kind() {
-	case reflect.Ptr:
+	case reflect.Pointer:
 		if !v.IsNil() {
 			normalize(v.Elem())
 		}
 	case reflect.Struct:
-		for i := 0; i < v.NumField(); i++ {
-			if v.Field(i).CanSet() {
-				normalize(v.Field(i))
+		for _, field := range v.Fields() {
+			if field.CanSet() {
+				normalize(field)
 			}
 		}
 	case reflect.Slice:
@@ -63,24 +63,24 @@ func TestDefaultTOMLMatchesDefaults(t *testing.T) {
 	}
 }
 
-var durationType = reflect.TypeOf(Duration{})
+var durationType = reflect.TypeFor[Duration]()
 
 // collectTags gathers every toml tag reachable from t, recursing into
 // structs, slice elements and map values.
 func collectTags(t reflect.Type, out map[string]bool) {
-	for t.Kind() == reflect.Ptr || t.Kind() == reflect.Slice || t.Kind() == reflect.Map {
+	for t.Kind() == reflect.Pointer || t.Kind() == reflect.Slice || t.Kind() == reflect.Map {
 		t = t.Elem()
 	}
 	if t.Kind() != reflect.Struct || t == durationType {
 		return
 	}
-	for i := 0; i < t.NumField(); i++ {
-		tag := t.Field(i).Tag.Get("toml")
+	for field := range t.Fields() {
+		tag := field.Tag.Get("toml")
 		if tag == "" {
 			continue
 		}
 		out[tag] = true
-		collectTags(t.Field(i).Type, out)
+		collectTags(field.Type, out)
 	}
 }
 
@@ -88,7 +88,7 @@ func collectTags(t reflect.Type, out map[string]bool) {
 // assignment or in a comment).
 func TestDefaultTOMLNamesEveryKey(t *testing.T) {
 	tags := map[string]bool{}
-	collectTags(reflect.TypeOf(Config{}), tags)
+	collectTags(reflect.TypeFor[Config](), tags)
 	if len(tags) < 30 {
 		t.Fatalf("collected only %d tags; reflection walk is broken", len(tags))
 	}

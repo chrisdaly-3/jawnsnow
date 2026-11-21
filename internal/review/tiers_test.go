@@ -8,8 +8,6 @@ import (
 	"github.com/chrisdaly-3/jawnsnow/internal/status"
 )
 
-func f64(v float64) *float64 { return &v }
-
 func TestResolveTier(t *testing.T) {
 	cfg := config.Defaults().Review
 	tests := []struct {
@@ -117,11 +115,11 @@ func TestResolveOverrideBudgetOnlyWhenSet(t *testing.T) {
 	if got := Resolve(cfg, ResolveInput{}); got.PerReviewUSD != 15 {
 		t.Fatalf("PerReviewUSD = %v, want 15", got.PerReviewUSD)
 	}
-	cfg.Overrides = []config.Override{{Tier: "any", PerReviewUSD: f64(2)}}
+	cfg.Overrides = []config.Override{{Tier: "any", PerReviewUSD: new(float64(2))}}
 	if got := Resolve(cfg, ResolveInput{}); got.PerReviewUSD != 2 {
 		t.Fatalf("PerReviewUSD = %v, want 2", got.PerReviewUSD)
 	}
-	cfg.Overrides = []config.Override{{Tier: "any", PerReviewUSD: f64(0)}}
+	cfg.Overrides = []config.Override{{Tier: "any", PerReviewUSD: new(float64(0))}}
 	if got := Resolve(cfg, ResolveInput{}); got.PerReviewUSD != 0 {
 		t.Fatalf("explicit 0 budget = %v, want 0", got.PerReviewUSD)
 	}

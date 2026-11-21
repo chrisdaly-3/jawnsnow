@@ -824,8 +824,7 @@ func (m Model) finishPoll(res poll.Result) (Model, tea.Cmd) {
 		m.lastErr = nil
 	case res.Err != nil:
 		m.lastErr = res.Err
-		var nothing *poll.NothingReachedError
-		if errors.As(res.Err, &nothing) {
+		if nothing, ok := errors.AsType[*poll.NothingReachedError](res.Err); ok {
 			m.failNote = "poll failed: " + nothing.Error()
 		}
 	default:

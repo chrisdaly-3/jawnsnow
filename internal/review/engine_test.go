@@ -821,12 +821,10 @@ func TestEnginePoolOnePerRepo(t *testing.T) {
 	pools := make([]any, 8)
 	errs := make([]error, 8)
 	for i := range pools {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			p, err := env.e.Pool(context.Background(), "o/n")
 			pools[i], errs[i] = p, err
-		}()
+		})
 	}
 	wg.Wait()
 	for i := range pools {

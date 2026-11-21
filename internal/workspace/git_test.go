@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -200,7 +201,7 @@ func TestGitErrorCarriesStderr(t *testing.T) {
 func userRefs(t *testing.T, dir string) string {
 	t.Helper()
 	var keep []string
-	for _, l := range strings.Split(git(t, dir, "for-each-ref"), "\n") {
+	for l := range strings.SplitSeq(git(t, dir, "for-each-ref"), "\n") {
 		if !strings.Contains(l, "\trefs/jawnsnow/") {
 			keep = append(keep, l)
 		}
@@ -210,12 +211,7 @@ func userRefs(t *testing.T, dir string) string {
 
 func TestBuildEnv(t *testing.T) {
 	has := func(env []string, kv string) bool {
-		for _, e := range env {
-			if e == kv {
-				return true
-			}
-		}
-		return false
+		return slices.Contains(env, kv)
 	}
 	const batch = "GIT_SSH_COMMAND=ssh -o BatchMode=yes"
 	env := buildEnv([]string{"A=1"}, false)

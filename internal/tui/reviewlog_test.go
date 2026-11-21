@@ -222,7 +222,7 @@ func TestReviewLogNarrowDropsColumns(t *testing.T) {
 		h := logHarness(t, w, 20, true)
 		h.press(t, "3")
 		got := stripped(h.m)
-		for _, l := range strings.Split(got, "\n") {
+		for l := range strings.SplitSeq(got, "\n") {
 			if ansi.StringWidth(l) > w {
 				t.Errorf("width %d: line %q is %d wide", w, l, ansi.StringWidth(l))
 			}
@@ -313,9 +313,9 @@ func TestReviewLogCostCell(t *testing.T) {
 	}
 	h.press(t, "3")
 	cells := map[string]string{}
-	for _, l := range strings.Split(ansi.Strip(content(h.m)), "\n") {
+	for l := range strings.SplitSeq(ansi.Strip(content(h.m)), "\n") {
 		for _, want := range []string{"$1.50+?", "$0.40", "$12.50", "?"} {
-			for _, f := range strings.Fields(l) {
+			for f := range strings.FieldsSeq(l) {
 				if f == want {
 					cells[want] = l
 				}

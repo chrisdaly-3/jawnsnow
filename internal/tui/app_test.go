@@ -1133,7 +1133,7 @@ func TestStatusBar(t *testing.T) {
 	h.finishPoll(t)
 	h.clock.now = t0.Add(40 * time.Second)
 	h.m, _ = settle(t, h.m, clockMsg(h.clock.now))
-	top := strings.SplitN(content(h.m), "\n", 2)[0]
+	top, _, _ := strings.Cut(content(h.m), "\n")
 	for _, want := range []string{"❄ jawnSnow", "◉ watcher", "polled 40s ago", "$0.00 / $250 today", "GH 4.6k", "Wall", "Done", "Reviews", "Cost", "Agent"} {
 		if !strings.Contains(top, want) {
 			t.Errorf("top line missing %q:\n%s", want, top)
@@ -1202,7 +1202,7 @@ func TestHelpListsEveryKey(t *testing.T) {
 			h.m.help = true
 			// The overlay's rows only: the footer repeats words like "hide".
 			rows := map[string]bool{}
-			for _, l := range strings.Split(ansi.Strip(content(h.m)), "\n") {
+			for l := range strings.SplitSeq(ansi.Strip(content(h.m)), "\n") {
 				if !strings.Contains(l, "│") {
 					continue
 				}

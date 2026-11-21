@@ -321,7 +321,7 @@ func TestDoneShowsReviewCost(t *testing.T) {
 			t.Errorf("Done view lacks %q:\n%s", want, out)
 		}
 	}
-	for _, line := range strings.Split(out, "\n") {
+	for line := range strings.SplitSeq(out, "\n") {
 		if strings.Contains(line, "never reviewed") && strings.Contains(line, "review") && strings.Contains(line, "$") {
 			t.Errorf("a PR with no reviews shows a cost: %q", line)
 		}

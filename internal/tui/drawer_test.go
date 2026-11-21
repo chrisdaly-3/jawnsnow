@@ -310,7 +310,7 @@ func TestDrawerCheckNotesKeepTheirLines(t *testing.T) {
 	r.Note = "the reviewer's note\nnot done: read pkg/a.go\nwording: say which test"
 	d, c := openDrawer(t, 160, 80, r)
 	var lines []string
-	for _, l := range strings.Split(ansi.Strip(d.view(d.width(), 80, c)), "\n") {
+	for l := range strings.SplitSeq(ansi.Strip(d.view(d.width(), 80, c)), "\n") {
 		lines = append(lines, strings.Trim(l, " │"))
 	}
 	for _, want := range []string{"the reviewer's note", "not done: read pkg/a.go", "wording: say which test"} {

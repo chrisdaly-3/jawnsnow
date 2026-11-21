@@ -14,8 +14,7 @@ import (
 // limiting: a GraphQL RATE_LIMITED error, an HTTP 429, or an HTTP 403 that
 // is a primary or secondary rate limit rather than a permission problem.
 func IsRateLimited(err error) bool {
-	var gqlErr *api.GraphQLError
-	if errors.As(err, &gqlErr) {
+	if gqlErr, ok := errors.AsType[*api.GraphQLError](err); ok {
 		for _, e := range gqlErr.Errors {
 			if e.Type == "RATE_LIMITED" {
 				return true

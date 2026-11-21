@@ -159,7 +159,7 @@ func Render(lines []Line, o Options) []string {
 	}
 
 	midRow := (plotRows - 1) / 2
-	for y := 0; y < plotRows; y++ {
+	for y := range plotRows {
 		var lab string
 		switch {
 		case y == 0:

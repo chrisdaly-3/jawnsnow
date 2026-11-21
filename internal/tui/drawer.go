@@ -575,7 +575,7 @@ func (m drawerModel) layout(c drawerCtx) (lines []string, spans []itemSpan) {
 				out = append(out, map[bool]string{true: "• ", false: "  "}[i == 0]+l)
 			}
 			if ev := cleanLine(a.Evidence); ev != "" {
-				for _, l := range strings.Split(ansi.Wrap(ev, max(inner-4, 1), ""), "\n") {
+				for l := range strings.SplitSeq(ansi.Wrap(ev, max(inner-4, 1), ""), "\n") {
 					out = append(out, th.Muted().Render("  "+l))
 				}
 			}
@@ -600,7 +600,7 @@ func (m drawerModel) layout(c drawerCtx) (lines []string, spans []itemSpan) {
 // them, with only the spacing inside each tidied. Y copies these lines.
 func checkNotes(note string) []string {
 	var out []string
-	for _, n := range strings.Split(cleanBlock(note), "\n") {
+	for n := range strings.SplitSeq(cleanBlock(note), "\n") {
 		if n = strings.Join(strings.Fields(n), " "); n != "" {
 			out = append(out, n)
 		}

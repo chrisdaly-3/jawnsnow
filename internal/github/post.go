@@ -80,8 +80,7 @@ func (e *RefusedError) Unwrap() error { return e.Err }
 // input was refused before anything was sent. Any other error, a timeout
 // or a 5xx among them, may have come after GitHub took the review.
 func IsRefused(err error) bool {
-	var r *RefusedError
-	if errors.As(err, &r) {
+	if _, ok := errors.AsType[*RefusedError](err); ok {
 		return true
 	}
 	var h *api.HTTPError
