@@ -28,10 +28,10 @@ go test ./internal/tui ./internal/chart -update
 | `cmd/snowdemo` | the demo: snow's interface over fake data, for recording |
 | `internal/cli` | the command line, and startup: config, store, `gh` and `claude` checks, the data directory lock, the startup worktree sweep, shutdown |
 | `internal/config` | the config types, `default.toml`, loading, validation, durations, and the file watcher |
-| `internal/github` | the read-only GraphQL client (feeds, fingerprints, PR detail, review context), rate-limit errors, and the poster, which holds the one mutation |
+| `internal/github` | the read-only GraphQL client (feeds, fingerprints, PR detail, review context, the PR timeline), rate-limit errors, and the poster, which holds the one mutation |
 | `internal/poll` | one poll round, and pacing polls against the rate limit |
 | `internal/tracker` | where each tracked PR lives (Wall, waiting or done) and when it stops being tracked |
-| `internal/status` | a PR's status, and the CI roll-up |
+| `internal/status` | a PR's status, the CI roll-up, and the Activity tab's grouping of the timeline around your latest review |
 | `internal/schedule` | auto mode's decision whether to review a PR now, and the failure backoff |
 | `internal/review` | the review engine: tier and override resolution, the prompt, the `claude` runner, output parsing, coverage checks and finding checks |
 | `internal/review/prompt` | the reviewer prompt, the scope texts and the output schema, adapted from Dispatch |
@@ -64,7 +64,7 @@ The README's GIF and the screenshots in `docs/assets/` are recorded from it with
 vhs docs/demo/demo.tape
 ```
 
-Run it from the repo root. The tape builds `cmd/snowdemo` to `/tmp/snowdemo`, waits for the Wall, and then types keys, so it depends on the demo's card order (it moves with `j`, `j`, `l`, `k` to reach a reviewed PR) and on `enter` focusing the drawer it opens, so drawer keys such as `n` and `P` follow it directly, with `tab` going back to the Wall. If you change the demo data or those keys, check the recording. After the post preview it goes back to the Wall and down three cards (`j`, `j`, `j`) to acme/api#398, the demo PR with a review of yours, for the Activity tab. It writes `docs/assets/demo.gif`, `wall.png`, `drawer.png`, `drawer-checks.png`, `post-preview.png`, `drawer-activity.png` and `cost.png`.
+Run it from the repo root. The tape builds `cmd/snowdemo` to `/tmp/snowdemo`, starts it, pauses a second for the Wall, and then types keys with fixed pauses between them, so it depends on the demo's card order (it moves with `j`, `j`, `l`, `k` to reach a reviewed PR) and on `enter` focusing the drawer it opens, so drawer keys such as `n` and `P` follow it directly, with `tab` going back to the Wall. It also depends on the demo review (1.5 seconds, `internal/demo/reviewer.go`) finishing before it presses `P`; if `P` comes too soon it opens nothing, and the steps after it go wrong too. If you change the demo data, those keys or the tape's pauses, check the recording. After the post preview it goes back to the Wall and down three cards (`j`, `j`, `j`) to acme/api#398, the demo PR with a review of yours, for the Activity tab. It writes `docs/assets/demo.gif`, `wall.png`, `drawer.png`, `drawer-checks.png`, `post-preview.png`, `drawer-activity.png` and `cost.png`.
 
 ## Credits
 

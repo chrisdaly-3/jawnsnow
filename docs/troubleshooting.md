@@ -13,7 +13,7 @@ snow prints the error and exits with status 1.
 | `snow: theme.status.<STATUS>.color "<value>": indexes 0–15 are remapped by terminal themes; use 16–255` | A colour snow can't use. Use `16` to `255` or `#rrggbb`. |
 | `snow: database schema vN is newer than this snow (vM); upgrade snow` | The database was written by a newer snow. Install the newer one. |
 | `snow: create data directory: <error>` | The data directory can't be created. Check `$XDG_DATA_HOME` or `$HOME/.local/share`. |
-| `snow: unknown command "<x>"` | snow takes `config default`, `version` and `help`, or nothing. Exit status 2. |
+| `snow: unknown command "<x>"` | snow takes `config default`, `config path`, `version` and `help`, or nothing. Exit status 2. |
 
 ## No gh login
 
@@ -42,7 +42,7 @@ The token expired or was revoked. Log in again with `gh auth login`. Polls go on
 | Reason | Fix |
 | --- | --- |
 | `claude not found on PATH` | Install the Claude Code CLI and make sure `claude` is on the `PATH` snow runs with. |
-| `claude is not working: claude --version: <error>` or `claude auth status: <error>` | snow ran `claude --version` and `claude auth status` at startup and one failed or took over 5 seconds. Run them yourself to see why. |
+| `claude is not working: claude --version: <error>` or `claude auth status: <error>` | snow ran `claude --version` and `claude auth status` at startup and one failed, or the two together took over 5 seconds. Run them yourself to see why. |
 | `claude is not working: claude auth status: unreadable output: <error>` | `claude auth status` didn't print JSON. Update the CLI. |
 | `claude is not logged in — run "claude auth login"` | Log in, then restart snow. |
 | `reviews need a gh login — run "gh auth login"` | See [No gh login](#no-gh-login). |
@@ -145,6 +145,7 @@ On a claude.ai subscription login every cost is the CLI's estimate of the API pr
 | Shows | Do |
 | --- | --- |
 | `posting unavailable: gh is not logged in` | run `gh auth login` and restart |
+| `posting unavailable: could not set up posting: <error>` | snow couldn't build its GitHub poster at startup; check `gh auth status` and restart |
 | `posting unavailable: another snow is running on this machine — post from that window` | post from the snow that holds the lock |
 | `a failed review can't be posted` | run a new review |
 | `Request changes needs a summary — press e to write one` | press `e` and write a summary |
@@ -171,8 +172,8 @@ A common refusal is an inline comment on a line that is no longer in the PR's di
 | `could not clean up after a review: <error>`, `could not prune idle worktrees: <error>` | a git cleanup step failed; the startup sweep removes leftover worktrees and refs, and the idle prune (every 10 minutes) removes idle slots, but a leftover directory under `reviews/` stays until you delete it, which is [safe](files.md#what-is-safe-to-delete) |
 | `worktree cleanup: <error>` | the startup sweep failed for a repo, often a `repos.<name>.path` that isn't a repository |
 | `config reload is off: <error>` | edits to the config need a restart |
-| `could not load activity: <error>` | the drawer's Activity tab couldn't fetch the PR's timeline; it tries again the next time you open the drawer on that PR |
-| `Rate limited — activity loads after GitHub's limit resets` | GitHub's rate limit is spent, so the Activity tab didn't fetch; open the drawer again after the reset |
+| `could not load activity: <error>` | shown in the drawer's Activity tab, not as a notice: it couldn't fetch the PR's timeline; it tries again the next time you open the drawer on that PR |
+| `Rate limited — activity loads after GitHub's limit resets` | shown in the drawer's Activity tab, not as a notice: GitHub's rate limit is spent, so the tab didn't fetch; open the drawer again after the reset |
 | `cancelling N running reviews…` | quitting; snow waits up to 5 seconds for them to save |
 
 ## Resetting state

@@ -122,6 +122,7 @@ Every git command snow runs there:
 | `git rev-parse --verify <ref>^{commit}`, `git cat-file -e <commit>^{commit}`, `git merge-base` | find the commits to review |
 | `git diff` (with its output format pinned), `git log`, `git ls-tree`, `git show <base>:<path>` | write the review's diff and log, and read `CLAUDE.md`, `AGENTS.md` and the security guide at the base commit |
 | `git worktree add --detach --force <slot> <head>` | add a slot under snow's data directory; `--force` reuses a registration whose directory vanished |
+| `git rev-parse --absolute-git-dir` (inside a slot) | find the slot's git directory, to remove a stale `index.lock` before a checkout |
 | `git checkout --detach --force <head>` (inside a slot) | move a slot to a new head |
 | `git worktree list --porcelain`, `git worktree remove --force <slot>` | remove snow's own slots, only paths under its pool directory |
 | `git for-each-ref refs/jawnsnow/`, `git update-ref -d refs/jawnsnow/<N>/...` | delete snow's refs for a PR that left the Wall |

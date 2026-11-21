@@ -142,7 +142,7 @@ This list is combined with each repo's own [`repos.<name>.ignore_checks`](#repos
 
 ## `[[feeds]]`
 
-A feed is one GitHub search. A PR is on the Wall when any feed finds it, and it stays tracked after that until it merges, closes, goes stale or you hide it, even when no feed finds it any more. GitHub drops a review request once you review, so this is how a PR you reviewed stays on the Wall.
+A feed is one GitHub search. A PR is on the Wall when any feed finds it, and it stays on the Wall after that until it merges, closes, goes stale or you hide it, even when no feed finds it any more. GitHub drops a review request once you review, so this is how a PR you reviewed stays on the Wall.
 
 The default is one feed:
 
@@ -463,9 +463,9 @@ per_review_usd = 2
 
 | Type | Default | Valid values |
 | --- | --- | --- |
-| string | none | `"first_pass"`, `"follow_up"` or `"any"` |
+| string | none (required) | `"first_pass"`, `"follow_up"` or `"any"` |
 
-Which tier the block applies to.
+Which tier the block applies to. Every `[[review.overrides]]` block must set it.
 
 ### `review.overrides.match`
 
@@ -604,7 +604,7 @@ Not configurable: the verdict banners in the drawer (`APPROVE` on `41`, `REQUEST
 | `review.first_pass.effort` | `"high"` | effort before you've reviewed the PR |
 | `review.follow_up.model` | `"claude-sonnet-5-5"` | model once you've reviewed the PR |
 | `review.follow_up.effort` | `"medium"` | effort once you've reviewed the PR |
-| `review.overrides.tier` | none | `"first_pass"`, `"follow_up"` or `"any"` |
+| `review.overrides.tier` | none (required) | `"first_pass"`, `"follow_up"` or `"any"` |
 | `review.overrides.match` | `{}` | `repo`, `author`, `label`, `paths`, `min_lines`, `max_lines` |
 | `review.overrides.model` | unset | model for matching PRs |
 | `review.overrides.effort` | unset | effort for matching PRs |

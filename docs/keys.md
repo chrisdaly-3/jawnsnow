@@ -21,7 +21,7 @@ Where a section lists `h` `j` `k` `l`, the arrow keys do the same.
 
 More on these:
 
-- `tab` moves between the Wall and the drawer, the Done view's two tables and the drawer, the Reviews table and the drawer, and the Cost view's filter bar, chart and top PRs. The focused pane has the accent-coloured border or title. Opening the drawer doesn't move focus into it; press `tab`.
+- `tab` moves between the Wall and the drawer, the Done view's two tables and the drawer, the Reviews table and the drawer, and the Cost view's filter bar, chart and top PRs. The focused pane has the accent-coloured border or title. Opening the drawer moves focus into it; `tab` moves focus back to the view.
 - `esc` with the drawer open in the current view closes the drawer, whichever pane has focus. Otherwise it goes to the view (on the Wall it clears the filters).
 - `R` starts a poll unless one is already running.
 - `m` to auto mode refuses with `reviews unavailable: <reason>` when reviews can't run.
@@ -76,12 +76,13 @@ These work when the drawer has focus. Opening it with `enter` focuses it, and `t
 More on these:
 
 - `h` and `l` (or `←` and `→`) move between the [Review, Checks and Activity tabs](views.md#the-drawer). Opening the drawer with `enter` always shows the Review tab. Each tab keeps its own scroll. `<`, `>`, `u` and `a` act on the Review tab, `s` on the Checks tab, and `b` on the Activity tab; the other keys act on whichever tab is open.
-- `J` and `K` (`shift+j` and `shift+k`) jump the open tab to its bottom or top, with a short eased scroll. On the Checks and Activity tabs they also select the last or first check or entry. Pressing `J` or `K` again mid-jump turns it around; any other key stops it where it is.
+- `J` and `K` (`shift+j` and `shift+k`) jump the open tab to its bottom or top, with a short eased scroll. On the Checks and Activity tabs they also select the last or first check or entry. Pressing `J` or `K` again mid-jump turns it around; `h` and `l` finish it before changing tab, and any other key stops it where it is.
 - `n` and `N` select a finding and scroll to it. Findings are listed blocking first, then those starting `nit:`, `non-blocking:` and `question:`, then the rest.
 - `<` moves to an older pass (review) of the PR and `>` to a newer one. The header shows `pass 2/3` when there is more than one.
 - `O` opens the PR's Files tab in the browser at the selected finding's file, and at its line when the finding is anchored.
 - `y` copies the selected finding's body to the clipboard, using the terminal's OSC 52 support, and shows `copied the finding`.
 - On the Checks tab, `n` and `N` select a check, `O` opens the check's own page (or the PR's checks page when snow has no link for it), `y` copies its name and shows `copied the check's name`, and `s` shows or hides the passed checks.
+- On the Activity tab, `n` and `N` select an entry, `O` opens the entry's page (or the PR when the entry has none, such as a force-push), `y` copies its text (a comment's body or a commit's headline) and shows `copied the entry`, and `b` shows or hides the bot entries.
 - `P` opens the [post flow](posting.md) on the pass on screen. A failed review can't be posted: the drawer says `a failed review can't be posted`.
 
 ## Post

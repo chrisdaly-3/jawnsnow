@@ -85,7 +85,7 @@ The preview's top lines:
 
 - `Post review · owner/name#number · <event> · <commit>`, the short ID of the commit the review is of, which is the one it will be posted against.
 - `PR has new commits since this review — comments will show as outdated`, when the PR's head has moved since the review.
-- `Rendered view hides: <part>: <kinds> — press m to see the raw text`, when the rendered view hides or acts on something. The kinds are:
+- `Rendered view hides: <part>: <kind>; <part>: <kind> — press m to see the raw text`, when the rendered view hides or acts on something, with one `<part>: <kind>` for each, such as `Summary: HTML comment; Summary: image`. The kinds are:
   - `encoded control character`: a character reference such as `&#27;` that decodes to a control or invisible character;
   - `HTML comment`;
   - `raw HTML`;
@@ -139,11 +139,11 @@ The card's [Drafted pill](views.md#the-drafted-pill) goes at once too. The card 
 | --- | --- |
 | Comment | Waiting on author (`CHANGES_REQUESTED`) |
 | Request changes | Waiting on author (`CHANGES_REQUESTED`) |
-| Approve | Approved: `APPROVED_BY_YOU` at first, then `APPROVED` if GitHub counts the PR approved |
+| Approve | Approved: `APPROVED_BY_YOU`, or `APPROVED` once two people have approved (see [statuses](views.md#statuses)) |
 
 GitHub can take a few seconds to show a new review, so the poll right after a post may not see it. Until a poll that started after the post brings a fresh copy of the PR, snow keeps the review it assumed. A poll that was already running when you posted doesn't move the card back.
 
-A rule earlier in the order still wins: a PR whose CI failed at the head stays in the CI lane.
+A rule earlier in the order still wins: a PR whose CI failed at the head stays in the CI lane, and a review of an older commit (the PR has new commits since the review) puts the PR in New changes (`NEW_CHANGES`).
 
 The drawer then shows `Posted as Comment · just now` on that pass, and the Reviews view shows `✓`. The next pass gets the posted findings with their thread IDs, so it can read the author's replies in those threads and mark a finding answered. See [the ledger](reviews.md#the-earlier-findings-ledger).
 

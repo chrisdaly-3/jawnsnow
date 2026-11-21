@@ -5,8 +5,8 @@
 # ─── Mode ─────────────────────────────────────────────────────────────────────
 [mode]
 # The mode jawnSnow starts in.
-#   "watcher" — poll and show statuses only; reviews run only when you press space.
-#   "auto"    — also queue Claude reviews in the background (section 7 of the design).
+#   "watcher" — poll and show statuses only; reviews run only when you press space or c.
+#   "auto"    — also queue Claude reviews in the background, within the [review] limits.
 # Press `m` in the TUI to switch for the current session; this sets the start value.
 # Default: "watcher"
 default = "watcher"
@@ -34,7 +34,7 @@ ignore_checks = []
 
 # ─── Feeds: which PRs you're subscribed to ────────────────────────────────────
 # Each [[feeds]] block is one GitHub search. A PR is on the wall if any feed finds
-# it. Once found, it stays tracked until it merges, closes, goes stale or you hide it.
+# it. Once found, it stays on the wall until it merges, closes, goes stale or you hide it.
 # Default: one feed, "is:pr is:open review-requested:@me" with since = "14d".
 
 [[feeds]]
@@ -73,7 +73,7 @@ keep_for = "30d"
 # ─── Repositories ─────────────────────────────────────────────────────────────
 # Per-repo settings, keyed by "owner/name". A repo with no entry uses the defaults
 # shown for each key. Reviews of a repo with no `path` use a blobless clone that
-# jawnSnow makes under ~/.local/share/jawnsnow/.
+# jawnSnow makes in its data directory (~/.local/share/jawnsnow/ by default).
 
 # [repos."chainguard-dev/mono"]
 # Your existing local clone. jawnSnow fetches PR refs into it (under
@@ -123,7 +123,7 @@ quiet_period = "5m"
 # Default: 2
 max_in_flight = 2
 
-# Most automatic reviews of one PR per day. `space` doesn't count toward or obey it.
+# Most automatic reviews of one PR per day. `space` and `c` don't count toward or obey it.
 # Default: 4
 max_reviews_per_pr_per_day = 4
 
@@ -131,7 +131,8 @@ max_reviews_per_pr_per_day = 4
 # Default: 100
 max_turns = 100
 
-# A run still going after this is stopped and marked failed.
+# A Claude run still going after this is stopped. A first run stopped this way fails
+# the review; a later run keeps the earlier pass. 0 means no timeout.
 # Default: "25m"
 run_timeout = "25m"
 
@@ -147,7 +148,7 @@ worktree_idle = "2h"
 per_review_usd = 15
 
 # Daily spending cap, in USD, in your local time zone. When today's total reaches
-# it, auto mode pauses (the status bar says so); `space` asks before going over.
+# it, auto mode pauses (the status bar says so); `space` and `c` ask before going over.
 # Default: 250
 daily_usd = 250
 
@@ -160,8 +161,9 @@ daily_usd = 250
 model  = "claude-opus-5-5"
 effort = "high"
 
-# Model and effort once you have submitted a GitHub review on the PR (an approval,
-# a change request, or a comment with a summary). Same override order as first_pass.
+# Model and effort once you have submitted a GitHub review on the PR (an approval, a
+# change request, a dismissed review, or a comment with a summary or a new inline
+# thread). Same override order as first_pass.
 # Default: model = "claude-sonnet-5-5", effort = "medium"
 [review.follow_up]
 model  = "claude-sonnet-5-5"

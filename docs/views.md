@@ -11,7 +11,7 @@ The top line reads, left to right:
 ```
 
 - `◉ watcher` or `◉ auto`: the mode.
-- The poll state: `polling…` before the first poll finishes, `polled 40s ago` after a good poll, `not polling` with no `gh` login, `rate limited` when GitHub refused the last poll for rate limiting, or `poll failed: <error>` (cut to 60 characters) when it failed for another reason.
+- The poll state: `polling…` before the first poll finishes, `polled 40s ago` after a good poll, `not polling` with no `gh` login, `rate limited` when GitHub refused the last poll for rate limiting, or `poll failed: <error>` (the whole line cut to 60 characters) when it failed for another reason.
 - Today's spend against `review.budget.daily_usd`. In auto mode, `· auto-review paused: daily budget` follows it once the budget is spent.
 - `GH 4.6k`: the GitHub rate-limit points left, as GitHub last reported them, or `GH –` before the first report.
 
@@ -22,13 +22,13 @@ Banners are the lines under the top line. They show, in this order:
 | `⚠ No gh login found — snow can't poll GitHub or run reviews. Run "gh auth login", then restart snow.` | No GitHub token for github.com. snow shows the interface and stored data but can't poll, review or post. Always first, in the `CI_FAILED` colour. |
 | `⚠ gh client failed: <error> — snow can't poll GitHub or run reviews. Run "gh auth login", then restart snow.` | A token was found but the GitHub client couldn't be built. |
 | `⚠ GitHub rejected the gh login (401) — snow can't poll GitHub or run reviews. Run "gh auth login", then restart snow.` | GitHub answered a poll with 401. Polls keep their schedule, and the next good poll clears it. |
+| `config: XDG_CONFIG_HOME is not an absolute path ("<value>"), so it was ignored` | `XDG_CONFIG_HOME` is relative, so snow used `$HOME/.config` instead. See [configuration.md](configuration.md#the-config-file). |
 | `config: unknown key "<key>"` | An unknown key at startup. See [unknown keys](configuration.md#unknown-keys-and-errors). |
 | `config reload is off: <error>` | snow couldn't watch the config directory. Edits need a restart. |
 | `reviews off: <reason>` | Reviews can't run, so snow runs in watcher mode. The reasons are in [troubleshooting.md](troubleshooting.md#reviews-off). Not shown when the login warning is. |
 | `auto mode unavailable — reviews off: <reason>` | The same, when `mode.default = "auto"`. snow starts in watcher mode. |
 | `worktree cleanup: <error>` | The startup cleanup of worktrees and refs failed for a repo. Shown only when it finishes within 2 seconds of starting. |
 | `could not load saved PRs: <error> — not saving this session` | The database read failed. snow polls but saves no PR changes until restart. |
-| `config: XDG_CONFIG_HOME is not an absolute path ("<value>"), so it was ignored` | `XDG_CONFIG_HOME` is relative, so snow used `$HOME/.config` instead. See [configuration.md](configuration.md#the-config-file). |
 | `Created ~/.config/jawnsnow/config.toml with the defaults — edit it any time; snow reloads on save.` | First run. The path shown is wherever the config was created. Cleared by the first good reload. |
 | `No config at ~/.config/jawnsnow/config.toml — using defaults (could not create it: <error>). Run "snow config default" to start one.` | The default config couldn't be written. |
 | `config error: <error> — using last good config` | A reload with a mistake. Cleared by the next good reload. |
@@ -120,7 +120,7 @@ No badge means no review yet.
 
 ## Statuses
 
-Each PR has exactly one status. The rules are checked in this order and the first that matches wins. "Your review" means the newest review you submitted on GitHub that approves, requests changes, was dismissed, or comments with a non-empty summary; empty comment reviews (GitHub's record of a reply in a review thread) and pending reviews don't count.
+Each PR has exactly one status. The rules are checked in this order and the first that matches wins. "Your review" means the newest review you submitted on GitHub that approves, requests changes, was dismissed, or comments with a non-empty summary or at least one inline comment that starts a thread; comment reviews that only reply in existing threads (GitHub's record of each reply) and pending reviews don't count.
 
 | # | Status | Default label | Colour | Spinner | When |
 | --- | --- | --- | --- | --- | --- |
@@ -167,7 +167,7 @@ Draft PRs are left out unless the feed sets `include_drafts = true`.
 
 The drawer has three tabs: Review, Checks and Activity. `h` and `l` move between them, and `enter` always opens the drawer on Review. Above every tab's content:
 
-- The tab row: `Review`, `Checks` and `Activity`, with the open tab filled in charcoal. With `NO_COLOR` set, the open tab is in brackets: `[Review] Checks  Activity`.
+- The tab row: `Review`, `Checks` and `Activity`, with the open tab filled in charcoal. With `NO_COLOR` set, the open tab is in brackets: `[Review]  Checks   Activity`.
 - The PR's title, its status chip, and `owner/name#number`.
 - The lane line: the PR's checks counted by how they counted towards its lane. Only groups with checks are shown, and the passed checks always have a row of their own:
 

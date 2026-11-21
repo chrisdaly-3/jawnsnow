@@ -139,7 +139,7 @@ When a run returns, snow checks that the reviewer did the reading its scope requ
 - `fill in understanding`;
 - `cite repository code as evidence for assumption N`, or `read <path>, the evidence for assumption N`.
 
-The checks on code apply when the PR changes code files. With `scope = "pr-only"` the only check is the diff. At most 10 gaps are listed, then `and N more`.
+The README check applies to any full pass that changes a file. The Grep, test file, assumptions and understanding checks apply only when the PR changes code files. With `scope = "pr-only"` the only check is the diff. At most 10 gaps are listed, then `and N more`.
 
 snow also flags findings whose prose uses a word on the prompt's banned list, as `finding N: uses "<phrase>"`.
 
@@ -164,6 +164,7 @@ Besides the coverage checks, snow adjusts each finding without changing what it 
 | `replaced N commit SHAs` | commit IDs in prose became `` `<commit>` `` |
 | `turned N misplaced suggestions into plain code` | a ```` ```suggestion ```` block on a finding that doesn't sit inside one changed hunk became a plain code block, since GitHub can't apply it |
 | `(checked 40 of N changed files)` | the per-file check covered only the first 40 changed code files |
+| `ignored N ledger entries that match no earlier finding` (or `ignored 1 ledger entry that matches no earlier finding`) | the reviewer's ledger named findings that aren't in the earlier pass; see [the ledger](#the-earlier-findings-ledger) |
 | `stopped: review budget used` | continuations stopped because the per-review budget ran out |
 | `continuation N failed: <error>; showing the earlier pass` | a continuation failed and the earlier output was kept |
 | `not done: <gap>` | reading still missing after the last continuation |
@@ -181,7 +182,7 @@ Each pass after the first gets the findings of the PR's latest complete or incom
 
 These findings are saved with the new review, after its new ones. The drawer sums them up as `2 fixed · 1 still open · 1 answered · 3 new` and tags each carried finding `[fixed]`, `[still open]` or `[answered]`. The Claude badge counts only blocking findings that are new or still open. When you post the new review, fixed and answered findings start unchecked.
 
-Findings you posted carry their GitHub thread ID, and the prompt marks them `posted as thread <thread ID>`, so the reviewer can match them to the threads (with the author's replies) in the PR's text. A ledger entry names an earlier finding by the number at the start of its line, never by a thread ID. When there are no earlier findings, the prompt says `None. Leave ledger empty.` An entry that names no earlier finding, such as a thread ID, is ignored, and the review's check notes say `ignored N ledger entries that match no earlier finding`; it never fails the review.
+Findings you posted carry their GitHub thread ID, and the prompt marks them `posted as thread <thread ID>`, so the reviewer can match them to the threads (with the author's replies) in the PR's text. A ledger entry names an earlier finding by the number at the start of its line, never by a thread ID. When there are no earlier findings, the prompt says ``None. Leave `ledger` empty.`` An entry that names no earlier finding, such as a thread ID, is ignored, and the review's check notes say `ignored N ledger entries that match no earlier finding`; it never fails the review.
 
 ## The workspace
 
