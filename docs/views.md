@@ -161,7 +161,7 @@ Draft PRs are left out unless the feed sets `include_drafts = true`.
 
 ## The drawer
 
-`enter` on a card, a Done row or a Reviews row slides the drawer in from the right. It takes 45% of the terminal's width. `esc` slides it out. Opening the drawer focuses it; `tab` moves focus between it and the view beside it, and its left edge is in the accent colour when it has focus.
+`enter` on a card, a Done row or a Reviews row slides the drawer in from the right. It takes 45% of the terminal's width. `esc` slides it out. Opening the drawer focuses it; `tab` moves focus between it and the view beside it, and its left edge is in the accent colour when it has focus. Whichever side doesn't have focus, the view or the drawer, is drawn faint (the terminal's dim text, so how faint varies by terminal; not with `NO_COLOR` set).
 
 On every tab the selected finding, check or entry has a `▸` mark and a dark grey fill (with `NO_COLOR` set, only the mark). `n` and `N` scroll only as far as needed to keep three lines of room above and below it.
 

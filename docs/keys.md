@@ -21,7 +21,7 @@ Where a section lists `h` `j` `k` `l`, the arrow keys do the same.
 
 More on these:
 
-- `tab` moves between the Wall and the drawer, the Done view's two tables and the drawer, the Reviews table and the drawer, and the Cost view's filter bar, chart and top PRs. The focused pane has the accent-coloured border or title. Opening the drawer moves focus into it; `tab` moves focus back to the view.
+- `tab` moves between the Wall and the drawer, the Done view's two tables and the drawer, the Reviews table and the drawer, and the Cost view's filter bar, chart and top PRs. The focused pane has the accent-coloured border or title, and with the drawer open the side without focus is drawn faint. Opening the drawer moves focus into it; `tab` moves focus back to the view.
 - `esc` with the drawer open in the current view closes the drawer, whichever pane has focus. Otherwise it goes to the view (on the Wall it clears the filters).
 - `R` starts a poll unless one is already running.
 - `m` to auto mode refuses with `reviews unavailable: <reason>` when reviews can't run.
