@@ -33,7 +33,7 @@ More on these:
 | Key | Does |
 | --- | --- |
 | `h` `l` | previous or next lane |
-| `j` `k` | previous or next card |
+| `j` `k` | next or previous card |
 | `x` | hide |
 | `enter` | open the review drawer |
 | `o` | open in the browser |
@@ -162,7 +162,7 @@ More on these:
 
 | Key | Does |
 | --- | --- |
-| `j` `k` | previous or next review |
+| `j` `k` | next or previous review |
 | `/` | filter by repo, number, title or author |
 | `o` | cycle the outcome: all, complete, incomplete, failed |
 | `enter` | open the review drawer at that pass |
@@ -174,7 +174,7 @@ More on these:
 
 | Key | Does |
 | --- | --- |
-| `j` `k` | previous or next row |
+| `j` `k` | next or previous row |
 | `x` | unhide |
 | `enter` | open the review drawer |
 | `o` | open in the browser |
