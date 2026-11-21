@@ -714,9 +714,9 @@ func (m drawerModel) bottomLine(c drawerCtx, inner int) string {
 	hints := "j/k scroll · n/N finding · </> pass · y copy · O open line · P post"
 	switch m.tab {
 	case tabChecks:
-		hints = "h/l tab · j/k scroll · n/N check · s passed · O open · y copy"
+		hints = "h/l tab · j/k scroll · n/N check · O open · y copy"
 	case tabActivity:
-		hints = "h/l tab · j/k scroll · n/N item · b bots · O open · y copy"
+		hints = "h/l tab · j/k scroll · n/N item · O open · y copy"
 	}
 	return th.Muted().Render(ansi.Truncate(hints, inner, "…"))
 }
