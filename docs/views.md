@@ -163,6 +163,8 @@ Draft PRs are left out unless the feed sets `include_drafts = true`.
 
 `enter` on a card, a Done row or a Reviews row slides the drawer in from the right. It takes 45% of the terminal's width. `esc` slides it out. Opening the drawer focuses it; `tab` moves focus between it and the view beside it, and its left edge is in the accent colour when it has focus.
 
+On every tab the selected finding, check or entry has a `▸` mark and a dark grey fill (with `NO_COLOR` set, only the mark). `n` and `N` scroll only as far as needed to keep three lines of room above and below it.
+
 ![The review drawer](assets/drawer.png)
 
 The drawer has three tabs: Review, Checks and Activity. `h` and `l` move between them, and `enter` always opens the drawer on Review. Above every tab's content:
@@ -194,7 +196,7 @@ The Review tab, top to bottom:
 4. The reviewer's reason for the verdict.
 5. For a failed review, the error.
 6. The earlier-findings summary, such as `2 fixed · 1 still open · 3 new`. See [the ledger](reviews.md#the-earlier-findings-ledger).
-7. The findings, or `No findings.` Each has a header line with its location (`path:line`, `path:start-end`, or `path · unanchored`), `blocking` when it is, its category, and its ledger tag (`[fixed]`, `[still open]` or `[answered]`) for a finding carried from an earlier pass. The body is rendered markdown. Blocking findings come first, then those starting `nit:`, `non-blocking:` and `question:`, then the rest. The selected one has a `▸` mark.
+7. The findings, or `No findings.` Each has a header line with its location (`path:line`, `path:start-end`, or `path · unanchored`), `blocking` when it is, its category, and its ledger tag (`[fixed]`, `[still open]` or `[answered]`) for a finding carried from an earlier pass. The body is rendered markdown. Blocking findings come first, then those starting `nit:`, `non-blocking:` and `question:`, then the rest. The selected one has a `▸` mark and its header line is filled.
 8. `▸ Understanding ● Press u to show`: the reviewer's account of what the touched code does and how the PR changes it. Collapsed until you press `u`; open, the heading says `● Press u to hide`.
 9. `▸ Assumptions ● Press a to show`: each assumption the change relies on, with the evidence the reviewer cited under it, or `None.` Collapsed until you press `a`.
 10. `Check notes ● Press Y to copy`: one line per note from the reviewer and from snow's checks. `Y` copies them all. See [check notes](reviews.md#check-notes).
