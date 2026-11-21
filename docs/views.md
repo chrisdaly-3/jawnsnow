@@ -195,9 +195,9 @@ The Review tab, top to bottom:
 5. For a failed review, the error.
 6. The earlier-findings summary, such as `2 fixed · 1 still open · 3 new`. See [the ledger](reviews.md#the-earlier-findings-ledger).
 7. The findings, or `No findings.` Each has a header line with its location (`path:line`, `path:start-end`, or `path · unanchored`), `blocking` when it is, its category, and its ledger tag (`[fixed]`, `[still open]` or `[answered]`) for a finding carried from an earlier pass. The body is rendered markdown. Blocking findings come first, then those starting `nit:`, `non-blocking:` and `question:`, then the rest. The selected one has a `▸` mark.
-8. `▸ Understanding  u`: the reviewer's account of what the touched code does and how the PR changes it. Collapsed until you press `u`.
-9. `▸ Assumptions  a`: each assumption the change relies on, with the evidence the reviewer cited under it, or `None.` Collapsed until you press `a`.
-10. `Check notes`: one line per note from the reviewer and from snow's checks. See [check notes](reviews.md#check-notes).
+8. `▸ Understanding ● Press u to show`: the reviewer's account of what the touched code does and how the PR changes it. Collapsed until you press `u`; open, the heading says `● Press u to hide`.
+9. `▸ Assumptions ● Press a to show`: each assumption the change relies on, with the evidence the reviewer cited under it, or `None.` Collapsed until you press `a`.
+10. `Check notes ● Press Y to copy`: one line per note from the reviewer and from snow's checks. `Y` copies them all. See [check notes](reviews.md#check-notes).
 
 The bottom line shows the running review's latest tool call (`reading internal/foo/bar.go`, `searching internal`, `listing …`), a short message after a key (`copied the finding`), or the key hints: `j/k scroll · n/N finding · </> pass · y copy · O open line · P post` on the Review tab, `h/l tab · j/k scroll · n/N check · s passed · O open · y copy` on the Checks tab, `h/l tab · j/k scroll · n/N item · b bots · O open · y copy` on the Activity tab.
 
