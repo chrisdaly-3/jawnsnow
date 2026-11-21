@@ -291,6 +291,9 @@ func TestMigratesV1Database(t *testing.T) {
 			}
 			cols = append(cols, c)
 		}
+		if err := rows.Err(); err != nil {
+			t.Fatal(err)
+		}
 		rows.Close()
 		if got := strings.Join(cols, ","); got != idx.cols {
 			t.Errorf("index columns on %s = %q, want %q", idx.table, got, idx.cols)

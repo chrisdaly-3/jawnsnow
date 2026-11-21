@@ -31,7 +31,8 @@ func assertIndexed(t *testing.T, name string, c color.Color) ansi.IndexedColor {
 	if !ok {
 		t.Fatalf("%s: color is %T, want an ANSI256 index", name, c)
 	}
-	if idx < 16 || idx > 255 {
+	// An IndexedColor is a byte, so only the low end needs checking.
+	if idx < 16 {
 		t.Fatalf("%s: index %d outside 16-255", name, idx)
 	}
 	return idx

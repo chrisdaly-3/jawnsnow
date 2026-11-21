@@ -289,6 +289,9 @@ func (env *engineEnv) costRows(t *testing.T) []store.CostRow {
 		}
 		out = append(out, c)
 	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
 	return out
 }
 
