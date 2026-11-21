@@ -238,7 +238,10 @@ func (m Model) helpBody(width, height int) string {
 		}
 		b.WriteString(m.theme.Accent().Render(s.title))
 		for _, k := range s.keys {
-			b.WriteString("\n  " + m.theme.Accent().Render(k.keys) + strings.Repeat(" ", keyW-lipgloss.Width(k.keys)+2) + k.help)
+			b.WriteString("\n  ")
+			b.WriteString(m.theme.Accent().Render(k.keys))
+			b.WriteString(strings.Repeat(" ", keyW-lipgloss.Width(k.keys)+2))
+			b.WriteString(k.help)
 		}
 	}
 	box := m.theme.Border(true).Padding(0, 2).Render(b.String())

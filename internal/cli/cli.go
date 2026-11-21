@@ -196,8 +196,8 @@ func buildDeps(getenv func(string) string, newClient func() (github.Client, erro
 
 	// The poster is the tool's only GitHub write; it needs the same gh
 	// login as the client.
-	switch {
-	case deps.Client == nil:
+	switch deps.Client {
+	case nil:
 		deps.PostOff = "gh is not logged in"
 	default:
 		if p, err := newPoster(); err != nil {

@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -61,7 +62,7 @@ func Git(ctx context.Context, dir string, args ...string) ([]byte, error) {
 // ssh command is configured anywhere, ssh is told never to prompt, so it
 // cannot grab /dev/tty.
 func buildEnv(environ []string, sshCommandConfigured bool) []string {
-	env := append(environ[:len(environ):len(environ)], "GIT_TERMINAL_PROMPT=0", "GIT_LFS_SKIP_SMUDGE=1")
+	env := append(slices.Clip(environ), "GIT_TERMINAL_PROMPT=0", "GIT_LFS_SKIP_SMUDGE=1")
 	if sshCommandConfigured {
 		return env
 	}

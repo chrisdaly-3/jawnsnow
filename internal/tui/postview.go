@@ -158,7 +158,9 @@ func (m Model) postFrame(width, height int) (top, body []string, cursorRow, rows
 			box = "[x] "
 		}
 		var row strings.Builder
-		row.WriteString(mark + box + findingLocation(f))
+		row.WriteString(mark)
+		row.WriteString(box)
+		row.WriteString(findingLocation(f))
 		for _, l := range ledgerLabels[:3] {
 			if f.Ledger == l.ledger {
 				row.WriteString(th.Muted().Render("  [" + l.label + "]"))

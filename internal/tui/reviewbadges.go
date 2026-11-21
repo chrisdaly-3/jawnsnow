@@ -201,9 +201,12 @@ func (m Model) pickerBody(width, height int) string {
 		if i == idx {
 			mark = th.Accent().Render("▸ ")
 		}
-		b.WriteString("\n" + mark + it)
+		b.WriteString("\n")
+		b.WriteString(mark)
+		b.WriteString(it)
 	}
-	b.WriteString("\n" + th.Muted().Render("j/k move · enter pick · esc cancel"))
+	b.WriteString("\n")
+	b.WriteString(th.Muted().Render("j/k move · enter pick · esc cancel"))
 	box := th.Border(true).Padding(0, 2).Render(b.String())
 	return lipgloss.Place(max(width, 0), max(height, 0), lipgloss.Center, lipgloss.Center, box)
 }

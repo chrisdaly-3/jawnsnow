@@ -627,9 +627,12 @@ func (m wallModel) pickerView(width, height int, th theme.Theme) string {
 		if i == m.pickIdx {
 			mark = th.Accent().Render("▸ ")
 		}
-		b.WriteString("\n" + mark + clean(a))
+		b.WriteString("\n")
+		b.WriteString(mark)
+		b.WriteString(clean(a))
 	}
-	b.WriteString("\n" + th.Muted().Render("j/k move · enter pick · esc clear"))
+	b.WriteString("\n")
+	b.WriteString(th.Muted().Render("j/k move · enter pick · esc clear"))
 	box := th.Border(true).Padding(0, 2).Render(b.String())
 	return lipgloss.Place(max(width, 0), max(height, 0), lipgloss.Center, lipgloss.Center, box)
 }
