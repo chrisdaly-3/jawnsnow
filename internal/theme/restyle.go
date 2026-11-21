@@ -34,3 +34,14 @@ func (t Theme) Selected(line string, width int) string {
 	line += strings.Repeat(" ", max(width-ansi.StringWidth(line), 0))
 	return keep(line, "\x1b[48;5;"+strconv.Itoa(selFill)+"m")
 }
+
+// Dim makes a styled line faint, keeping its own colours, for the pane
+// that doesn't have focus. Faint is the terminal's own attribute, so it
+// works on light and dark themes alike; some terminals draw it weakly or
+// not at all. With NO_COLOR the line comes back as it was.
+func (t Theme) Dim(line string) string {
+	if t.noColor {
+		return line
+	}
+	return keep(line, "\x1b[2m")
+}

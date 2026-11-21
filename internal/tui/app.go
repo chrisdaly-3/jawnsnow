@@ -1132,15 +1132,23 @@ func fit(s string, width, height int) []string {
 }
 
 // withDrawer puts the drawer beside the view's lines, which it pads to
-// viewW cells so the drawer's edge lines up.
+// viewW cells so the drawer's edge lines up. Whichever side doesn't have
+// focus is dimmed, so the eye goes to the one that does.
 func (m Model) withDrawer(view string, viewW, drawerW, height int) string {
 	c := m.drawerCtx()
 	left := fit(view, viewW, height)
 	right := strings.Split(m.drawer.view(drawerW, height, c), "\n")
 	for i := range left {
 		left[i] += strings.Repeat(" ", max(viewW-ansi.StringWidth(left[i]), 0))
+		if c.Focused {
+			left[i] = m.theme.Dim(left[i])
+		}
 		if i < len(right) {
-			left[i] += right[i]
+			r := right[i]
+			if !c.Focused {
+				r = m.theme.Dim(r)
+			}
+			left[i] += r
 		}
 	}
 	return strings.Join(left, "\n")

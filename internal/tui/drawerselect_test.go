@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -64,5 +65,39 @@ func TestDrawerFillsTheSelectedFindingAndKeepsRoomAroundIt(t *testing.T) {
 		if d.scroll > 0 && d.scroll < d.maxScroll(c) && row < scrollMargin {
 			t.Errorf("sel %d: header on row %d, want at least %d lines of room", d.sel, row, scrollMargin)
 		}
+	}
+}
+
+func TestWithDrawerDimsThePaneWithoutFocus(t *testing.T) {
+	h := drawerHarness(t, opts{})
+	h.m, _ = update(t, h.m, tea.WindowSizeMsg{Width: 120, Height: 30})
+	h.press(t, "enter")
+	settleDrawer(t, h)
+	faint := "\x1b[2m"
+	line := func() string { return strings.Split(h.m.withDrawer("wall", 60, 50, 3), "\n")[0] }
+
+	// enter focuses the drawer, so the Wall's side is faint and the
+	// drawer's isn't.
+	if l := line(); !strings.HasPrefix(l, faint) || strings.Count(l, faint) != 1 {
+		t.Errorf("drawer focused: want only the Wall faint, got %q", l)
+	}
+	h.press(t, "tab")
+	l := line()
+	if strings.HasPrefix(l, faint) {
+		t.Errorf("Wall focused: the Wall is still faint: %q", l)
+	}
+	if !strings.Contains(l, "wall"+strings.Repeat(" ", 56)+faint) {
+		t.Errorf("Wall focused: want the drawer faint, got %q", l)
+	}
+}
+
+func TestDimWithNoColorIsUnchanged(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	h := drawerHarness(t, opts{})
+	h.m, _ = update(t, h.m, tea.WindowSizeMsg{Width: 120, Height: 30})
+	h.press(t, "enter")
+	settleDrawer(t, h)
+	if l := h.m.withDrawer("wall", 60, 50, 3); strings.Contains(l, "\x1b[2m") {
+		t.Errorf("NO_COLOR: a pane is faint: %q", l)
 	}
 }
