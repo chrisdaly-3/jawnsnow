@@ -96,7 +96,7 @@ type drawerModel struct {
 }
 
 func newDrawer() drawerModel {
-	return drawerModel{spring: harmonica.NewSpring(harmonica.FPS(60), 6.0, 1.0), md: newMarkdownCache()}
+	return drawerModel{spring: harmonica.NewSpring(harmonica.FPS(60), 15.0, 1.0), md: newMarkdownCache()}
 }
 
 func (m drawerModel) isOpen() bool { return m.open }
