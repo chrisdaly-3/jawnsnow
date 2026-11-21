@@ -1,16 +1,55 @@
-# jawnSnow - a Watcher on your Wall of PR's 👑❄️
-
 <p align="center">
-  <img src="docs/assets/logo.png" alt="jawnSnow logo" width="256">
+  <img src="docs/assets/logo.png" alt="jawnSnow logo" width="650">
 </p>
 
-`snow` is a terminal UI that watches the GitHub PRs your team asks you to review, shows each PR's status, runs read-only Claude reviews, and lets you post a review you've read as your own after a preview.
+<div align="center">
 
-[What it does](#what-it-does) · [Requirements](#requirements) · [Install](#install) · [Quickstart](#quickstart) · [Screenshots](#screenshots) · [Configuration](#configuration) · [Documentation](#documentation) · [Development](#development) · [Credits](#credits) · [License](#license)
+  # jawnSnow - a Watcher on your Wall of PR's 👑❄️
+
+</div>
+
+<table>
+  <tr>
+    <td valign="top">
+      <table>
+        <thead>
+          <tr>
+            <th colspan="2" align="left">Index</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><a href="#how-it-works">How it Works</a></td>
+            <td><a href="#configuration">Configuration</a></td>
+          </tr>
+          <tr>
+            <td><a href="#requirements">Requirements</a></td>
+            <td><a href="#documentation">Documentation</a></td>
+          </tr>
+          <tr>
+            <td><a href="#install">Install</a></td>
+            <td><a href="#development">Development</a></td>
+          </tr>
+          <tr>
+            <td><a href="#quickstart">Quickstart</a></td>
+            <td><a href="#credits">Credits</a></td>
+          </tr>
+          <tr>
+            <td><a href="#screenshots">Screenshots</a></td>
+            <td><a href="#license">License</a></td>
+          </tr>
+        </tbody>
+      </table>
+    </td>
+    <td valign="middle">
+      <em><code>snow</code> is a terminal UI that watches the GitHub PRs your team asks you to review, shows each PR's status, runs read-only Claude reviews, and lets you post a review you've read as your own after a preview.</em>
+    </td>
+  </tr>
+</table>
 
 ![snow demo](docs/assets/demo.gif)
 
-## What it does
+## How it works
 
 - The Wall sorts each open PR into one lane: CI, Ready for you, New changes, Waiting on author or Approved. Merged and closed PRs move to the Done view.
 - Watcher mode polls and shows statuses, and reviews run only when you press `space`. Auto mode also queues reviews in the background, within a daily budget.
