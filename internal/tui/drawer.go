@@ -313,6 +313,17 @@ func (m drawerModel) reviewKey(msg tea.KeyPressMsg, c drawerCtx) (drawerModel, t
 			m.flash = "copied the finding"
 			return m, nil, actionCopy{Text: cleanBlock(fs[m.sel].Body)}
 		}
+	case "Y":
+		var notes []string
+		if r := m.current(); r != nil {
+			notes = checkNotes(r.Note)
+		}
+		if len(notes) == 0 {
+			m.flash = "no check notes to copy"
+			break
+		}
+		m.flash = "copied the check notes"
+		return m, nil, actionCopy{Text: strings.Join(notes, "\n")}
 	default:
 		return m.sharedKey(k, c)
 	}
@@ -571,14 +582,9 @@ func (m drawerModel) layout(c drawerCtx) (lines []string, anchors []int) {
 		}
 		return out
 	})...)
-	if note := cleanBlock(r.Note); strings.TrimSpace(note) != "" {
-		add(th.Accent().Render("Check notes"))
-		// One note per line, as the engine writes them; only the spacing
-		// inside each is tidied.
-		for _, n := range strings.Split(note, "\n") {
-			if n = strings.Join(strings.Fields(n), " "); n == "" {
-				continue
-			}
+	if notes := checkNotes(r.Note); len(notes) > 0 {
+		add(ansi.Truncate(th.Accent().Render("Check notes")+th.Muted().Render(" ● Press Y to copy"), inner, "…"))
+		for _, n := range notes {
 			for _, l := range wrap(n) {
 				add(th.Muted().Render(l))
 			}
@@ -587,11 +593,25 @@ func (m drawerModel) layout(c drawerCtx) (lines []string, anchors []int) {
 	return lines, anchors
 }
 
+// checkNotes are a review's check notes, one per line as the engine writes
+// them, with only the spacing inside each tidied. Y copies these lines.
+func checkNotes(note string) []string {
+	var out []string
+	for _, n := range strings.Split(cleanBlock(note), "\n") {
+		if n = strings.Join(strings.Fields(n), " "); n != "" {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// section is a heading that u or a opens and closes, with the key's hint
+// after it, and its body when open.
 func (m drawerModel) section(th theme.Theme, title string, expanded bool, key string, inner int, body func() []string) []string {
 	if !expanded {
-		return []string{th.Accent().Render("▸ "+title) + th.Muted().Render("  "+key), ""}
+		return []string{ansi.Truncate(th.Accent().Render("▸ "+title)+th.Muted().Render(" ● Press "+key+" to show"), inner, "…"), ""}
 	}
-	out := []string{th.Accent().Render("▾ "+title) + th.Muted().Render("  "+key)}
+	out := []string{ansi.Truncate(th.Accent().Render("▾ "+title)+th.Muted().Render(" ● Press "+key+" to hide"), inner, "…")}
 	for _, l := range body() {
 		out = append(out, "  "+l)
 	}

@@ -216,6 +216,35 @@ func TestDrawerActions(t *testing.T) {
 	}
 }
 
+func TestDrawerCopiesCheckNotes(t *testing.T) {
+	d, c := openDrawer(t, 160, 40, drawerReview())
+	if out := ansi.Strip(renderDrawer(d, c, 60)); !strings.Contains(out, "Check notes ● Press Y to copy") {
+		t.Errorf("no Check notes heading with its Y hint:\n%s", out)
+	}
+	d2, _, a := d.update(key("Y"), c)
+	cp, ok := a.(actionCopy)
+	if !ok || cp.Text != "Checks: tests were not run (the reviewer is read-only)." {
+		t.Errorf("Y = %#v, want the check notes", a)
+	}
+	if d2.flash != "copied the check notes" {
+		t.Errorf("flash %q, want %q", d2.flash, "copied the check notes")
+	}
+
+	// Only the Review tab has check notes.
+	d.tab = tabChecks
+	if _, _, a := d.update(key("Y"), c); a != (actionNone{}) {
+		t.Errorf("Y on the Checks tab = %#v, want nothing", a)
+	}
+
+	rv := drawerReview()
+	rv.Note = ""
+	d, c = openDrawer(t, 160, 40, rv)
+	d, _, a = d.update(key("Y"), c)
+	if a != (actionNone{}) || d.flash != "no check notes to copy" {
+		t.Errorf("Y with no notes = %#v, flash %q", a, d.flash)
+	}
+}
+
 func TestDrawerUnderstandingAndAssumptionsCollapse(t *testing.T) {
 	d, c := openDrawer(t, 160, 60, drawerReview())
 	out := ansi.Strip(renderDrawer(d, c, 60))

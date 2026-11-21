@@ -27,11 +27,11 @@
 │   unanchored  [fixed]                                                 
 │   question: why not cache the lookup per digest?                      
 │                                                                       
-│ ▸ Understanding  u                                                    
+│ ▸ Understanding ● Press u to show                                     
 │                                                                       
-│ ▸ Assumptions  a                                                      
+│ ▸ Assumptions ● Press a to show                                       
 │                                                                       
-│ Check notes                                                           
+│ Check notes ● Press Y to copy                                         
 │ Checks: tests were not run (the reviewer is read-only).               
 │                                                                       
 │                                                                       

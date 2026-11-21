@@ -27,17 +27,17 @@
 │   unanchored  [fixed]                                                 
 │   question: why not cache the lookup per digest?                      
 │                                                                       
-│ ▾ Understanding  u                                                    
+│ ▾ Understanding ● Press u to hide                                     
 │   This PR fills  Decision.repo_name  from the registry.               
 │                                                                       
 │   • looks the repo up by digest                                       
 │   • falls back to the image reference                                 
 │                                                                       
-│ ▾ Assumptions  a                                                      
+│ ▾ Assumptions ● Press a to hide                                       
 │   • The registry returns at most one repo per digest                  
 │     pkg/registry/lookup.go:30                                         
 │                                                                       
-│ Check notes                                                           
+│ Check notes ● Press Y to copy                                         
 │ Checks: tests were not run (the reviewer is read-only).               
 │                                                                       
 │                                                                       
