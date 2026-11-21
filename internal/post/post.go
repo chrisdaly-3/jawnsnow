@@ -141,7 +141,7 @@ func Build(r store.Review, prID string, sel Selection) (in github.PostInput, p P
 
 	switch {
 	case sel.Event == RequestChanges && ownBlank:
-		return in, p, errors.New("Request changes needs a summary — press e to write one")
+		return in, p, errors.New("Request changes needs a summary — write one in the box")
 	case sel.Event == Comment && body == "" && len(threads) == 0:
 		return in, p, errors.New("nothing to post: write a summary or select a finding")
 	}

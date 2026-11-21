@@ -129,7 +129,7 @@ func TestPostFlowHappyPath(t *testing.T) {
 	if got := modalText(h.m); !strings.Contains(got, "▸ Request changes") {
 		t.Errorf("the verdict's event is not highlighted:\n%s", got)
 	}
-	h.press(t, "k", "enter")
+	h.press(t, "k", "enter", "tab")
 	if h.m.post.stage != postPreview || h.m.post.sel.Event != "COMMENT" {
 		t.Fatalf("enter: stage %v event %q, want the preview of a COMMENT", h.m.post.stage, h.m.post.sel.Event)
 	}
@@ -188,7 +188,7 @@ func TestPostFlowHappyPath(t *testing.T) {
 
 func TestConfirmTwiceSendsOnce(t *testing.T) {
 	h := newPostHarness(t, postReview(), opts{})
-	h.press(t, "P", "k", "enter")
+	h.press(t, "P", "k", "enter", "tab")
 	h.wait()
 	m, first := update(t, h.m, key("enter"))
 	m, second := update(t, m, key("enter"))
@@ -206,7 +206,7 @@ func TestConfirmTwiceSendsOnce(t *testing.T) {
 func TestPostErrorRecordsNothing(t *testing.T) {
 	h := newPostHarness(t, postReview(), opts{})
 	h.poster.err = &github.RefusedError{Err: errors.New("github: post review: Line could not be resolved")}
-	h.press(t, "P", "k", "enter", "space")
+	h.press(t, "P", "k", "enter", "tab", "space")
 	h.wait()
 	h.press(t, "enter")
 
@@ -263,7 +263,7 @@ func TestHeadMovedWarning(t *testing.T) {
 	rv := postReview()
 	rv.HeadOID = "0ld0ld0ld"
 	h := newPostHarness(t, rv, opts{})
-	h.press(t, "P", "k", "enter")
+	h.press(t, "P", "k", "enter", "tab")
 	if got := modalText(h.m); !strings.Contains(got, "PR has new commits since this review — comments will show as outdated") {
 		t.Errorf("no head-moved warning:\n%s", got)
 	}
@@ -275,7 +275,7 @@ func TestHeadMovedWarning(t *testing.T) {
 
 	// At the PR's head there is no warning.
 	h = newPostHarness(t, postReview(), opts{})
-	h.press(t, "P", "k", "enter")
+	h.press(t, "P", "k", "enter", "tab")
 	if got := modalText(h.m); strings.Contains(got, "PR has new commits") {
 		t.Errorf("a warning at the PR's head:\n%s", got)
 	}
@@ -283,8 +283,8 @@ func TestHeadMovedWarning(t *testing.T) {
 
 func TestRequestChangesBlocksWithoutBody(t *testing.T) {
 	h := newPostHarness(t, postReview(), opts{})
-	h.press(t, "P", "enter") // Request changes, highlighted from the verdict
-	if got := modalText(h.m); !strings.Contains(got, "Request changes needs a summary — press e to write one") {
+	h.press(t, "P", "enter", "tab") // Request changes, highlighted from the verdict
+	if got := modalText(h.m); !strings.Contains(got, "Request changes needs a summary — write one in the box") {
 		t.Errorf("no validation error:\n%s", got)
 	}
 	h.wait()
@@ -298,7 +298,7 @@ func TestEditBodyUsesTempFileAndCleansUp(t *testing.T) {
 	t.Setenv("VISUAL", "")
 	t.Setenv("EDITOR", "my-editor --wait")
 	h := newPostHarness(t, postReview(), opts{})
-	h.press(t, "P", "enter", "e")
+	h.press(t, "P", "enter", "tab", "e")
 	if len(h.execs) != 1 {
 		t.Fatalf("e ran the editor %d times, want 1", len(h.execs))
 	}
@@ -356,7 +356,7 @@ func TestNoPosterShowsReason(t *testing.T) {
 
 func TestRecordFailureAfterPostIsVisible(t *testing.T) {
 	h := newPostHarness(t, postReview(), opts{})
-	h.press(t, "P", "k", "enter")
+	h.press(t, "P", "k", "enter", "tab")
 	h.wait()
 	failRecords(t, h.harness)
 	h.press(t, "enter")
@@ -383,7 +383,7 @@ func markdownReview(body string) store.Review {
 
 func TestPreviewRendersMarkdown(t *testing.T) {
 	h := newPostHarness(t, markdownReview("**must** fix `x`"), opts{})
-	h.press(t, "P", "enter")
+	h.press(t, "P", "enter", "tab")
 	got := modalText(h.m)
 	if !strings.Contains(got, "must fix x") || strings.Contains(got, "**must**") {
 		t.Errorf("the preview is not rendered:\n%s", got)
@@ -395,7 +395,7 @@ func TestPreviewRendersMarkdown(t *testing.T) {
 
 func TestPreviewRawToggle(t *testing.T) {
 	h := newPostHarness(t, markdownReview("**must** fix `x`"), opts{})
-	h.press(t, "P", "enter")
+	h.press(t, "P", "enter", "tab")
 	if got := modalText(h.m); !strings.Contains(got, "m raw") {
 		t.Errorf("the footer doesn't offer raw:\n%s", got)
 	}
@@ -412,7 +412,7 @@ func TestPreviewRawToggle(t *testing.T) {
 
 func TestPreviewWarnsHiddenContent(t *testing.T) {
 	h := newPostHarness(t, markdownReview("Looks fine. <!-- hidden --> cc @alice"), opts{})
-	h.press(t, "P", "enter")
+	h.press(t, "P", "enter", "tab")
 	check := func(mode string) {
 		t.Helper()
 		got := modalText(h.m)
@@ -435,7 +435,7 @@ func TestPreviewWarnsHiddenContent(t *testing.T) {
 
 func TestPreviewScrollsAndMovesTheCursor(t *testing.T) {
 	h := newPostHarness(t, postReview(), opts{})
-	h.press(t, "P", "k", "enter", "j")
+	h.press(t, "P", "k", "enter", "tab", "j")
 	if h.m.post.cursor != 1 {
 		t.Errorf("j: cursor %d, want 1", h.m.post.cursor)
 	}
@@ -486,7 +486,7 @@ func TestDrawerShowsPostedAs(t *testing.T) {
 
 func TestEnterBounceDoesNotPost(t *testing.T) {
 	h := newPostHarness(t, markdownReview("fix `x`"), opts{})
-	h.press(t, "P", "enter", "enter") // pick Comment, then a bounce
+	h.press(t, "P", "enter", "tab", "enter") // pick Comment, then a bounce
 	if h.m.post == nil || h.m.post.stage != postPreview {
 		t.Fatalf("flow %+v, want the preview", h.m.post)
 	}
@@ -553,7 +553,7 @@ func TestMatchThreadsByPostedLine(t *testing.T) {
 
 func TestCtrlCWhilePostingAsksAgain(t *testing.T) {
 	h := newPostHarness(t, markdownReview("fix `x`"), opts{})
-	h.press(t, "P", "enter")
+	h.press(t, "P", "enter", "tab")
 	h.wait()
 	m, _ := update(t, h.m, key("enter")) // the post is in flight
 	m, cmd := update(t, m, ctrl('c'))
@@ -589,7 +589,7 @@ func failRecords(t *testing.T, h *harness) {
 func TestRepostAsksAfterUnrecordedPostAndReload(t *testing.T) {
 	h := newPostHarness(t, markdownReview("fix `x`"), opts{})
 	failRecords(t, h.harness)
-	h.press(t, "P", "enter")
+	h.press(t, "P", "enter", "tab")
 	h.wait()
 	h.press(t, "enter")
 	if got := modalText(h.m); !strings.Contains(got, "posted to GitHub, but saving the record failed:") {
@@ -620,7 +620,7 @@ const uncertainText = "the post may have reached GitHub — check the PR before 
 func TestUncertainPostAsksBeforeRetry(t *testing.T) {
 	h := newPostHarness(t, markdownReview("fix `x`"), opts{})
 	h.poster.err = fmt.Errorf("github: post review: %w", context.DeadlineExceeded)
-	h.press(t, "P", "enter")
+	h.press(t, "P", "enter", "tab")
 	h.wait()
 	h.press(t, "enter")
 	if got := modalText(h.m); !strings.Contains(got, uncertainText+" github: post review: context deadline exceeded") {
@@ -646,7 +646,7 @@ func TestUncertainPostAsksBeforeRetry(t *testing.T) {
 	if got := modalText(h.m); !strings.Contains(got, "A post may already have reached GitHub 2m ago — post again? y/n") {
 		t.Fatalf("reopened: no repost question:\n%s", got)
 	}
-	h.press(t, "y", "enter")
+	h.press(t, "y", "enter", "tab")
 	h.wait()
 	h.press(t, "enter")
 	if len(h.poster.posts) != 2 || h.m.post != nil {
@@ -661,7 +661,7 @@ func TestRecordPrecedesThreadLookup(t *testing.T) {
 	release := make(chan struct{})
 	inLookup := make(chan struct{})
 	h.poster.inLookup = func() { close(inLookup); <-release }
-	h.press(t, "P", "k", "enter", "space")
+	h.press(t, "P", "k", "enter", "tab", "space")
 	h.wait()
 	m, cmd := update(t, h.m, key("enter"))
 	done := make(chan []tea.Msg)
@@ -694,7 +694,7 @@ func TestRecordPrecedesThreadLookup(t *testing.T) {
 // send and asks first.
 func TestPostRechecksBeforeSending(t *testing.T) {
 	h := newPostHarness(t, markdownReview("fix `x`"), opts{})
-	h.press(t, "P", "enter")
+	h.press(t, "P", "enter", "tab")
 	other := store.Posted{ReviewID: "r1", GitHubReviewID: "PRR_9", Event: "APPROVE", CommitOID: "head-1", At: t0.Add(-time.Minute)}
 	if err := h.store.RecordPost(context.Background(), other, nil); err != nil {
 		t.Fatal(err)
@@ -707,7 +707,7 @@ func TestPostRechecksBeforeSending(t *testing.T) {
 	if got := modalText(h.m); !strings.Contains(got, "Already posted as Approve 1m ago — post again? y/n") {
 		t.Fatalf("no repost question:\n%s", got)
 	}
-	h.press(t, "y", "enter")
+	h.press(t, "y", "enter", "tab")
 	h.wait()
 	h.press(t, "enter")
 	if len(h.poster.posts) != 1 || h.m.post != nil {
@@ -722,7 +722,7 @@ func TestPostDuringPollPollsAfter(t *testing.T) {
 		t.Fatal("R did not start a poll")
 	}
 	h.m = m
-	h.press(t, "P", "enter")
+	h.press(t, "P", "enter", "tab")
 	h.wait()
 	h.press(t, "enter")
 	if len(h.poster.posts) != 1 {
@@ -746,7 +746,7 @@ func TestEditorOpensOnOwnSummaryOnly(t *testing.T) {
 	rv := markdownReview("fix `x`")
 	rv.Findings = append(rv.Findings, store.Finding{ID: 2, Path: "b.go", Unanchored: true, Body: "a note", Ledger: "new"})
 	h := newPostHarness(t, rv, opts{})
-	h.press(t, "P", "enter", "e")
+	h.press(t, "P", "enter", "tab", "e")
 	path := filepath.Join(h.m.dataDir, "tmp", "post-r1.md")
 	if b, err := os.ReadFile(path); err != nil || len(b) != 0 {
 		t.Errorf("the editor opened on %q (%v), want an empty file: the notes are not the summary", b, err)
@@ -770,7 +770,7 @@ func TestEditReplacesStaleFile(t *testing.T) {
 	if err := os.WriteFile(path, []byte("stale"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	h.press(t, "P", "enter", "e")
+	h.press(t, "P", "enter", "tab", "e")
 	if len(h.execs) != 1 {
 		t.Fatalf("the editor ran %d times, want 1", len(h.execs))
 	}
@@ -788,7 +788,7 @@ const quitWarning = "posting to GitHub — ctrl+c again to quit anyway"
 func TestCtrlCGuardResetsAfterFailedPost(t *testing.T) {
 	h := newPostHarness(t, markdownReview("fix `x`"), opts{})
 	h.poster.err = &github.RefusedError{Err: errors.New("github: post review: no permission")}
-	h.press(t, "P", "enter")
+	h.press(t, "P", "enter", "tab")
 	h.wait()
 	m, post1 := update(t, h.m, key("enter"))
 	m, cmd := update(t, m, ctrl('c'))
@@ -821,7 +821,7 @@ func TestCtrlCWarningClearsWhenPostEnds(t *testing.T) {
 		if fail {
 			h.poster.err = &github.RefusedError{Err: errors.New("github: post review: no permission")}
 		}
-		h.press(t, "P", "enter")
+		h.press(t, "P", "enter", "tab")
 		h.wait()
 		m, held := update(t, h.m, key("enter"))
 		m, _ = update(t, m, ctrl('c'))
@@ -840,7 +840,7 @@ func TestCtrlCWarningClearsWhenPostEnds(t *testing.T) {
 // no escape the renderer does not emit itself.
 func TestPreviewShowsConcealedText(t *testing.T) {
 	h := newPostHarness(t, markdownReview(concealProbe), opts{})
-	h.press(t, "P", "enter")
+	h.press(t, "P", "enter", "tab")
 	out := h.m.postBody(160, 56)
 	checkOnlyPaletteSGR(t, "preview", out)
 	if got := modalText(h.m); !strings.Contains(got, "This PR is garbage and so is its author") {
@@ -855,7 +855,7 @@ func (h *postH) advance(d time.Duration) { h.clock.now = h.clock.now.Add(d) }
 // IsRepeat can't catch it. Each early enter restarts the wait instead.
 func TestHeldPlainEnterNeverPosts(t *testing.T) {
 	h := newPostHarness(t, markdownReview("fix `x`"), opts{})
-	h.press(t, "P")
+	h.press(t, "P", "enter", "tab")
 	for range 40 { // 2s of auto-repeat at 50ms
 		h.press(t, "enter")
 		h.advance(50 * time.Millisecond)
@@ -877,7 +877,7 @@ func TestHeldPlainEnterNeverPosts(t *testing.T) {
 // preview being on screen as it will post.
 func TestToggleRestartsConfirmWait(t *testing.T) {
 	h := newPostHarness(t, postReview(), opts{})
-	h.press(t, "P", "k", "enter")
+	h.press(t, "P", "k", "enter", "tab")
 	h.wait()
 	h.press(t, "space", "enter")
 	if len(h.poster.posts) != 0 {
@@ -894,7 +894,7 @@ func TestEditorReturnRestartsConfirmWait(t *testing.T) {
 	t.Setenv("VISUAL", "")
 	t.Setenv("EDITOR", "my-editor")
 	h := newPostHarness(t, markdownReview("fix `x`"), opts{})
-	h.press(t, "P", "enter")
+	h.press(t, "P", "enter", "tab")
 	h.wait()
 	h.press(t, "e")
 	if err := os.WriteFile(filepath.Join(h.m.dataDir, "tmp", "post-r1.md"), []byte("New summary."), 0o600); err != nil {
@@ -923,7 +923,7 @@ func TestPreviewBuildsOncePerSelection(t *testing.T) {
 	}
 	t.Cleanup(func() { buildPost = old })
 	h := newPostHarness(t, postReview(), opts{})
-	h.press(t, "P", "k", "enter")
+	h.press(t, "P", "k", "enter", "tab")
 	before := n
 	if before == 0 {
 		t.Fatal("the preview never built the payload")
@@ -976,6 +976,12 @@ func TestQuestionMarkOpensPostHelp(t *testing.T) {
 		t.Fatalf("? again: help %v, flow %+v", h.m.help, h.m.post)
 	}
 	h.press(t, "enter", "?")
+	// The preview opens in the summary box, where ? is typed.
+	if h.m.help || h.m.post.sel.Body != "?" {
+		t.Fatalf("? in the box: help %v, summary %q", h.m.help, h.m.post.sel.Body)
+	}
+	h.m, _ = settle(t, h.m, tea.KeyPressMsg{Code: tea.KeyBackspace})
+	h.press(t, "tab", "?")
 	if !h.m.help || h.m.post.stage != postPreview {
 		t.Fatalf("preview ?: help %v, stage %v", h.m.help, h.m.post.stage)
 	}
@@ -993,7 +999,7 @@ func TestQuestionMarkOpensPostHelp(t *testing.T) {
 
 func TestPreviewNeutralisesSemicolonlessRefs(t *testing.T) {
 	h := newPostHarness(t, markdownReview("Fine `&#27[38;5;16;48;5;16mThis PR is garbage&#27[0m` ok"), opts{})
-	h.press(t, "P", "enter")
+	h.press(t, "P", "enter", "tab")
 	out := h.m.postBody(160, 56)
 	checkOnlyPaletteSGR(t, "preview", out)
 	if strings.Contains(out, "\x1b[38;5;16;48;5;16m") {
@@ -1006,7 +1012,7 @@ func TestPreviewNeutralisesSemicolonlessRefs(t *testing.T) {
 
 func TestPreviewNeverDecodesSplitReferences(t *testing.T) {
 	h := newPostHarness(t, markdownReview(splitRefProbes[0]+"\n\n"+splitRLOProbes[0]), opts{})
-	h.press(t, "P", "enter")
+	h.press(t, "P", "enter", "tab")
 	checkNoDecodedControls(t, "preview", h.m.postBody(160, 56))
 	if got := modalText(h.m); !strings.Contains(got, "This PR is garbage") {
 		t.Errorf("the sentence is not in the preview:\n%s", got)
@@ -1016,7 +1022,7 @@ func TestPreviewNeverDecodesSplitReferences(t *testing.T) {
 func TestPreviewDefinitionListsDecodeNothing(t *testing.T) {
 	for name, src := range defListProbes {
 		h := newPostHarness(t, markdownReview(src), opts{})
-		h.press(t, "P", "enter")
+		h.press(t, "P", "enter", "tab")
 		checkNoDecodedControls(t, name, h.m.postBody(160, 56))
 		if got := modalText(h.m); !strings.Contains(got, "This PR is garbage") {
 			t.Errorf("%s: the sentence is not in the preview:\n%s", name, got)
@@ -1043,7 +1049,7 @@ func newDraftedHarness(t *testing.T) *postH {
 // it (TestPostMovesCardAtOnce).
 func TestPostClearsDraftedAtOnce(t *testing.T) {
 	h := newDraftedHarness(t)
-	h.press(t, "P", "k", "enter")
+	h.press(t, "P", "k", "enter", "tab")
 	h.wait()
 	m, cmd := update(t, h.m, key("enter"))
 	msgs, _ := runCmd(t, cmd)
@@ -1074,7 +1080,7 @@ func TestPostClearsDraftedAtOnce(t *testing.T) {
 func TestUncertainPostClearsDrafted(t *testing.T) {
 	h := newDraftedHarness(t)
 	h.poster.err = fmt.Errorf("github: post review: %w", context.DeadlineExceeded)
-	h.press(t, "P", "k", "enter")
+	h.press(t, "P", "k", "enter", "tab")
 	h.wait()
 	h.press(t, "enter")
 	if got := modalText(h.m); !strings.Contains(got, uncertainText) {
@@ -1093,7 +1099,7 @@ func TestUncertainPostClearsDrafted(t *testing.T) {
 func TestUnrecordedPostClearsDrafted(t *testing.T) {
 	h := newDraftedHarness(t)
 	failRecords(t, h.harness)
-	h.press(t, "P", "k", "enter")
+	h.press(t, "P", "k", "enter", "tab")
 	h.wait()
 	h.press(t, "enter", "esc")
 	if h.drafted() {
@@ -1111,9 +1117,9 @@ func TestPostMovesCardAtOnce(t *testing.T) {
 		keys []string
 		want status.Status
 	}{
-		{post.Approve, []string{"k", "k", "enter"}, status.ApprovedByYou},
-		{post.Comment, []string{"k", "k", "j", "enter"}, status.ChangesRequested},
-		{post.RequestChanges, []string{"k", "k", "j", "j", "enter"}, status.ChangesRequested},
+		{post.Approve, []string{"k", "k", "enter", "tab"}, status.ApprovedByYou},
+		{post.Comment, []string{"k", "k", "j", "enter", "tab"}, status.ChangesRequested},
+		{post.RequestChanges, []string{"k", "k", "j", "j", "enter", "tab"}, status.ChangesRequested},
 	} {
 		t.Run(string(tc.event), func(t *testing.T) {
 			t.Setenv("VISUAL", "")
@@ -1160,7 +1166,7 @@ func TestPostedReviewSurvivesPollStartedBefore(t *testing.T) {
 		t.Fatal("R did not start a poll")
 	}
 	h.m = m
-	h.press(t, "P", "enter")
+	h.press(t, "P", "enter", "tab")
 	h.wait()
 	h.press(t, "enter")
 	if len(h.poster.posts) != 1 {
@@ -1181,7 +1187,7 @@ func TestPostedReviewSurvivesPollStartedBefore(t *testing.T) {
 // view replaces the one the post assumed.
 func TestGitHubSnapshotReplacesPostedReview(t *testing.T) {
 	h := newPostHarness(t, markdownReview("fix `x`"), opts{})
-	h.press(t, "P", "k", "k", "enter")
+	h.press(t, "P", "k", "k", "enter", "tab")
 	h.wait()
 	h.press(t, "enter")
 	if got := h.m.prs["1"].Status.Status; got != status.ApprovedByYou {
@@ -1209,7 +1215,7 @@ func TestGitHubSnapshotReplacesPostedReview(t *testing.T) {
 func TestRefusedPostLeavesCard(t *testing.T) {
 	h := newPostHarness(t, markdownReview("fix `x`"), opts{})
 	h.poster.err = &github.RefusedError{Err: errors.New("github: post review: no permission")}
-	h.press(t, "P", "enter")
+	h.press(t, "P", "enter", "tab")
 	h.wait()
 	h.press(t, "enter")
 	if len(h.poster.posts) != 1 {
@@ -1229,7 +1235,7 @@ func TestAssumedReviewIsSaved(t *testing.T) {
 		t.Fatal("R did not start a poll")
 	}
 	h.m = m
-	h.press(t, "P", "enter")
+	h.press(t, "P", "enter", "tab")
 	h.wait()
 	h.press(t, "enter")
 	if len(h.poster.posts) != 1 {

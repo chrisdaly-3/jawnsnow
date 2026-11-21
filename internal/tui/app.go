@@ -171,6 +171,10 @@ type Model struct {
 	configPath string
 	// post is the open post flow, or nil.
 	post *postFlow
+	// keysDisambiguated is set once the terminal says it reports modified
+	// keys apart, so shift+enter doesn't arrive as enter. Only then does
+	// enter in the post flow's summary box post; otherwise it is a new line.
+	keysDisambiguated bool
 	// pollAgain asks for a poll as soon as the one in flight finishes.
 	pollAgain bool
 	// unconfirmedPosts are posts the store has no row for, by review ID:
@@ -419,7 +423,12 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 		return m, m.spinTick()
 	case wallTickMsg:
 		return m.wallUpdate(msg)
+	case tea.KeyboardEnhancementsMsg:
+		m.keysDisambiguated = msg.SupportsKeyDisambiguation()
 	case tea.PasteMsg:
+		if m.post != nil && m.post.boxActive() {
+			return m.postPaste(msg)
+		}
 		if m.view == ViewWall && m.wall.capturing() {
 			return m.wallUpdate(msg)
 		}

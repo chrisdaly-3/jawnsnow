@@ -46,10 +46,14 @@ func (p postFlow) hints() []keyHint {
 	if p.inFlight {
 		return postPostingKeys
 	}
-	if p.holdOn {
-		return append([]keyHint{postHoldOnKey}, postPreviewKeys(p.raw)...)
+	keys := postPreviewKeys(p.raw)
+	if p.inBox {
+		keys = postBoxKeys(p.enterPosts)
 	}
-	return postPreviewKeys(p.raw)
+	if p.holdOn {
+		return append([]keyHint{postHoldOnKey}, keys...)
+	}
+	return keys
 }
 
 // postBody draws the modal over the view.
@@ -135,6 +139,10 @@ func (m Model) postFrame(width, height int) (top, body []string, cursorRow, rows
 		}
 		top = append(top, wrap("Rendered view hides: "+strings.Join(items, "; ")+" — press m to see the raw text", th.StatusFg("CI_WAITING"))...)
 	}
+	top = append(top, "", ansi.Truncate(th.Accent().Render("Summary")+th.Muted().Render(" ● "+p.boxHelp()), inner, "…"))
+	box := p.box
+	box.SetWidth(inner)
+	top = append(top, strings.Split(box.View(), "\n")...)
 	top = append(top, "")
 
 	fs := orderedFindings(p.review.Findings)

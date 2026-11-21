@@ -235,7 +235,7 @@ func TestBuildExcludesUnchecked(t *testing.T) {
 func TestBuildRequestChangesNeedsBody(t *testing.T) {
 	r := review(anchored(1, "a.go", 1, "x"))
 	_, _, err := Build(r, "PR", Selection{Event: "REQUEST_CHANGES", Body: " \n "})
-	if err == nil || err.Error() != "Request changes needs a summary — press e to write one" {
+	if err == nil || err.Error() != "Request changes needs a summary — write one in the box" {
 		t.Errorf("err = %v", err)
 	}
 	if _, _, err := Build(r, "PR", Selection{Event: "REQUEST_CHANGES", Body: "why"}); err != nil {

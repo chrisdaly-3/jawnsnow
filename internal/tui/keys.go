@@ -68,8 +68,10 @@ var keyMap = []keySection{
 	{"Post", []keyHint{
 		{"y n", "post again, or not, when it was posted before"},
 		{"j k", "choose the event, or the finding"},
+		{"tab", "move between the summary box and the findings"},
+		{"shift+enter", "a new line in the summary box"},
 		{"space", "include or leave out the finding"},
-		{"e", "write the summary in $VISUAL or $EDITOR"},
+		{"e", "open the summary in $VISUAL or $EDITOR"},
 		{"m", "show the raw markdown or the rendered view"},
 		{"ctrl+d ctrl+u", "scroll the preview"},
 		{"enter", "pick the event, then post"},
@@ -142,8 +144,17 @@ func postPreviewKeys(raw bool) []keyHint {
 	if raw {
 		m.help = "rendered"
 	}
-	return []keyHint{{"j/k", "finding"}, {"space", "toggle"}, {"e", "edit summary"}, m,
+	return []keyHint{{"tab", "summary"}, {"j/k", "finding"}, {"space", "toggle"}, {"e", "open in $EDITOR"}, m,
 		{"ctrl+d/ctrl+u", "scroll"}, {"enter", "post"}, {"esc", "back"}, {"?", "help"}}
+}
+
+// postBoxKeys is the preview's footer while the summary box has the keys.
+// enterPosts is whether enter posts there (see postFlow.enterPosts).
+func postBoxKeys(enterPosts bool) []keyHint {
+	if enterPosts {
+		return []keyHint{{"shift+enter", "new line"}, {"enter", "post"}, {"tab/esc", "leave the box"}}
+	}
+	return []keyHint{{"enter", "new line"}, {"tab/esc", "leave the box"}}
 }
 
 var footerGlobal = []keyHint{{"[ ]", "views"}, {"R", "poll"}, {"m", "mode"}, {"?", "help"}, {"q", "quit"}}

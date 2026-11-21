@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/chrisdaly-3/jawnsnow/internal/github"
@@ -100,7 +101,13 @@ type postFlow struct {
 	mustAsk bool
 	pick    int // index into postEvents
 	sel     post.Selection
-	cursor  int // the checklist row, in orderedFindings order
+	// box is the preview's summary box, which edits sel.Body. inBox is set
+	// while it has the keys; the preview opens with it set. enterPosts is
+	// whether enter in the box posts (shift+enter being the new line), which
+	// needs a terminal that reports shift+enter apart from enter.
+	box               textarea.Model
+	inBox, enterPosts bool
+	cursor            int // the checklist row, in orderedFindings order
 	scroll  int
 	raw     bool
 	// inFlight is set from the confirming enter until the post's result
@@ -242,6 +249,7 @@ func (m Model) updatePost(msg tea.Msg) (_ Model, _ tea.Cmd, ok bool) {
 			p.err = "could not run the editor: " + msg.Err.Error()
 		} else {
 			p.sel.Body, p.err = strings.TrimRight(msg.Body, "\n"), ""
+			p.box.SetValue(p.sel.Body)
 			p.rebuild()
 		}
 		p.previewAt = m.now()
@@ -260,7 +268,9 @@ func (m Model) updatePost(msg tea.Msg) (_ Model, _ tea.Cmd, ok bool) {
 // only deliberate presses move the flow toward posting, and the first
 // ctrl+c while posting only warns: the post can't be taken back.
 func (m Model) postCapture(msg tea.KeyPressMsg) (_ Model, _ tea.Cmd, ok bool) {
-	if msg.IsRepeat {
+	// In the summary box a held key types or deletes as it would anywhere
+	// else; a held enter is still dropped, since enter can post.
+	if msg.IsRepeat && !(m.post.boxActive() && msg.String() != "enter") {
 		return m, nil, true
 	}
 	// The help overlay over the modal takes every key but ctrl+c, which
@@ -274,7 +284,7 @@ func (m Model) postCapture(msg tea.KeyPressMsg) (_ Model, _ tea.Cmd, ok bool) {
 		}
 		return m, nil, true
 	}
-	if msg.String() == "?" && !m.post.inFlight && !m.post.editing &&
+	if msg.String() == "?" && !m.post.inFlight && !m.post.editing && !m.post.boxActive() &&
 		(m.post.stage == postPick || m.post.stage == postPreview) {
 		m.help = true
 		return m, nil, true
@@ -319,6 +329,9 @@ func (m Model) postKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			p.sel.Event, p.stage, p.scroll, p.err = postEvents[p.pick].event, postPreview, 0, ""
 			p.previewAt = m.now()
 			p.rebuild()
+			// The preview opens with the summary box focused.
+			p.box, p.inBox, p.enterPosts = m.summaryBox(p.sel), true, m.keysDisambiguated
+			p.box.Focus()
 		case "esc":
 			m.post = nil
 			return m, nil
@@ -326,6 +339,9 @@ func (m Model) postKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	case postPreview:
 		if p.inFlight || p.editing {
 			return m, nil
+		}
+		if p.inBox {
+			return m.boxKey(p, msg)
 		}
 		return m.previewKey(p, k)
 	case postResult:
@@ -358,6 +374,9 @@ func (m Model) previewKey(p postFlow, k string) (Model, tea.Cmd) {
 			p.previewAt = m.now()
 			p.rebuild()
 		}
+	case "tab":
+		p.inBox = true
+		p.box.Focus()
 	case "m":
 		p.raw = !p.raw
 	case "ctrl+d", "ctrl+u":
