@@ -175,7 +175,7 @@ func (m drawerModel) checksLayout(c drawerCtx, lines []string, inner int) ([]str
 		lines = append(lines, "")
 		if cg.group == status.GroupPassed {
 			mark := map[bool]string{true: "▾ ", false: "▸ "}[m.showPassed]
-			lines = append(lines, th.Accent().Render(mark+cg.heading+" ("+strconv.Itoa(len(group))+")")+th.Muted().Render("  s"))
+			lines = append(lines, ansi.Truncate(th.Accent().Render(mark+cg.heading+" ("+strconv.Itoa(len(group))+")")+th.Muted().Render(foldHint("s", m.showPassed)), inner, "…"))
 			if !m.showPassed {
 				continue
 			}

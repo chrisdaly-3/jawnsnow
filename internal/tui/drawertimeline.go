@@ -85,7 +85,7 @@ func (m drawerModel) activityLayout(c drawerCtx, lines []string, inner int) ([]s
 		if len(s.Bots) == 1 {
 			noun = "bot item"
 		}
-		lines = append(lines, th.Muted().Render("  "+mark+strconv.Itoa(len(s.Bots))+" "+noun+"  b"))
+		lines = append(lines, ansi.Truncate(th.Muted().Render("  "+mark+strconv.Itoa(len(s.Bots))+" "+noun+foldHint("b", m.showBots)), inner, "…"))
 		if m.showBots {
 			entries(s.Bots)
 		}

@@ -612,13 +612,22 @@ func checkNotes(note string) []string {
 // after it, and its body when open.
 func (m drawerModel) section(th theme.Theme, title string, expanded bool, key string, inner int, body func() []string) []string {
 	if !expanded {
-		return []string{ansi.Truncate(th.Accent().Render("▸ "+title)+th.Muted().Render(" ● Press "+key+" to show"), inner, "…"), ""}
+		return []string{ansi.Truncate(th.Accent().Render("▸ "+title)+th.Muted().Render(foldHint(key, false)), inner, "…"), ""}
 	}
-	out := []string{ansi.Truncate(th.Accent().Render("▾ "+title)+th.Muted().Render(" ● Press "+key+" to hide"), inner, "…")}
+	out := []string{ansi.Truncate(th.Accent().Render("▾ "+title)+th.Muted().Render(foldHint(key, true)), inner, "…")}
 	for _, l := range body() {
 		out = append(out, "  "+l)
 	}
 	return append(out, "")
+}
+
+// foldHint is what follows a folding heading in every tab: " ● Press u to
+// show", or "to hide" when it is open.
+func foldHint(key string, open bool) string {
+	if open {
+		return " ● Press " + key + " to hide"
+	}
+	return " ● Press " + key + " to show"
 }
 
 // findingHeader is a finding's location line, and its tags (blocking, the
