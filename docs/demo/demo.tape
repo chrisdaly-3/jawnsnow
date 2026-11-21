@@ -71,7 +71,7 @@ Type "k"
 Sleep 500ms
 Space
 Wait+Screen@5s /Claude reviewing/
-Sleep 1000ms
+Sleep 1500ms
 
 # 5. Read the new review in the drawer, then preview a post as a comment.
 # Nothing is posted: esc backs out of the preview and the picker.
