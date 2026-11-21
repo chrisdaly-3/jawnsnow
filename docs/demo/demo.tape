@@ -73,15 +73,20 @@ Space
 Wait+Screen@5s /Claude reviewing/
 Sleep 1500ms
 
-# 5. Read the new review in the drawer, then preview a post as a comment.
-# Nothing is posted: esc backs out of the preview and the picker.
+# 5. Read the new review in the drawer, then preview a post as a comment,
+# typing a summary in the box the preview opens on. Nothing is posted: esc
+# leaves the box, then backs out of the preview and the picker.
 Enter
 Sleep 600ms
 Type "P"
 Sleep 600ms
 Enter
+Sleep 500ms
+Type "Thanks! Two small things below."
 Sleep 800ms
 Screenshot docs/assets/post-preview.png
+Sleep 500ms
+Escape
 Sleep 500ms
 Type "m"
 Sleep 500ms
