@@ -16,7 +16,7 @@ import (
 // cost row, as the review engine would.
 type Reviewer struct {
 	Store *store.Store
-	Delay time.Duration    // 0 waits 2.5s
+	Delay time.Duration    // 0 waits 1.5s
 	Now   func() time.Time // nil is time.Now
 }
 
@@ -44,7 +44,7 @@ func (r *Reviewer) Run(ctx context.Context, req review.Request, onEvent func(rev
 
 	delay := r.Delay
 	if delay == 0 {
-		delay = 2500 * time.Millisecond
+		delay = 1500 * time.Millisecond
 	}
 	files := contextFor(pr.ID).Files
 	steps := len(files) + 1
