@@ -217,7 +217,7 @@ The Checks tab lists every check at the PR's head, grouped by how it counted tow
 | `Waiting on you` | `⏸` | GitHub reports `ACTION_REQUIRED`: the check waits for a person, such as a reviewer approving the head. It doesn't count. |
 | `Running` | `●` | the check is pending, so CI is pending |
 | `Ignored` | `◌` | the check matches `github.ignore_checks` or the repo's `ignore_checks`, so it doesn't count. The row shows the glob, as `matches "codeowners-gate*"`. |
-| `Passed (N)` | `✓` | the check passed, or finished neutral or skipped. Folded until you press `s`. |
+| `Passed (N)` | `✓` | the check passed, or finished neutral or skipped. Folded until you press `s`; the heading reads `▸ Passed (3) ● Press s to show`, or `to hide` when open. |
 
 A check that branch protection requires is tagged `required`. Within a group, checks are listed as GitHub lists them. A PR with no checks says `No checks.` The tab reads the PR's stored data with the current config, so it needs no reviews, and a change to `ignore_checks` shows at once.
 
@@ -242,7 +242,7 @@ Each entry is one line, with its first lines of text under it:
 
 A review's or comment's text shows its first 2 lines; `O` opens the rest on GitHub.
 
-Bots, such as CI and preview bots, are muted and folded at the bottom of each side of the divider, as `▸ 2 bot items  b`. `b` shows or hides them. A bot's entry from after your review stays above the divider.
+Bots, such as CI and preview bots, are muted and folded at the bottom of each side of the divider, as `▸ 2 bot items ● Press b to show`. `b` shows or hides them, and the line then says `to hide`. A bot's entry from after your review stays above the divider.
 
 `n` and `N` select an entry, and `J` and `K` jump to the last or first one. `O` opens the entry on GitHub (the PR for a force-push), and `y` copies its text, or a run's headlines.
 

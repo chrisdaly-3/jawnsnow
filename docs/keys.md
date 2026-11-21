@@ -64,8 +64,6 @@ These work when the drawer has focus. Opening it with `enter` focuses it, and `t
 | `J` `K` | jump to the bottom or top |
 | `n` `N` | next or previous finding, check or entry |
 | `<` `>` | older or newer pass |
-| `s` | show or hide passed checks |
-| `b` | show or hide bot entries |
 | `o` | open the PR |
 | `O` | open the finding's line, the check or the entry |
 | `y` | copy the finding, the check's name or the entry |
@@ -81,7 +79,8 @@ More on these:
 - `O` opens the PR's Files tab in the browser at the selected finding's file, and at its line when the finding is anchored.
 - `y` copies the selected finding's body to the clipboard, using the terminal's OSC 52 support, and shows `copied the finding`.
 - `Y` (`shift+y`) copies the pass's [check notes](reviews.md#check-notes), one per line, and shows `copied the check notes`, or `no check notes to copy` when there are none.
-- `u` and `a` show or hide the Understanding and Assumptions sections. They aren't in the help overlay: each heading says its key, as `● Press u to show` or `● Press u to hide`, and the Check notes heading says `● Press Y to copy`.
+- `u` and `a` show or hide the Understanding and Assumptions sections.
+- `Y`, `u`, `a`, `s` and `b` aren't in the help overlay: the heading each one acts on says its key. Folding headings say `● Press u to show` (or `to hide` when open), as do the Checks tab's `▸ Passed (3) ● Press s to show` and the Activity tab's `▸ 1 bot item ● Press b to show`; the Check notes heading says `● Press Y to copy`.
 - On the Checks tab, `n` and `N` select a check, `O` opens the check's own page (or the PR's checks page when snow has no link for it), `y` copies its name and shows `copied the check's name`, and `s` shows or hides the passed checks.
 - On the Activity tab, `n` and `N` select an entry, `O` opens the entry's page (or the PR when the entry has none, such as a force-push), `y` copies its text (a comment's body or a commit's headline) and shows `copied the entry`, and `b` shows or hides the bot entries.
 - `P` opens the [post flow](posting.md) on the pass on screen. A failed review can't be posted: the drawer says `a failed review can't be posted`.
