@@ -150,9 +150,9 @@ func orderedChecks(rows []status.CheckRow, showPassed bool) []status.CheckRow {
 }
 
 // checksLayout is the Checks tab under the header: each group that has
-// checks under its heading, with the passed ones folded until s. anchors
-// holds the line of each selectable check, in orderedChecks order.
-func (m drawerModel) checksLayout(c drawerCtx, lines []string, inner int) ([]string, []int) {
+// checks under its heading, with the passed ones folded until s. spans
+// holds where each selectable check sits, in orderedChecks order.
+func (m drawerModel) checksLayout(c drawerCtx, lines []string, inner int) ([]string, []itemSpan) {
 	th := c.Theme
 	rows := checkRows(c)
 	if len(rows) == 0 {
@@ -160,7 +160,7 @@ func (m drawerModel) checksLayout(c drawerCtx, lines []string, inner int) ([]str
 	}
 	shown := orderedChecks(rows, m.showPassed)
 	sel := min(m.checkSel, max(len(shown)-1, 0))
-	var anchors []int
+	var spans []itemSpan
 	i := 0
 	for _, cg := range checkGroups {
 		var group []status.CheckRow
@@ -183,12 +183,12 @@ func (m drawerModel) checksLayout(c drawerCtx, lines []string, inner int) ([]str
 			lines = append(lines, th.Accent().Render(cg.heading))
 		}
 		for _, r := range group {
-			anchors = append(anchors, len(lines))
+			spans = append(spans, itemSpan{start: len(lines), head: len(lines) + 1, end: len(lines) + 1})
 			lines = append(lines, checkLine(th, r, i == sel, inner))
 			i++
 		}
 	}
-	return lines, anchors
+	return lines, spans
 }
 
 // checkLine is one check: the selection mark, its glyph, its name, and
@@ -214,7 +214,7 @@ func checkLine(th theme.Theme, r status.CheckRow, selected bool, inner int) stri
 
 // checksKey handles a key on the Checks tab.
 func (m drawerModel) checksKey(msg tea.KeyPressMsg, c drawerCtx) (drawerModel, tea.Cmd, action) {
-	_, anchors := m.layout(c)
+	_, spans := m.layout(c)
 	shown := orderedChecks(checkRows(c), m.showPassed)
 	m.checkSel = min(m.checkSel, max(len(shown)-1, 0))
 	switch k := msg.String(); k {
@@ -225,7 +225,7 @@ func (m drawerModel) checksKey(msg tea.KeyPressMsg, c drawerCtx) (drawerModel, t
 	case "n", "N":
 		if len(shown) > 0 {
 			m.checkSel = min(max(m.checkSel+map[string]int{"n": 1, "N": -1}[k], 0), len(shown)-1)
-			m.checkScroll = anchors[m.checkSel]
+			m.checkScroll = scrollToItem(m.checkScroll, spans[m.checkSel], m.bodyHeight(c.Height))
 		}
 	case "s":
 		m.showPassed = !m.showPassed

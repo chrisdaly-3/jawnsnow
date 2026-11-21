@@ -280,7 +280,7 @@ func (m drawerModel) key(msg tea.KeyPressMsg, c drawerCtx) (drawerModel, tea.Cmd
 
 // reviewKey handles a key on the Review tab.
 func (m drawerModel) reviewKey(msg tea.KeyPressMsg, c drawerCtx) (drawerModel, tea.Cmd, action) {
-	_, anchors := m.layout(c)
+	_, spans := m.layout(c)
 	var fs []store.Finding
 	if r := m.current(); r != nil {
 		fs = orderedFindings(r.Findings)
@@ -293,7 +293,7 @@ func (m drawerModel) reviewKey(msg tea.KeyPressMsg, c drawerCtx) (drawerModel, t
 	case "n", "N":
 		if len(fs) > 0 {
 			m.sel = min(max(m.sel+map[string]int{"n": 1, "N": -1}[k], 0), len(fs)-1)
-			m.scroll = anchors[m.sel]
+			m.scroll = scrollToItem(m.scroll, spans[m.sel], m.bodyHeight(c.Height))
 		}
 	case "<", ">":
 		next := m.pass + map[string]int{"<": 1, ">": -1}[k]
@@ -472,9 +472,10 @@ func findingLocation(f store.Finding) string {
 	return path
 }
 
-// layout lays the whole drawer out as lines, and returns the line each
-// finding (in orderedFindings order) starts on.
-func (m drawerModel) layout(c drawerCtx) (lines []string, anchors []int) {
+// layout lays the whole drawer out as lines, and returns where each
+// selectable item sits: each finding (in orderedFindings order) on the
+// Review tab, each check or entry on the others.
+func (m drawerModel) layout(c drawerCtx) (lines []string, spans []itemSpan) {
 	th := c.Theme
 	inner := innerWidth(m.layoutWidth(m.width()))
 	add := func(ls ...string) { lines = append(lines, ls...) }
@@ -554,11 +555,13 @@ func (m drawerModel) layout(c drawerCtx) (lines []string, anchors []int) {
 		add(th.Muted().Render("No findings."), "")
 	}
 	for i, f := range fs {
-		anchors = append(anchors, len(lines))
+		start := len(lines)
 		add(m.findingHeader(c, f, i == m.sel, inner)...)
+		head := len(lines)
 		for _, l := range m.md.render(cleanBlock(f.Body), inner-2, th) {
 			add("  " + l)
 		}
+		spans = append(spans, itemSpan{start: start, head: head, end: len(lines)})
 		add("")
 	}
 
@@ -590,7 +593,7 @@ func (m drawerModel) layout(c drawerCtx) (lines []string, anchors []int) {
 			}
 		}
 	}
-	return lines, anchors
+	return lines, spans
 }
 
 // checkNotes are a review's check notes, one per line as the engine writes
@@ -659,7 +662,13 @@ func (m drawerModel) view(width, height int, c drawerCtx) string {
 	}
 	th := c.Theme
 	c.Height = height
-	lines, _ := m.layout(c)
+	lines, spans := m.layout(c)
+	if len(spans) > 0 {
+		s := spans[m.selected(len(spans))]
+		for y := s.start; y < s.head && y < len(lines); y++ {
+			lines[y] = th.Selected(lines[y], max(width-2, 0))
+		}
+	}
 	bodyH := m.bodyHeight(height)
 	scroll := m.tabScroll()
 	scroll = min(max(scroll, 0), max(len(lines)-bodyH, 0))

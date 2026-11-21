@@ -43,9 +43,9 @@ func shownActivity(v status.ActivityView, showBots bool) []status.ActivityEntry 
 
 // activityLayout is the Activity tab under the header (plan 5): the
 // entries since your review, the divider, the older ones, each side's bots
-// folded at its bottom. anchors holds each selectable entry's first line,
+// folded at its bottom. spans holds where each selectable entry sits,
 // in shownActivity order.
-func (m drawerModel) activityLayout(c drawerCtx, lines []string, inner int) ([]string, []int) {
+func (m drawerModel) activityLayout(c drawerCtx, lines []string, inner int) ([]string, []itemSpan) {
 	th, a := c.Theme, c.Activity
 	lines = append(lines, "")
 	if a.Err != "" {
@@ -65,12 +65,13 @@ func (m drawerModel) activityLayout(c drawerCtx, lines []string, inner int) ([]s
 		return append(lines, th.Muted().Render(activityNone)), nil
 	}
 	sel := min(m.actSel, max(len(shown)-1, 0))
-	var anchors []int
+	var spans []itemSpan
 	i := 0
 	entries := func(es []status.ActivityEntry) {
 		for _, e := range es {
-			anchors = append(anchors, len(lines))
+			start := len(lines)
 			lines = append(lines, activityEntryLines(th, e, i == sel, c.Now, inner)...)
+			spans = append(spans, itemSpan{start: start, head: len(lines), end: len(lines)})
 			i++
 		}
 	}
@@ -97,7 +98,7 @@ func (m drawerModel) activityLayout(c drawerCtx, lines []string, inner int) ([]s
 	if len(a.Items) >= github.ActivityLimit {
 		lines = append(lines, "", th.Muted().Render(activityOlder))
 	}
-	return lines, anchors
+	return lines, spans
 }
 
 // yourReviewDivider is the line at your latest review (G3):
@@ -230,7 +231,7 @@ func excerpt(text string) []string {
 
 // activityKey handles a key on the Activity tab (G6).
 func (m drawerModel) activityKey(msg tea.KeyPressMsg, c drawerCtx) (drawerModel, tea.Cmd, action) {
-	_, anchors := m.layout(c)
+	_, spans := m.layout(c)
 	shown := shownActivity(activityView(c), m.showBots)
 	if !c.Activity.Loaded {
 		shown = nil
@@ -242,9 +243,9 @@ func (m drawerModel) activityKey(msg tea.KeyPressMsg, c drawerCtx) (drawerModel,
 	case "k", "up":
 		m.actScroll--
 	case "n", "N":
-		if len(shown) > 0 && len(anchors) == len(shown) {
+		if len(shown) > 0 && len(spans) == len(shown) {
 			m.actSel = min(max(m.actSel+map[string]int{"n": 1, "N": -1}[k], 0), len(shown)-1)
-			m.actScroll = anchors[m.actSel]
+			m.actScroll = scrollToItem(m.actScroll, spans[m.actSel], m.bodyHeight(c.Height))
 		}
 	case "b":
 		m.showBots = !m.showBots
