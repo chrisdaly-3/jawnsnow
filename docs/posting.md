@@ -63,15 +63,24 @@ This keeps a follow-up from posting a point twice. Unanchored findings are poste
 
 ## The summary
 
-The summary is the review's body. It starts empty, since it is your own text: the reviewer's understanding and its reason for the verdict stay private unless you copy them in.
+The summary is the review's body. It starts empty, since it is your own text: the reviewer's understanding and its reason for the verdict stay private unless you copy them in. It works the same for every event, so an Approve can carry a summary too.
 
-`e` writes the current summary to a temporary file, `tmp/post-<review id>.md` in the data directory, readable only by you, and opens it in `$VISUAL`, else `$EDITOR`, else `vi`. The value is split on spaces and run without a shell, so `code -w` works. When the editor exits, snow reads the file back, trims trailing newlines, and deletes the file.
+The preview opens with the summary box focused, under a `Summary ●` line that says how to get out of it. Type the summary there; the rendered `Summary` part further down shows what will be posted as you type. Pastes go into the box, held keys repeat, and keys the checklist uses (`space`, `j`, `k`, `m`, `?`) are typed.
+
+What `enter` does in the box depends on the terminal:
+
+- When the terminal reports `shift+enter` apart from `enter` (Ghostty, kitty, WezTerm, iTerm2 with its CSI u setting, tmux with `extended-keys` on), `shift+enter` is a new line and `enter` posts. The line above the box says `tab to leave the box · shift+enter for a new line · enter to post`.
+- Otherwise `shift+enter` arrives as plain `enter`, so posting on `enter` would send a half-written summary. There `enter` is a new line, and you leave the box with `tab` to post. The line says `tab to leave the box, then enter to post · enter for a new line`.
+
+`alt+enter` and `ctrl+j` are a new line in either case. `tab` or `esc` leaves the box for the checklist, and `tab` there goes back.
+
+On the checklist, `e` writes the current summary to a temporary file, `tmp/post-<review id>.md` in the data directory, readable only by you, and opens it in `$VISUAL`, else `$EDITOR`, else `vi`. The value is split on spaces and run without a shell, so `code -w` works. When the editor exits, snow reads the file back, trims trailing newlines, puts the text in the box, and deletes the file.
 
 The checked unanchored findings are added to the body after a bold `**Other notes**` line, one list item per finding, each starting with its path in code formatting. They come after your text, or make up the whole body when you wrote none.
 
 Rules on the body:
 
-- Request changes needs your own summary: an empty one shows `Request changes needs a summary — press e to write one`, and `enter` does nothing.
+- Request changes needs your own summary: an empty one shows `Request changes needs a summary — write one in the box`, and `enter` does nothing.
 - A Comment needs something to post, a body or at least one checked anchored finding: otherwise `nothing to post: write a summary or select a finding`.
 - An Approve can be empty: the preview then says `No summary or comments: only the event is posted.`
 
@@ -96,14 +105,14 @@ The preview's top lines:
 
 Before anything is shown or sent, snow strips control characters (other than newlines and tabs), terminal escape sequences, and zero-width and bidirectional formatting characters from every part, and replaces character references that decode to one of those with `�`.
 
-`esc` goes back to the event picker, keeping your checklist and summary.
+On the checklist, `esc` goes back to the event picker, keeping your checklist and summary.
 
 ## Confirming
 
-`enter` in the preview posts. Two rules stop an accidental post:
+`enter` on the checklist posts, and so does `enter` in the summary box on a terminal that tells `shift+enter` apart. Two rules stop an accidental post:
 
-- `enter` only counts when the preview has been unchanged for at least 500 ms: since it opened, since you toggled a finding, and since the editor closed. An earlier `enter` restarts the wait and the footer shows `hold on — press enter again to post`.
-- Holding a key down doesn't post. snow ignores key repeats in the flow, and on terminals that send a held key as plain presses each one restarts the 500 ms wait.
+- `enter` only counts when the preview has been unchanged for at least 500 ms: since it opened, since you toggled a finding or changed the summary, and since the editor closed. So an `enter` right after typing is held. An earlier `enter` restarts the wait and the footer shows `hold on — press enter again to post`.
+- Holding a key down doesn't post. snow ignores key repeats in the flow (in the summary box, all but `enter` repeat), and on terminals that send a held key as plain presses each one restarts the 500 ms wait.
 
 While the post is sent, the preview shows `Posting to GitHub…` and ignores every key but `ctrl+c`. The first `ctrl+c` warns `posting to GitHub — ctrl+c again to quit anyway`, since a post can't be taken back once sent.
 

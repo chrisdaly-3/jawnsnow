@@ -148,7 +148,7 @@ On a claude.ai subscription login every cost is the CLI's estimate of the API pr
 | `posting unavailable: could not set up posting: <error>` | snow couldn't build its GitHub poster at startup; check `gh auth status` and restart |
 | `posting unavailable: another snow is running on this machine — post from that window` | post from the snow that holds the lock |
 | `a failed review can't be posted` | run a new review |
-| `Request changes needs a summary — press e to write one` | press `e` and write a summary |
+| `Request changes needs a summary — write one in the box` | write a summary in the preview's summary box (or press `e` on the checklist to use your editor) |
 | `nothing to post: write a summary or select a finding` | check a finding or write a summary |
 | `hold on — press enter again to post` | press `enter` again, after a moment |
 | `PR has new commits since this review — comments will show as outdated` | a warning only; review again first if you want comments on the new head |
