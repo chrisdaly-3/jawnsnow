@@ -30,9 +30,6 @@ const (
 	WaitNoFeed WaitReason = "no-feed"
 )
 
-// defaultSince applies to a feed that is no longer in the config.
-const defaultSince = 14 * 24 * time.Hour
-
 type Tracked struct {
 	PR     github.Snapshot
 	Status status.Result
@@ -194,11 +191,11 @@ func expired(t Tracked, now time.Time, keepFor time.Duration) bool {
 
 func longestSince(feeds []string, cfg config.Config) time.Duration {
 	if len(feeds) == 0 {
-		return defaultSince
+		return config.DefaultSince // the feed is no longer in the config
 	}
 	var longest time.Duration
 	for _, name := range feeds {
-		since := defaultSince
+		since := config.DefaultSince
 		for _, f := range cfg.Feeds {
 			if f.Name == name {
 				since = f.Since.Duration

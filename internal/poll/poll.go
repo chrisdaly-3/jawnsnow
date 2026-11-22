@@ -175,13 +175,4 @@ func (e *NothingReachedError) Error() string {
 
 func (e *NothingReachedError) Unwrap() []error { return e.FeedErrs }
 
-func (r *Result) observe(rl github.RateLimit) {
-	if rl == (github.RateLimit{}) {
-		return
-	}
-	cost := r.Rate.Cost + rl.Cost
-	if r.Rate == (github.RateLimit{}) || rl.Remaining < r.Rate.Remaining {
-		r.Rate = rl
-	}
-	r.Rate.Cost = cost
-}
+func (r *Result) observe(rl github.RateLimit) { r.Rate.Add(rl) }

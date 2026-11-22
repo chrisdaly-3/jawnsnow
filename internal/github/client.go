@@ -115,10 +115,10 @@ func nodeIndex(path []any, n int) (int, bool) {
 	return i, i >= 0 && i < n
 }
 
-// add folds another call's rate limit into the total: the lowest remaining
+// Add folds another call's rate limit into the total: the lowest remaining
 // with its reset, and the summed cost. Calls run concurrently, so "latest"
 // has no meaning. An empty RateLimit, from a failed call, is ignored.
-func (r *RateLimit) add(next RateLimit) {
+func (r *RateLimit) Add(next RateLimit) {
 	if next == (RateLimit{}) {
 		return
 	}
@@ -150,7 +150,7 @@ func (c *client) Search(ctx context.Context, query string) ([]Fingerprint, RateL
 		if err != nil {
 			return nil, total, err
 		}
-		total.add(rl)
+		total.Add(rl)
 		var s struct {
 			PageInfo pageInfo           `json:"pageInfo"`
 			Nodes    []*fingerprintNode `json:"nodes"`
@@ -187,7 +187,7 @@ func (c *client) Fingerprints(ctx context.Context, ids []string) ([]Fingerprint,
 		if err != nil {
 			return nil, nil, total, err
 		}
-		total.add(rl)
+		total.Add(rl)
 		skip := map[int]api.GraphQLErrorItem{}
 		for _, e := range errs {
 			i, _ := nodeIndex(e.Path, len(batch))
@@ -266,7 +266,7 @@ func (c *client) Details(ctx context.Context, viewer string, ids []string) ([]Sn
 	for _, r := range results {
 		snaps = append(snaps, r.snaps...)
 		skipped = append(skipped, r.skipped...)
-		total.add(r.rl)
+		total.Add(r.rl)
 	}
 	if err := cmp.Or(rateErr, firstErr); err != nil {
 		return nil, nil, total, err
@@ -311,7 +311,7 @@ func (c *client) fetchBatch(ctx context.Context, viewer string, batch []string) 
 	if err != nil {
 		return nil, nil, total, err
 	}
-	total.add(rl)
+	total.Add(rl)
 	skip := map[string]api.GraphQLErrorItem{}
 	for _, e := range errs {
 		alias := e.Path[0].(string)
@@ -341,7 +341,7 @@ func (c *client) fetchBatch(ctx context.Context, viewer string, batch []string) 
 			if err != nil {
 				return nil, nil, total, err
 			}
-			total.add(rl)
+			total.Add(rl)
 			snap.Checks = append(snap.Checks, more...)
 			next = nextPage
 		}

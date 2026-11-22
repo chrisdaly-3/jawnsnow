@@ -59,8 +59,7 @@ func (m Model) reviewBadges(frame int) map[string]string {
 func (m Model) badge(t tracker.Tracked, frame int) string {
 	th := m.theme
 	s := m.reviews.state[t.PR.ID]
-	switch {
-	case s.running:
+	if s.running {
 		f := reviewSpinner.Frames[frame%len(reviewSpinner.Frames)]
 		return th.Accent().Render(strings.TrimSpace(f) + " Claude reviewing…")
 	}

@@ -257,7 +257,7 @@ func (e *Engine) review(ctx context.Context, req Request, rv *store.Review, onEv
 	rc := cfg.RepoFor(pr.Repo)
 	var contextDirs []string
 	for _, c := range rc.Context {
-		contextDirs = append(contextDirs, expandHome(c))
+		contextDirs = append(contextDirs, workspace.ExpandHome(c))
 	}
 	pin := PromptInput{
 		Repo: pr.Repo, Number: pr.Number, Title: pr.Title, Author: pr.Author, URL: pr.URL,
@@ -371,7 +371,7 @@ func (e *Engine) review(ctx context.Context, req Request, rv *store.Review, onEv
 	if rv.Raw, err = withExamined(raw, VerifiedExamined(out.Examined, seen, worktree)); err != nil {
 		return err
 	}
-	rv.Findings = append(kept, applyLedger(earlier, out.Ledger)...)
+	rv.Findings = slices.Concat(kept, applyLedger(earlier, out.Ledger))
 	rv.Note = joinNotes(out.Note, notes, gaps, lint)
 	return nil
 }
@@ -538,8 +538,7 @@ func (e *Engine) repoPool(ctx context.Context, name string) (*repoPool, error) {
 	if err != nil {
 		return nil, err
 	}
-	dir := filepath.Join(data, "worktrees", strings.ReplaceAll(name, "/", "__"))
-	rp := &repoPool{repo: r, pool: workspace.NewPool(r, dir, max(cfg.Review.MaxInFlight, 1), e.Store, e.now)}
+	rp := &repoPool{repo: r, pool: workspace.NewPool(r, workspace.PoolDir(data, name), max(cfg.Review.MaxInFlight, 1), e.Store, e.now)}
 	e.mu.Lock()
 	if e.repos == nil {
 		e.repos = map[string]*repoPool{}
@@ -641,7 +640,7 @@ func (e *Engine) hasIdleSlot(ctx context.Context, repo string, idle time.Duratio
 	if err != nil {
 		return false, err
 	}
-	poolDir := filepath.Join(data, "worktrees", strings.ReplaceAll(repo, "/", "__"))
+	poolDir := workspace.PoolDir(data, repo)
 	now := e.now()
 	return slices.ContainsFunc(slots, func(s store.Slot) bool {
 		return filepath.Dir(s.Path) == poolDir && !s.Busy && now.Sub(s.LastUsed) > idle
@@ -660,8 +659,7 @@ func (e *Engine) dropSlotsWithoutClone(ctx context.Context, repo string) (bool, 
 	if err != nil {
 		return false, err
 	}
-	clone := filepath.Join(data, "clones", strings.ReplaceAll(repo, "/", "__")+".git")
-	if _, err := os.Stat(clone); err == nil {
+	if _, err := os.Stat(workspace.ClonePath(data, repo)); err == nil {
 		return false, nil
 	}
 	slots, err := e.Store.Slots(ctx, repo)
@@ -714,15 +712,6 @@ func (e *Engine) cloneURL(name string) string {
 }
 
 func prKey(repo string, number int) string { return repo + "#" + strconv.Itoa(number) }
-
-func expandHome(p string) string {
-	if p == "~" || strings.HasPrefix(p, "~/") {
-		if home, err := os.UserHomeDir(); err == nil {
-			return filepath.Join(home, p[1:])
-		}
-	}
-	return p
-}
 
 // keyedLock is a mutex per key whose lock gives up when its context ends.
 type keyedLock struct {

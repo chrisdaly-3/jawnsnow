@@ -462,9 +462,8 @@ func sweepStartup(ctx context.Context, st *store.Store, cfg func() config.Config
 
 	var errs []error
 	for _, repo := range slices.Sorted(maps.Keys(byRepo)) {
-		fileName := strings.ReplaceAll(repo, "/", "__")
 		rc := cfg().RepoFor(repo)
-		if _, err := os.Stat(filepath.Join(data, "clones", fileName+".git")); rc.Path == "" && err != nil {
+		if _, err := os.Stat(workspace.ClonePath(data, repo)); rc.Path == "" && err != nil {
 			continue
 		}
 		r, err := workspace.Resolve(ctx, repo, rc, data, noClone)
@@ -472,8 +471,7 @@ func sweepStartup(ctx context.Context, st *store.Store, cfg func() config.Config
 			errs = append(errs, err) // a mapped path that isn't a repo
 			continue
 		}
-		slots := filepath.Join(data, "worktrees", fileName)
-		if err := workspace.Sweep(ctx, r, slots, byRepo[repo], st); err != nil {
+		if err := workspace.Sweep(ctx, r, workspace.PoolDir(data, repo), byRepo[repo], st); err != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", repo, err))
 		}
 	}

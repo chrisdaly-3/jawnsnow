@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -131,7 +132,7 @@ func Run(ctx context.Context, s Session, prompt string, onEvent func(Event)) (Ru
 		defer cancel()
 	}
 
-	args := append(append([]string{}, s.binArgs...), BuildArgs(s)...)
+	args := slices.Concat(s.binArgs, BuildArgs(s))
 	cmd := exec.Command(s.Binary, args...)
 	cmd.Dir = s.Dir
 	cmd.Stdin = strings.NewReader(prompt)

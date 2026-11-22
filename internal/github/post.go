@@ -157,7 +157,7 @@ func (p *poster) PostReview(ctx context.Context, in PostInput) (PostResult, erro
 		return PostResult{}, err
 	}
 	if resp.AddPullRequestReview == nil {
-		return PostResult{}, fmt.Errorf("github: post review: no review in the response")
+		return PostResult{}, errors.New("github: post review: no review in the response")
 	}
 	r := resp.AddPullRequestReview.PullRequestReview
 	res := PostResult{ReviewID: r.ID, URL: r.URL}

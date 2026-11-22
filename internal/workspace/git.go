@@ -109,7 +109,7 @@ func Resolve(ctx context.Context, name string, rc config.Repo, dataDir string, c
 	url := cloneURL(name)
 
 	if rc.Path != "" {
-		r, err := open(ctx, name, expandHome(rc.Path))
+		r, err := open(ctx, name, ExpandHome(rc.Path))
 		if err != nil {
 			if ctx.Err() != nil {
 				return Repo{}, ctx.Err()
@@ -120,8 +120,8 @@ func Resolve(ctx context.Context, name string, rc config.Repo, dataDir string, c
 		return r, nil
 	}
 
-	clones := filepath.Join(dataDir, "clones")
-	dest := filepath.Join(clones, strings.Replace(name, "/", "__", 1)+".git")
+	dest := ClonePath(dataDir, name)
+	clones := filepath.Dir(dest)
 	if r, err := open(ctx, name, dest); err == nil {
 		r.CloneURL = url
 		return r, nil
@@ -159,15 +159,6 @@ func open(ctx context.Context, name, path string) (Repo, error) {
 		r.WorkDir = strings.TrimSpace(string(top))
 	}
 	return r, nil
-}
-
-func expandHome(p string) string {
-	if p == "~" || strings.HasPrefix(p, "~/") {
-		if home, err := os.UserHomeDir(); err == nil {
-			return filepath.Join(home, p[1:])
-		}
-	}
-	return p
 }
 
 // dir is where git commands for r run.

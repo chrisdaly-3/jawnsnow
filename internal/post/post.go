@@ -163,7 +163,7 @@ func Build(r store.Review, prID string, sel Selection) (in github.PostInput, p P
 	// payload comes back empty, so nothing can be sent until it can.
 	switch {
 	case sel.Event == RequestChanges && ownBlank:
-		return github.PostInput{}, p, errors.New("Request changes needs a summary — write one in the box")
+		return github.PostInput{}, p, errors.New("Request changes needs a summary — write one in the box") //nolint:staticcheck // starts with the event's label
 	case sel.Event == Comment && body == "" && len(threads) == 0:
 		return github.PostInput{}, p, errors.New("nothing to post: write a summary or select a finding")
 	}

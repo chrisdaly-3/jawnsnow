@@ -302,5 +302,5 @@ func splitRateLimit(raw map[string]json.RawMessage) (RateLimit, error) {
 			return RateLimit{}, err
 		}
 	}
-	return RateLimit{rl.Remaining, rl.Cost, rl.ResetAt}, nil
+	return RateLimit(rl), nil
 }

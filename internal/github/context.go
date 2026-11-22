@@ -110,7 +110,7 @@ func (c *client) ReviewContext(ctx context.Context, id string) (PRContext, RateL
 	if err != nil {
 		return PRContext{}, total, err
 	}
-	total.add(rl)
+	total.Add(rl)
 	var n reviewContextNode
 	if err := json.Unmarshal(raw["node"], &n); err != nil {
 		return PRContext{}, total, err
@@ -129,7 +129,7 @@ func (c *client) ReviewContext(ctx context.Context, id string) (PRContext, RateL
 		if err != nil {
 			return PRContext{}, total, err
 		}
-		total.add(rl)
+		total.Add(rl)
 		var more struct {
 			Files filesPage `json:"files"`
 		}
