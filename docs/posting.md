@@ -1,6 +1,6 @@
 # Posting a review
 
-Posting is the only thing snow writes to GitHub, and it happens only when you ask. `P` in the drawer opens the post flow on the pass on screen. You pick the review event, choose which findings to include, write a summary if you want one, check a preview of exactly what will be sent, and confirm. The review then goes to GitHub as one review under your `gh` login.
+Posting is the only thing snow writes to GitHub, and it happens only when you ask. `P` in the drawer opens the post flow on the pass on screen: one screen where you choose the review event, write a summary if you want one, choose which findings to include, check exactly what will be sent, and confirm. The review then goes to GitHub as one review under your `gh` login.
 
 ![The post preview](assets/post-preview.png)
 
@@ -11,7 +11,7 @@ Open the drawer on a PR (`enter`, which also focuses it), go to the pass you wan
 - A failed review can't be posted: the drawer says `a failed review can't be posted`. Complete and incomplete reviews can.
 - When posting isn't available, `P` shows `posting unavailable: <reason>`. The reasons are `gh is not logged in`, `could not set up posting: <error>`, and `another snow is running on this machine — post from that window`.
 
-The modal's title is `Post review · owner/name#number`. snow first checks the database for earlier posts of this review (`Checking earlier posts…`).
+The modal's title is `Post review · owner/name#number`, and the commit's short ID once the screen is open. snow first checks the database for earlier posts of this review (`Checking earlier posts…`).
 
 ## The repost question
 
@@ -27,11 +27,34 @@ If a post may have reached GitHub without snow recording it (see [Failures](#fai
 A post may already have reached GitHub just now — post again? y/n
 ```
 
-`y` goes on; `n` or `esc` closes the flow. Posting the same review twice makes two GitHub reviews, so check the PR first when you aren't sure.
+`y` goes on to the post screen; `n` or `esc` closes the flow. Posting the same review twice makes two GitHub reviews, so check the PR first when you aren't sure.
 
-## Picking the event
+## The screen
 
-Three events are offered:
+Everything is on one screen, top to bottom: the event, the summary box, the findings checklist, and what will be posted.
+
+```
+Post review · acme/web#241 · c680736
+
+Post as ● tab, then h/l to change
+ Approve   Comment   Request changes
+
+Summary ● enter for a new line · tab for the findings, then enter to post
+╭──────────────────────────────────────────────────────────────╮
+│ Write a summary (optional). Comment posts with or without one. │
+╰──────────────────────────────────────────────────────────────╯
+
+Findings ● tab to choose which to post
+▸ [x] internal/store/store.go:88
+
+What will be posted ● m for the raw markdown
+```
+
+Each heading says its keys after a `●`. The screen opens with the summary box focused; `tab` moves between the box and the checklist. On a short window the screen scrolls, following the box or the checklist's cursor.
+
+## The event
+
+`Post as` offers three events, the chosen one filled like the drawer's open tab:
 
 | Label | GitHub event |
 | --- | --- |
@@ -39,11 +62,11 @@ Three events are offered:
 | `Comment` | `COMMENT` |
 | `Request changes` | `REQUEST_CHANGES` |
 
-The cursor starts on the one that matches the reviewer's verdict (`approve`, `request_changes`, anything else `Comment`). The verdict only sets where the cursor starts. `j` and `k` move, `enter` picks and opens the preview, `esc` closes the flow.
+The one that matches the reviewer's verdict is chosen at the start (`approve`, `request_changes`, anything else `Comment`). On the checklist, `h` and `l` (or `←` and `→`) change it. Every event can carry a summary; only Request changes needs one.
 
 ## The checklist
 
-The preview starts with `Findings`, a checklist of every finding in the review in the drawer's order, each with its location:
+Under the summary box, `Findings` is a checklist of every finding in the review in the drawer's order, each with its location:
 
 ```
 Findings
@@ -54,7 +77,7 @@ Findings
   [ ] cmd/server/main.go:12  [posted]
 ```
 
-`j` and `k` move the cursor and `space` checks or unchecks the finding under it. Every finding starts checked except:
+`j` and `k` move the cursor, whose row is filled while the checklist has the keys, and `space` checks or unchecks the finding under it. Every finding starts checked except:
 
 - findings marked `[fixed]` (addressed) or `[answered]` by this pass's ledger;
 - findings that were already posted as a GitHub thread, marked `[posted]`.
@@ -65,7 +88,7 @@ This keeps a follow-up from posting a point twice. Unanchored findings are poste
 
 The summary is the review's body. It starts empty, since it is your own text: the reviewer's understanding and its reason for the verdict stay private unless you copy them in. It works the same for every event, so an Approve can carry a summary too.
 
-The preview opens with the summary box focused, under a `Summary ●` line that says how to get out of it. Type the summary there; the rendered `Summary` part further down shows what will be posted as you type. Pastes go into the box, held keys repeat, and keys the checklist uses (`space`, `j`, `k`, `m`, `?`) are typed.
+The screen opens with the summary box focused, under a `Summary ●` line that says how to get out of it. The box is six lines tall while empty (fewer on a short window), with a placeholder saying whether the event needs a summary, and grows with its text. Type the summary there; the rendered `Summary` part further down shows what will be posted as you type. Pastes go into the box, held keys repeat, and keys the checklist uses (`space`, `j`, `k`, `m`, `?`) are typed.
 
 What `enter` does in the box depends on the terminal:
 
@@ -80,19 +103,19 @@ The checked unanchored findings are added to the body after a bold `**Other note
 
 Rules on the body:
 
-- Request changes needs your own summary: an empty one shows `Request changes needs a summary — write one in the box`, and `enter` does nothing.
-- A Comment needs something to post, a body or at least one checked anchored finding: otherwise `nothing to post: write a summary or select a finding`.
+- Request changes needs your own summary. With none, `enter` doesn't post: it shows `Request changes needs a summary — write one in the box`, which goes once you write one. Nothing is flagged before you press `enter`.
+- A Comment needs something to post, a body or at least one checked anchored finding: otherwise `enter` shows `nothing to post: write a summary or select a finding`.
 - An Approve can be empty: the preview then says `No summary or comments: only the event is posted.`
 
 ## The preview
 
-Below the checklist the preview shows every part that will be sent, in order: `Summary` (when the body isn't empty), then each inline comment labelled with its location (`internal/store/store.go:88` or `internal/store/store.go:120-131`). Each part is drawn from the exact string in the request, so what you see is what is sent.
+Below the checklist, under `What will be posted`, the screen shows every part that will be sent, in order: `Summary` (when the body isn't empty), then each inline comment labelled with its location (`internal/store/store.go:88` or `internal/store/store.go:120-131`). Each part is drawn from the exact string in the request, so what you see is what is sent.
 
 The parts are rendered as markdown in glow's style (`theme.markdown` picks dark or light). `m` switches to the raw markdown and back; in the raw view tabs show as spaces. `ctrl+d` and `ctrl+u` scroll half a screen.
 
 The preview's top lines:
 
-- `Post review · owner/name#number · <event> · <commit>`, the short ID of the commit the review is of, which is the one it will be posted against.
+- `Post review · owner/name#number · <commit>`, with the short ID of the commit the review is of, which is the one it will be posted against.
 - `PR has new commits since this review — comments will show as outdated`, when the PR's head has moved since the review.
 - `Rendered view hides: <part>: <kind>; <part>: <kind> — press m to see the raw text`, when the rendered view hides or acts on something, with one `<part>: <kind>` for each, such as `Summary: HTML comment; Summary: image`. The kinds are:
   - `encoded control character`: a character reference such as `&#27;` that decodes to a control or invisible character;
@@ -101,11 +124,11 @@ The preview's top lines:
   - `image`;
   - `link reference (renders as nothing)`: a link reference definition;
   - `mentions @alice, @org/team`: mentions, which notify those people when posted.
-- An error from building the review or from a failed post, in the failure colour.
+- Why `enter` didn't post (see the rules on the body above), or a failed post's error, in the failure colour.
 
 Before anything is shown or sent, snow strips control characters (other than newlines and tabs), terminal escape sequences, and zero-width and bidirectional formatting characters from every part, and replaces character references that decode to one of those with `�`.
 
-On the checklist, `esc` goes back to the event picker, keeping your checklist and summary.
+On the checklist, `esc` closes the flow without posting; in the summary box it leaves the box.
 
 ## Confirming
 

@@ -91,26 +91,26 @@ The post flow takes every key while it is open, so the global keys don't apply: 
 | Key | Does |
 | --- | --- |
 | `y` `n` | post again, or not, when it was posted before |
-| `j` `k` | choose the event, or the finding |
 | `tab` | move between the summary box and the findings |
 | `shift+enter` | a new line in the summary box |
+| `h` `l` | Approve, Comment or Request changes |
+| `j` `k` | choose the finding |
 | `space` | include or leave out the finding |
 | `e` | open the summary in `$VISUAL` or `$EDITOR` |
 | `m` | show the raw markdown or the rendered view |
 | `ctrl+d` `ctrl+u` | scroll the preview |
-| `enter` | pick the event, then post |
-| `esc` | back out a step |
+| `enter` | post |
+| `esc` | leave the box, or cancel |
 
 By stage:
 
 - While snow checks for earlier posts, `esc` cancels.
-- At the repost question, `y` goes on to the event picker; `n` or `esc` closes the flow.
-- In the event picker, `j` and `k` move, `enter` picks and opens the preview, `esc` closes the flow.
-- The preview opens in the summary box, where keys type. `shift+enter` (or `alt+enter`, `ctrl+j`) is a new line. `enter` posts when the terminal reports `shift+enter` apart from `enter`, and is a new line when it can't (see [the summary](posting.md#the-summary)). `tab` or `esc` leaves the box.
-- On the preview's checklist, `j` and `k` move the cursor, `space` toggles the finding under it, `tab` goes back to the summary box, `e` opens the editor, `m` toggles raw markdown, `ctrl+d` and `ctrl+u` scroll half a screen, `enter` posts and `esc` goes back to the event picker.
+- At the repost question, `y` goes on to the post screen; `n` or `esc` closes the flow.
+- The post screen opens in the summary box, where keys type. `shift+enter` (or `alt+enter`, `ctrl+j`) is a new line. `enter` posts when the terminal reports `shift+enter` apart from `enter`, and is a new line when it can't (see [the summary](posting.md#the-summary)). `tab` or `esc` leaves the box for the checklist.
+- On the checklist, `h` and `l` (or `←` and `→`) change the event, `j` and `k` move the cursor, `space` toggles the finding under it, `tab` goes back to the summary box, `e` opens the editor, `m` toggles raw markdown, `ctrl+d` and `ctrl+u` scroll half a screen, `enter` posts and `esc` closes the flow without posting.
 - While the post is being sent, every key but `ctrl+c` is ignored. The first `ctrl+c` warns `posting to GitHub — ctrl+c again to quit anyway`; a second quits.
 - After a post whose record failed, `esc` or `enter` closes the result.
-- `?` opens help in the event picker and the preview.
+- `?` opens help from the checklist; in the summary box it is typed.
 
 [posting.md](posting.md) walks through the whole flow.
 
