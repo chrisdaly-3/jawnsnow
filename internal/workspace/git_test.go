@@ -42,6 +42,7 @@ func TestResolveMappedPath(t *testing.T) {
 }
 
 func TestResolveMakesBlobslessBareClone(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s := newScratch(t)
 	dataDir := realPath(t, t.TempDir())
@@ -75,6 +76,7 @@ func TestResolveMakesBlobslessBareClone(t *testing.T) {
 // A mistyped repos.<name>.path is an error: cloning in its place would
 // review a copy the user didn't mean.
 func TestResolveBadMappedPathErrors(t *testing.T) {
+	t.Parallel()
 	s := newScratch(t)
 	dataDir := realPath(t, t.TempDir())
 	notRepo := t.TempDir()
@@ -91,6 +93,7 @@ func TestResolveBadMappedPathErrors(t *testing.T) {
 }
 
 func TestResolveRejectsBadName(t *testing.T) {
+	t.Parallel()
 	for _, name := range []string{"", "x", "../a/b", "a/b/c", "-o/n", "o/.."} {
 		if _, err := Resolve(context.Background(), name, config.Repo{}, t.TempDir(), func(string) string { return "x" }); err == nil {
 			t.Errorf("Resolve(%q) succeeded", name)
@@ -99,6 +102,7 @@ func TestResolveRejectsBadName(t *testing.T) {
 }
 
 func TestRemoteForMatchesBaseNotFork(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s := newScratch(t)
 	r := Repo{Name: "o/n", GitDir: filepath.Join(s.clone, ".git"), WorkDir: s.clone}
@@ -132,6 +136,7 @@ func TestRemoteForMatchesBaseNotFork(t *testing.T) {
 }
 
 func TestFetchPRWritesJawnsnowRefs(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s := newScratch(t)
 	r, err := Resolve(ctx, "o/n", config.Repo{Path: s.clone}, t.TempDir(), noClone(t))
@@ -164,6 +169,7 @@ func TestFetchPRWritesJawnsnowRefs(t *testing.T) {
 }
 
 func TestFetchPRFallsBackToCloneURL(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s := newScratch(t)
 	// The user's clone only knows the fork, so no remote is the base repo.
@@ -181,6 +187,7 @@ func TestFetchPRFallsBackToCloneURL(t *testing.T) {
 }
 
 func TestFetchPRRejectsBadBaseRef(t *testing.T) {
+	t.Parallel()
 	s := newScratch(t)
 	r := Repo{Name: "o/n", GitDir: filepath.Join(s.clone, ".git"), WorkDir: s.clone}
 	for _, ref := range []string{"", "--upload-pack=x", "a b", "a..b"} {
@@ -191,6 +198,7 @@ func TestFetchPRRejectsBadBaseRef(t *testing.T) {
 }
 
 func TestGitErrorCarriesStderr(t *testing.T) {
+	t.Parallel()
 	_, err := Git(context.Background(), t.TempDir(), "rev-parse", "--verify", "nope")
 	if err == nil || !strings.Contains(err.Error(), "nope") {
 		t.Fatalf("err = %v", err)
@@ -210,6 +218,7 @@ func userRefs(t *testing.T, dir string) string {
 }
 
 func TestBuildEnv(t *testing.T) {
+	t.Parallel()
 	has := func(env []string, kv string) bool {
 		return slices.Contains(env, kv)
 	}
@@ -227,6 +236,7 @@ func TestBuildEnv(t *testing.T) {
 }
 
 func TestRemoteForRequiresGitHubHost(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s := newScratch(t)
 	r := Repo{Name: "o/n", GitDir: filepath.Join(s.clone, ".git"), WorkDir: s.clone}
@@ -289,6 +299,7 @@ while :; do sleep 0.05; done
 // RemoteFor reads URLs from `git remote -v`, so it must see them as
 // get-url does: rewritten by insteadOf, and whole when they hold a space.
 func TestRemoteForReadsRewrittenAndSpacedURLs(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s := newScratch(t)
 	r := Repo{Name: "o/n", GitDir: filepath.Join(s.clone, ".git"), WorkDir: s.clone}

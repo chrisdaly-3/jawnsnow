@@ -73,6 +73,7 @@ func completeOut() Output {
 }
 
 func TestGapsFullScope(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name   string
 		mutate func(e covEnv, run *RunResult, out *Output, files *workspace.ReviewFiles)
@@ -208,6 +209,7 @@ func TestGapsFullScope(t *testing.T) {
 }
 
 func TestEvidencePaths(t *testing.T) {
+	t.Parallel()
 	wt := t.TempDir()
 	if err := os.WriteFile(filepath.Join(wt, "x.go"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
@@ -239,6 +241,7 @@ func TestEvidencePaths(t *testing.T) {
 }
 
 func TestGapsIncrementalPass(t *testing.T) {
+	t.Parallel()
 	e := newCovEnv(t, "pkg/a.go")
 	e.files.Since = filepath.Join(e.dir, "since.txt")
 	run := RunResult{Reads: []string{e.files.Since}}
@@ -264,6 +267,7 @@ func TestGapsIncrementalPass(t *testing.T) {
 }
 
 func TestGapsCapPerFileChecks(t *testing.T) {
+	t.Parallel()
 	changed := make([]string, 0, 45)
 	for i := range 45 {
 		changed = append(changed, fmt.Sprintf("pkg/f%02d.go", i))
@@ -288,6 +292,7 @@ func TestGapsCapPerFileChecks(t *testing.T) {
 }
 
 func TestGapsReportEveryMissingRule(t *testing.T) {
+	t.Parallel()
 	e := newCovEnv(t, "pkg/a.go")
 	got, _ := ReviewGaps(PassFull, "full", e.files, e.wt, RunResult{}, Output{})
 	if len(got) != 7 {
@@ -296,6 +301,7 @@ func TestGapsReportEveryMissingRule(t *testing.T) {
 }
 
 func TestGapsSinceCountsAsDiff(t *testing.T) {
+	t.Parallel()
 	e := newCovEnv(t, "pkg/a.go")
 	e.files.Since = filepath.Join(e.dir, "since.txt")
 	run := e.completeRun()
@@ -306,6 +312,7 @@ func TestGapsSinceCountsAsDiff(t *testing.T) {
 }
 
 func TestGapsPROnlyScope(t *testing.T) {
+	t.Parallel()
 	e := newCovEnv(t, "pkg/a.go")
 	if got, _ := ReviewGaps(PassFull, "pr-only", e.files, e.wt, RunResult{Reads: []string{e.files.Diff}}, Output{}); len(got) != 0 {
 		t.Fatalf("diff read: gaps = %q", got)
@@ -317,6 +324,7 @@ func TestGapsPROnlyScope(t *testing.T) {
 }
 
 func TestGapsAreCapped(t *testing.T) {
+	t.Parallel()
 	changed := make([]string, 0, 30)
 	for i := range 30 {
 		changed = append(changed, "pkg/f"+string(rune('a'+i%26))+string(rune('a'+i/26))+".go")
@@ -329,6 +337,7 @@ func TestGapsAreCapped(t *testing.T) {
 }
 
 func TestVerifiedExaminedFilters(t *testing.T) {
+	t.Parallel()
 	e := newCovEnv(t, "pkg/a.go")
 	ex := Examined{
 		Docs:   []string{"README.md", "docs/guide.md"},
@@ -352,6 +361,7 @@ func TestVerifiedExaminedFilters(t *testing.T) {
 }
 
 func TestVerifiedExaminedKeepsReviewDirFiles(t *testing.T) {
+	t.Parallel()
 	e := newCovEnv(t, "pkg/a.go")
 	got := VerifiedExamined(Examined{Docs: []string{e.files.Diff}}, RunResult{Reads: []string{e.files.Diff}}, e.wt)
 	if len(got.Docs) != 1 {

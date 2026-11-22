@@ -25,6 +25,7 @@ const fullOutput = `{
 }`
 
 func TestParseOutput(t *testing.T) {
+	t.Parallel()
 	got, err := ParseOutput(json.RawMessage(fullOutput))
 	if err != nil {
 		t.Fatal(err)
@@ -52,6 +53,7 @@ func TestParseOutput(t *testing.T) {
 }
 
 func TestParseOutputErrors(t *testing.T) {
+	t.Parallel()
 	for name, raw := range map[string]json.RawMessage{
 		"nil":          nil,
 		"empty":        {},
@@ -73,6 +75,7 @@ func TestParseOutputErrors(t *testing.T) {
 // PR's GitHub review threads by thread ID. A ledger entry that can't name an
 // earlier finding is skipped and reported, never a reason to drop the review.
 func TestParseOutputSkipsLedgerIDsThatAreNotFindings(t *testing.T) {
+	t.Parallel()
 	raw := json.RawMessage(`{"findings":[],"verdict":"approve","ledger":[
 		{"id":"PRRT_kwDOGIaHbc65lRmx","status":"addressed"},
 		{"id":"12","status":"outstanding"},
@@ -94,6 +97,7 @@ func TestParseOutputSkipsLedgerIDsThatAreNotFindings(t *testing.T) {
 }
 
 func TestLedgerNote(t *testing.T) {
+	t.Parallel()
 	earlier := []store.Finding{{ID: 7}, {ID: 9}}
 	cases := []struct {
 		name string
@@ -115,6 +119,7 @@ func TestLedgerNote(t *testing.T) {
 }
 
 func TestParseOutputMissingFieldsAreZero(t *testing.T) {
+	t.Parallel()
 	got, err := ParseOutput(json.RawMessage(`{}`))
 	if err != nil {
 		t.Fatal(err)

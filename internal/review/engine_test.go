@@ -75,14 +75,13 @@ type fakeRun struct {
 type fakeClaude struct {
 	t   *testing.T
 	dir string
+	env []string // what the engine passes the fake, as binEnv
 }
 
 func newFakeClaude(t *testing.T) fakeClaude {
 	t.Helper()
 	dir := t.TempDir()
-	t.Setenv("GO_WANT_HELPER_PROCESS", "1")
-	t.Setenv("GO_CALL_DIR", dir)
-	return fakeClaude{t: t, dir: dir}
+	return fakeClaude{t: t, dir: dir, env: []string{"GO_WANT_HELPER_PROCESS=1", "GO_CALL_DIR=" + dir}}
 }
 
 // script writes the stream for each run, in order. The runs are one
@@ -236,6 +235,7 @@ func newEngineEnv(t *testing.T) *engineEnv {
 		Now:      env.clock,
 		CloneURL: func(string) string { return env.s.upstream },
 		binArgs:  []string{"-test.run=TestHelperProcess", "--"},
+		binEnv:   env.claude.env,
 	}
 	env.snap = github.Snapshot{
 		ID: "PR_7", Repo: "o/n", Number: 7, Title: "Add b", Author: "sam",
@@ -244,6 +244,12 @@ func newEngineEnv(t *testing.T) *engineEnv {
 		Commits: []github.Commit{{OID: env.s.prSHA, Parents: []string{env.s.mainSHA}}},
 	}
 	return env
+}
+
+// setEnv adds kv ("KEY=value") to the fake claude's environment for the
+// engine's next runs.
+func (env *engineEnv) setEnv(kv string) {
+	env.e.binEnv = append(slices.Clone(env.e.binEnv), kv)
 }
 
 func (env *engineEnv) clock() time.Time {
@@ -339,6 +345,7 @@ func (env *engineEnv) reviewDir(id string) string { return filepath.Join(env.dat
 func exists(p string) bool { _, err := os.Stat(p); return err == nil }
 
 func TestEngineFullPassSaved(t *testing.T) {
+	t.Parallel()
 	env := newEngineEnv(t)
 	env.claude.script(fakeRun{Reads: readAll, Output: output([]outFinding{bFinding}, nil), Cost: 0.5})
 
@@ -428,6 +435,7 @@ func TestEngineFullPassSaved(t *testing.T) {
 }
 
 func TestEngineContinuationFillsGaps(t *testing.T) {
+	t.Parallel()
 	env := newEngineEnv(t)
 	env.claude.script(
 		fakeRun{Reads: []string{"{{WORKTREE}}/README.md"}, Output: output(nil, nil), Cost: 0.5},
@@ -462,6 +470,7 @@ func TestEngineContinuationFillsGaps(t *testing.T) {
 }
 
 func TestEngineIncompleteAfterTwoContinuations(t *testing.T) {
+	t.Parallel()
 	env := newEngineEnv(t)
 	gappy := fakeRun{Reads: []string{"{{WORKTREE}}/README.md"}, Output: output(nil, nil), Cost: 0.25}
 	env.claude.script(gappy, gappy, gappy, gappy)
@@ -484,6 +493,7 @@ func TestEngineIncompleteAfterTwoContinuations(t *testing.T) {
 }
 
 func TestEngineLintAsksForRewording(t *testing.T) {
+	t.Parallel()
 	env := newEngineEnv(t)
 	banned := outFinding{Path: "b.txt", Line: 1, Body: "This is notably wrong.", Category: "bug"}
 	run := fakeRun{Reads: readAll, Output: output([]outFinding{banned}, nil), Cost: 0.1}
@@ -508,6 +518,7 @@ func TestEngineLintAsksForRewording(t *testing.T) {
 }
 
 func TestEngineIncrementalPass(t *testing.T) {
+	t.Parallel()
 	env := newEngineEnv(t)
 	first, second := env.savePrior(t, env.s.prSHA)
 	env.pushSecondCommit(t)
@@ -547,6 +558,7 @@ func TestEngineIncrementalPass(t *testing.T) {
 }
 
 func TestEngineIncrementalWithMissingCommitsIsFull(t *testing.T) {
+	t.Parallel()
 	env := newEngineEnv(t)
 	gone := strings.Repeat("1", 40) // in Commits, but never in the repository
 	env.savePrior(t, gone)
@@ -570,6 +582,7 @@ func TestEngineIncrementalWithMissingCommitsIsFull(t *testing.T) {
 }
 
 func TestEngineForceIsFull(t *testing.T) {
+	t.Parallel()
 	env := newEngineEnv(t)
 	env.savePrior(t, env.s.prSHA)
 	env.pushSecondCommit(t)
@@ -588,6 +601,7 @@ func TestEngineForceIsFull(t *testing.T) {
 }
 
 func TestEngineForcePushIsFull(t *testing.T) {
+	t.Parallel()
 	env := newEngineEnv(t)
 	env.savePrior(t, strings.Repeat("2", 40)) // a head the PR no longer has
 	env.claude.script(fakeRun{Reads: readAll, Output: output(nil, nil), Cost: 0.3})
@@ -604,6 +618,7 @@ func TestEngineForcePushIsFull(t *testing.T) {
 // A push after the poll that queued the review moves refs/pull/N/head past
 // the snapshot's head; the review is of the head the quiet period covered.
 func TestEngineReviewsSnapshotHeadAfterLaterPush(t *testing.T) {
+	t.Parallel()
 	env := newEngineEnv(t)
 	later := env.s.addPRCommit(t, "c.txt") // pushed after the poll; the snapshot head stays prSHA
 	env.claude.script(fakeRun{Reads: readAll, Output: output(nil, nil), Cost: 0.3})
@@ -627,6 +642,7 @@ func TestEngineReviewsSnapshotHeadAfterLaterPush(t *testing.T) {
 // A force push leaves the snapshot's head out of the fetch: the review stops
 // before it costs anything, and nothing is saved.
 func TestEngineHeadMovedStopsBeforeClaude(t *testing.T) {
+	t.Parallel()
 	env := newEngineEnv(t)
 	env.snap.HeadOID = strings.Repeat("3", 40) // a head the fetch didn't bring
 	env.claude.script(fakeRun{Reads: readAll, Output: output(nil, nil), Cost: 0.3})
@@ -650,6 +666,7 @@ func TestEngineHeadMovedStopsBeforeClaude(t *testing.T) {
 }
 
 func TestEngineFetchFailureIsFailed(t *testing.T) {
+	t.Parallel()
 	env := newEngineEnv(t)
 	env.snap.Number = 99 // upstream has no refs/pull/99/head
 	env.claude.script(fakeRun{Reads: readAll, Output: output(nil, nil), Cost: 0.3})
@@ -673,6 +690,7 @@ func TestEngineFetchFailureIsFailed(t *testing.T) {
 }
 
 func TestEngineRunErrorIsFailed(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name    string
 		run     fakeRun
@@ -707,6 +725,7 @@ func TestEngineRunErrorIsFailed(t *testing.T) {
 // the PR's GitHub review threads by thread ID. The review is kept, and a note
 // says the entries were ignored.
 func TestEngineKeepsReviewWithThreadIDLedger(t *testing.T) {
+	t.Parallel()
 	env := newEngineEnv(t)
 	out := output(nil, nil)
 	out["verdict"] = "approve"
@@ -730,9 +749,10 @@ func TestEngineKeepsReviewWithThreadIDLedger(t *testing.T) {
 // A run killed before its result line has spent an unknown amount; the
 // ledger says so rather than recording $0.
 func TestEngineKilledRunCostIsUnknown(t *testing.T) {
+	t.Parallel()
 	env := newEngineEnv(t)
 	env.cfg.Review.RunTimeout.Duration = 300 * time.Millisecond
-	t.Setenv("GO_WAIT_FILE", filepath.Join(t.TempDir(), "never"))
+	env.setEnv("GO_WAIT_FILE=" + filepath.Join(t.TempDir(), "never"))
 	env.claude.script(fakeRun{Reads: readAll, Output: output(nil, nil), Cost: 0.3})
 
 	rv, err := env.run(t, Request{Mode: ModeAuto})
@@ -752,6 +772,7 @@ func TestEngineKilledRunCostIsUnknown(t *testing.T) {
 }
 
 func TestEngineCancelledContextFails(t *testing.T) {
+	t.Parallel()
 	env := newEngineEnv(t)
 	env.claude.script(fakeRun{Reads: readAll, Output: output(nil, nil), Cost: 0.3})
 	ctx, cancel := context.WithCancel(context.Background())
@@ -766,6 +787,7 @@ func TestEngineCancelledContextFails(t *testing.T) {
 }
 
 func TestEngineFollowUpTier(t *testing.T) {
+	t.Parallel()
 	env := newEngineEnv(t)
 	env.snap.Reviews = []github.Review{{Author: "me", State: "APPROVED", SubmittedAt: time.Now()}}
 	env.claude.script(fakeRun{Reads: readAll, Output: output(nil, nil), Cost: 0.3})
@@ -781,6 +803,7 @@ func TestEngineFollowUpTier(t *testing.T) {
 }
 
 func TestEngineReleasePR(t *testing.T) {
+	t.Parallel()
 	env := newEngineEnv(t)
 	env.claude.script(fakeRun{Reads: readAll, Output: output(nil, nil), Cost: 0.3})
 	rv, err := env.run(t, Request{Mode: ModeAuto})
@@ -806,6 +829,7 @@ func TestEngineReleasePR(t *testing.T) {
 }
 
 func TestEngineReleaseUnreviewedPRClonesNothing(t *testing.T) {
+	t.Parallel()
 	env := newEngineEnv(t)
 	if err := env.e.ReleasePR(context.Background(), "o/n", 8); err != nil {
 		t.Fatal(err)
@@ -816,6 +840,7 @@ func TestEngineReleaseUnreviewedPRClonesNothing(t *testing.T) {
 }
 
 func TestEnginePoolOnePerRepo(t *testing.T) {
+	t.Parallel()
 	env := newEngineEnv(t)
 	var wg sync.WaitGroup
 	pools := make([]any, 8)
@@ -838,6 +863,7 @@ func TestEnginePoolOnePerRepo(t *testing.T) {
 }
 
 func TestEnginePruneIdle(t *testing.T) {
+	t.Parallel()
 	env := newEngineEnv(t)
 	env.claude.script(fakeRun{Reads: readAll, Output: output(nil, nil), Cost: 0.3})
 	if _, err := env.run(t, Request{Mode: ModeAuto}); err != nil {
@@ -861,6 +887,7 @@ func TestEnginePruneIdle(t *testing.T) {
 // A slot left by an earlier snow is pruned even when this one never
 // reviewed its repo.
 func TestEnginePruneIdleCoversReposNotReviewedThisSession(t *testing.T) {
+	t.Parallel()
 	env := newEngineEnv(t)
 	env.claude.script(fakeRun{Reads: readAll, Output: output(nil, nil), Cost: 0.3})
 	if _, err := env.run(t, Request{Mode: ModeAuto}); err != nil {
@@ -872,7 +899,7 @@ func TestEnginePruneIdleCoversReposNotReviewedThisSession(t *testing.T) {
 	}
 	restarted := &Engine{
 		Config: env.e.Config, Client: env.e.Client, Store: env.st, DataDir: env.data,
-		Claude: env.e.Claude, Now: env.clock, CloneURL: env.e.CloneURL, binArgs: env.e.binArgs,
+		Claude: env.e.Claude, Now: env.clock, CloneURL: env.e.CloneURL, binArgs: env.e.binArgs, binEnv: env.e.binEnv,
 	}
 	if err := restarted.PruneIdle(context.Background()); err != nil {
 		t.Fatal(err)
@@ -894,6 +921,7 @@ func TestEnginePruneIdleCoversReposNotReviewedThisSession(t *testing.T) {
 
 // A repo whose stored slots can't be resolved is skipped, with its error.
 func TestEnginePruneIdleReportsUnresolvableRepo(t *testing.T) {
+	t.Parallel()
 	env := newEngineEnv(t)
 	slot := store.Slot{Repo: "o/gone", Path: filepath.Join(env.data, "worktrees", "o__gone", "slot-1"), LastUsed: env.now.Add(-5 * time.Hour)}
 	if err := env.st.SaveSlot(context.Background(), slot); err != nil {
@@ -907,6 +935,7 @@ func TestEnginePruneIdleReportsUnresolvableRepo(t *testing.T) {
 }
 
 func TestEngineContinuationFailureKeepsEarlierOutput(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		cont fakeRun
@@ -945,6 +974,7 @@ func TestEngineContinuationFailureKeepsEarlierOutput(t *testing.T) {
 }
 
 func TestEngineStopsWhenBudgetUsed(t *testing.T) {
+	t.Parallel()
 	env := newEngineEnv(t)
 	env.cfg.Review.Budget.PerReviewUSD = 0.5
 	gappy := fakeRun{Reads: []string{"{{WORKTREE}}/README.md"}, Output: output(nil, nil), Cost: 0.5}
@@ -962,9 +992,10 @@ func TestEngineStopsWhenBudgetUsed(t *testing.T) {
 }
 
 func TestEngineReleasePRWaitsForRun(t *testing.T) {
+	t.Parallel()
 	env := newEngineEnv(t)
 	gate := filepath.Join(t.TempDir(), "go")
-	t.Setenv("GO_WAIT_FILE", gate)
+	env.setEnv("GO_WAIT_FILE=" + gate)
 	env.claude.script(fakeRun{Reads: readAll, Output: output(nil, nil), Cost: 0.3})
 	// A ReleasePR that got in between the review and its save would miss
 	// the new review's ID.
@@ -1009,6 +1040,7 @@ func TestEngineReleasePRWaitsForRun(t *testing.T) {
 }
 
 func TestLedgerStates(t *testing.T) {
+	t.Parallel()
 	earlier := []store.Finding{
 		{ID: 1, Body: "posted", ThreadID: "T1", Ledger: "outstanding"},
 		{ID: 2, Body: "unposted", Ledger: "new"},
@@ -1035,6 +1067,7 @@ func TestLedgerStates(t *testing.T) {
 }
 
 func TestEngineWaitBlocksUntilRunSaved(t *testing.T) {
+	t.Parallel()
 	env := newEngineEnv(t)
 	env.snap.Number = 99 // a failing review still saves, which is what Wait covers
 	atSave := make(chan struct{})
@@ -1074,6 +1107,7 @@ func TestEngineWaitBlocksUntilRunSaved(t *testing.T) {
 // A stored slot of a repo with no mapped path and no clone is not worth a
 // network clone: the rows go, nothing is cloned.
 func TestPruneIdleNeverClones(t *testing.T) {
+	t.Parallel()
 	env := newEngineEnv(t)
 	var cloned []string
 	env.e.CloneURL = func(repo string) string { cloned = append(cloned, repo); return env.s.upstream }
@@ -1097,6 +1131,7 @@ func TestPruneIdleNeverClones(t *testing.T) {
 }
 
 func TestHasIdleSlotFiltersPoolDir(t *testing.T) {
+	t.Parallel()
 	env := newEngineEnv(t)
 	ctx := context.Background()
 	old := env.now.Add(-5 * time.Hour)

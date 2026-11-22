@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"slices"
 	"strconv"
@@ -40,6 +41,9 @@ type Session struct {
 	// binArgs come before the claude flags; tests use them to re-execute the
 	// test binary as a fake claude.
 	binArgs []string
+	// binEnv is added to the environment; tests use it to script the fake
+	// claude without changing this process's environment.
+	binEnv []string
 }
 
 // BuildArgs returns the claude flags. The reviewer is always read-only:
@@ -134,6 +138,9 @@ func Run(ctx context.Context, s Session, prompt string, onEvent func(Event)) (Ru
 
 	args := slices.Concat(s.binArgs, BuildArgs(s))
 	cmd := exec.Command(s.Binary, args...)
+	if len(s.binEnv) > 0 {
+		cmd.Env = append(os.Environ(), s.binEnv...)
+	}
 	cmd.Dir = s.Dir
 	cmd.Stdin = strings.NewReader(prompt)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}

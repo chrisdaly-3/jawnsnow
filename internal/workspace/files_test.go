@@ -24,6 +24,7 @@ func hasLine(s, line string) bool {
 }
 
 func TestDiffIsLineNumbered(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	h := newHistory(t)
 	f := lines("line", 20)
@@ -113,6 +114,7 @@ func TestDiffIgnoresUserDiffConfig(t *testing.T) {
 }
 
 func TestHunksRecordNewRanges(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	h := newHistory(t)
 	f := lines("f", 30)
@@ -215,6 +217,7 @@ func (s prScenario) since(t *testing.T, head string) (ReviewFiles, string) {
 }
 
 func TestSinceExcludesBaseMerge(t *testing.T) {
+	t.Parallel()
 	s := newPRScenario(t)
 	head := s.mergeMain(t)
 
@@ -232,6 +235,7 @@ func TestSinceExcludesBaseMerge(t *testing.T) {
 }
 
 func TestSinceIncludesOwnChange(t *testing.T) {
+	t.Parallel()
 	s := newPRScenario(t)
 	s.mergeMain(t)
 	s.g = with(s.g, 15, "pr-g15")
@@ -253,6 +257,7 @@ func TestSinceIncludesOwnChange(t *testing.T) {
 // A path the PR first touches after the last review is shown with the
 // PR's whole change to it, and without what the base merge did to it.
 func TestSinceIncludesNewPathInFull(t *testing.T) {
+	t.Parallel()
 	s := newPRScenario(t)
 	s.mergeMain(t)
 	s.x = with(s.x, 35, "pr-x35")
@@ -272,6 +277,7 @@ func TestSinceIncludesNewPathInFull(t *testing.T) {
 }
 
 func TestSinceMarksReverted(t *testing.T) {
+	t.Parallel()
 	s := newPRScenario(t)
 	head := s.h.commit("revert g", map[string][]byte{"g.txt": text(lines("g", 20))})
 
@@ -282,6 +288,7 @@ func TestSinceMarksReverted(t *testing.T) {
 }
 
 func TestFullPassHasNoSince(t *testing.T) {
+	t.Parallel()
 	s := newPRScenario(t)
 	dir := t.TempDir()
 	files, err := WriteReviewFiles(context.Background(), s.h.repo(), dir, FilesInput{MergeBase: s.base, Head: s.a})
@@ -299,6 +306,7 @@ func TestFullPassHasNoSince(t *testing.T) {
 // A force push can drop the last reviewed commit from the clone. There is
 // then no since diff to write, and the review is a full pass.
 func TestSinceMissingLastReviewedIsFullPass(t *testing.T) {
+	t.Parallel()
 	s := newPRScenario(t)
 	missing := strings.Repeat("ab", 20)
 	files, err := WriteReviewFiles(context.Background(), s.h.repo(), t.TempDir(), FilesInput{
@@ -313,6 +321,7 @@ func TestSinceMissingLastReviewedIsFullPass(t *testing.T) {
 }
 
 func TestWriteReviewFilesRejectsBadIDs(t *testing.T) {
+	t.Parallel()
 	s := newPRScenario(t)
 	for _, in := range []FilesInput{
 		{MergeBase: "--output=/tmp/x", Head: s.a},
@@ -329,6 +338,7 @@ func TestWriteReviewFilesRejectsBadIDs(t *testing.T) {
 // A base merge that changes a file the PR also edits adds none of its
 // hunks, and hunks already reviewed are not shown again.
 func TestSinceExcludesBaseMergeInEditedFile(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	h := newHistory(t)
 	f := lines("f", 50)
@@ -378,6 +388,7 @@ func TestSinceExcludesBaseMergeInEditedFile(t *testing.T) {
 }
 
 func TestNoNewlineAtEOF(t *testing.T) {
+	t.Parallel()
 	h := newHistory(t)
 	base := h.commit("base", map[string][]byte{"f.txt": []byte("a\nb\n")})
 	h.git("checkout", "-q", "-b", "pr")
@@ -397,6 +408,7 @@ func TestNoNewlineAtEOF(t *testing.T) {
 }
 
 func TestEditAtFirstLine(t *testing.T) {
+	t.Parallel()
 	h := newHistory(t)
 	f := lines("f", 10)
 	base := h.commit("base", map[string][]byte{"f.txt": text(f)})
@@ -436,6 +448,7 @@ func partialRevert(t *testing.T, more map[int]string) (h history, base, a, head 
 }
 
 func TestSinceListsPartialRevert(t *testing.T) {
+	t.Parallel()
 	h, base, a, head := partialRevert(t, nil)
 	files, err := WriteReviewFiles(context.Background(), h.repo(), t.TempDir(), FilesInput{
 		MergeBase: base, Head: head, LastReviewed: a, LastMergeBase: base,
@@ -450,6 +463,7 @@ func TestSinceListsPartialRevert(t *testing.T) {
 
 // A path with new hunks and a reverted one shows the new hunks first.
 func TestSinceListsPartialRevertAfterNewHunks(t *testing.T) {
+	t.Parallel()
 	h, base, a, head := partialRevert(t, map[int]string{35: "pr-f35"})
 	files, err := WriteReviewFiles(context.Background(), h.repo(), t.TempDir(), FilesInput{
 		MergeBase: base, Head: head, LastReviewed: a, LastMergeBase: base,

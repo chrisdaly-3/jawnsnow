@@ -28,6 +28,7 @@ func newPoolFixture(t *testing.T, size int) (scratch, Repo, *Pool, *fakeSlots, s
 }
 
 func TestPoolReusesSlots(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s, r, p, st, dir := newPoolFixture(t, 2)
 	head1, _, err := r.FetchPR(ctx, 7, "main")
@@ -76,6 +77,7 @@ func TestPoolReusesSlots(t *testing.T) {
 }
 
 func TestPoolBusy(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, r, p, _, _ := newPoolFixture(t, 1)
 	head, _, err := r.FetchPR(ctx, 7, "main")
@@ -98,6 +100,7 @@ func TestPoolBusy(t *testing.T) {
 }
 
 func TestPoolConcurrentAcquireAndFetch(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s, r, p, _, _ := newPoolFixture(t, 2)
 	s.addPRCommit(t, 8, "c.txt")
@@ -128,6 +131,7 @@ func TestPoolConcurrentAcquireAndFetch(t *testing.T) {
 }
 
 func TestPoolNeverTouchesUserWorktrees(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s, r, p, _, dir := newPoolFixture(t, 1)
 	user := filepath.Join(s.root, "user-wt")
@@ -186,6 +190,7 @@ func TestPoolNeverTouchesUserWorktrees(t *testing.T) {
 }
 
 func TestPoolDoesNotRunPRHooks(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s, r, p, _, _ := newPoolFixture(t, 1)
 	// The user's clone points core.hooksPath at a relative dir, which git
@@ -226,6 +231,7 @@ func TestPoolDoesNotRunPRHooks(t *testing.T) {
 }
 
 func TestPoolSkipsOrphanedSlotDir(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, r, p, _, dir := newPoolFixture(t, 2)
 	orphan := filepath.Join(dir, "slot-1")
@@ -251,6 +257,7 @@ func TestPoolSkipsOrphanedSlotDir(t *testing.T) {
 }
 
 func TestPoolCleansDir(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, r, _, st, dir := newPoolFixture(t, 1)
 	p := NewPool(r, dir+"/", 1, st, time.Now)
@@ -278,6 +285,7 @@ func TestPoolCleansDir(t *testing.T) {
 // The next Acquire of that slot clears it rather than failing on it for
 // every review after.
 func TestPoolClearsStaleIndexLock(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s, r, p, _, _ := newPoolFixture(t, 1)
 	head1, _, err := r.FetchPR(ctx, 7, "main")

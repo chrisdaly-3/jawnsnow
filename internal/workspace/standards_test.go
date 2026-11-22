@@ -10,6 +10,7 @@ import (
 )
 
 func TestStandardsFromBaseNotHead(t *testing.T) {
+	t.Parallel()
 	h := newHistory(t)
 	base := h.commit("base", map[string][]byte{"CLAUDE.md": []byte("base rules\n"), "a.go": []byte("x\n")})
 	h.commit("pr", map[string][]byte{"CLAUDE.md": []byte("pr rewrote the rules\n"), "a.go": []byte("y\n")})
@@ -24,6 +25,7 @@ func TestStandardsFromBaseNotHead(t *testing.T) {
 }
 
 func TestStandardsWalkUpAndDedupe(t *testing.T) {
+	t.Parallel()
 	h := newHistory(t)
 	base := h.commit("base", map[string][]byte{
 		"CLAUDE.md":         []byte("root claude"),
@@ -54,6 +56,7 @@ func TestStandardsWalkUpAndDedupe(t *testing.T) {
 }
 
 func TestStandardsRejectsBadBase(t *testing.T) {
+	t.Parallel()
 	h := newHistory(t)
 	h.commit("base", map[string][]byte{"a.go": []byte("x")})
 	if _, err := LoadStandards(context.Background(), h.repo(), "--output=x", []string{"a.go"}); err == nil {
@@ -65,6 +68,7 @@ func TestStandardsRejectsBadBase(t *testing.T) {
 }
 
 func TestSecurityGuideLimits(t *testing.T) {
+	t.Parallel()
 	h := newHistory(t)
 	dir := "agents/skills/my-security-review/"
 	files := map[string][]byte{
@@ -110,6 +114,7 @@ func TestSecurityGuideLimits(t *testing.T) {
 }
 
 func TestSecurityGuideFromBaseAndClaudeRoot(t *testing.T) {
+	t.Parallel()
 	h := newHistory(t)
 	base := h.commit("base", map[string][]byte{".claude/skills/security-review/SKILL.md": []byte("base skill")})
 	h.commit("pr", map[string][]byte{".claude/skills/security-review/SKILL.md": []byte("pr skill")})
@@ -120,6 +125,7 @@ func TestSecurityGuideFromBaseAndClaudeRoot(t *testing.T) {
 }
 
 func TestNoSecurityGuide(t *testing.T) {
+	t.Parallel()
 	h := newHistory(t)
 	base := h.commit("base", map[string][]byte{"agents/skills/lint/SKILL.md": []byte("x")})
 	_, ok, err := LoadSecurityGuide(context.Background(), h.repo(), base, t.TempDir())

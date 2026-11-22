@@ -9,6 +9,7 @@ import (
 )
 
 func TestResolveTier(t *testing.T) {
+	t.Parallel()
 	cfg := config.Defaults().Review
 	tests := []struct {
 		name          string
@@ -31,6 +32,7 @@ func TestResolveTier(t *testing.T) {
 }
 
 func TestResolveFirstMatchingOverrideWins(t *testing.T) {
+	t.Parallel()
 	cfg := config.Defaults().Review
 	cfg.Overrides = []config.Override{
 		{Tier: "any", Match: config.Match{Repo: "acme/*"}, Model: "claude-haiku-5-5", Effort: "low"},
@@ -43,6 +45,7 @@ func TestResolveFirstMatchingOverrideWins(t *testing.T) {
 }
 
 func TestResolveOverrideTierFilter(t *testing.T) {
+	t.Parallel()
 	cfg := config.Defaults().Review
 	cfg.Overrides = []config.Override{
 		{Tier: "follow_up", Model: "claude-haiku-5-5"},
@@ -59,6 +62,7 @@ func TestResolveOverrideTierFilter(t *testing.T) {
 }
 
 func TestResolveMatchKeys(t *testing.T) {
+	t.Parallel()
 	base := ResolveInput{
 		Repo: "acme/web", Author: "dependabot[bot]", Labels: []string{"bug", "infra"},
 		Files: []string{"deploy/a/main.tf", "README.md"}, Lines: 100,
@@ -110,6 +114,7 @@ func TestResolveMatchKeys(t *testing.T) {
 }
 
 func TestResolveOverrideBudgetOnlyWhenSet(t *testing.T) {
+	t.Parallel()
 	cfg := config.Defaults().Review
 	cfg.Overrides = []config.Override{{Tier: "any", Model: "claude-haiku-5-5"}}
 	if got := Resolve(cfg, ResolveInput{}); got.PerReviewUSD != 15 {
@@ -126,6 +131,7 @@ func TestResolveOverrideBudgetOnlyWhenSet(t *testing.T) {
 }
 
 func TestResolveSessionThenOneRun(t *testing.T) {
+	t.Parallel()
 	cfg := config.Defaults().Review
 	in := ResolveInput{
 		HasYourReview: true,
@@ -157,6 +163,7 @@ func TestResolveSessionThenOneRun(t *testing.T) {
 }
 
 func TestInlineOnlyCommentResolvesToFollowUp(t *testing.T) {
+	t.Parallel()
 	cfg := config.Defaults().Review
 	r := github.Review{Author: "me", State: "COMMENTED", NewThreads: 1}
 	in := ResolveInput{HasYourReview: status.YourLatestReview([]github.Review{r}, "me") != nil}

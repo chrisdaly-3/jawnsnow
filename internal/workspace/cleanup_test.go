@@ -104,6 +104,7 @@ func TestGitHardensEveryCommand(t *testing.T) {
 }
 
 func TestReleasePRDeletesRefsAndDirs(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newCleanupFixture(t, 2)
 	heads := f.userHeads(t)
@@ -151,6 +152,7 @@ func TestReleasePRDeletesRefsAndDirs(t *testing.T) {
 }
 
 func TestReleasePRStaleReleaseDoesNotFreeNewHolder(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newCleanupFixture(t, 1)
 	_, stale, err := f.p.Acquire(ctx, 7, f.headOID)
@@ -170,6 +172,7 @@ func TestReleasePRStaleReleaseDoesNotFreeNewHolder(t *testing.T) {
 }
 
 func TestPruneIdleRemovesOnlyIdleFreeSlots(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newCleanupFixture(t, 3)
 	heads := f.userHeads(t)
@@ -222,6 +225,7 @@ func TestPruneIdleRemovesOnlyIdleFreeSlots(t *testing.T) {
 }
 
 func TestSweep(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newCleanupFixture(t, 3)
 	heads := f.userHeads(t)
@@ -279,6 +283,7 @@ func TestSweep(t *testing.T) {
 }
 
 func TestCleanupNeverTouchesUserState(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newCleanupFixture(t, 2)
 	heads := f.userHeads(t)
@@ -331,6 +336,7 @@ func TestSweepRejectsUnsafeSlotsDir(t *testing.T) {
 }
 
 func TestSweepKeepsDirWhenRemoveFails(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newCleanupFixture(t, 1)
 	stray := filepath.Join(f.slots, "stray")

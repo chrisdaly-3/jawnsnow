@@ -10,6 +10,7 @@ import (
 )
 
 func TestCheckFindings(t *testing.T) {
+	t.Parallel()
 	files := workspace.ReviewFiles{Hunks: map[string][][2]int{
 		"a.go":      {{10, 20}, {40, 50}},
 		"docs/x.md": {{1, 30}},
@@ -207,6 +208,7 @@ func TestCheckFindings(t *testing.T) {
 }
 
 func TestCheckFindingsKeepsOrder(t *testing.T) {
+	t.Parallel()
 	files := workspace.ReviewFiles{Hunks: map[string][][2]int{"a.go": {{1, 9}}}}
 	kept, _, _ := CheckFindings(Output{Findings: []OutFinding{
 		{Path: "a.go", Line: 1, Body: "one", Category: "bug"},
@@ -219,6 +221,7 @@ func TestCheckFindingsKeepsOrder(t *testing.T) {
 }
 
 func TestCheckFindingsLintIndexIsPositionInOutput(t *testing.T) {
+	t.Parallel()
 	files := workspace.ReviewFiles{Hunks: map[string][][2]int{"a.go": {{1, 9}}}}
 	_, _, lint := CheckFindings(Output{Findings: []OutFinding{
 		{Path: "a.md", Line: 1, Body: "dropped", Category: "design"},

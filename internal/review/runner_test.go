@@ -66,15 +66,16 @@ func TestHelperProcess(t *testing.T) {
 
 func fakeSession(t *testing.T, fixture string) Session {
 	t.Helper()
-	t.Setenv("GO_WANT_HELPER_PROCESS", "1")
+	env := []string{"GO_WANT_HELPER_PROCESS=1"}
 	if fixture != "" {
 		abs, err := filepath.Abs(filepath.Join("testdata", fixture))
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Setenv("GO_FIXTURE", abs)
+		env = append(env, "GO_FIXTURE="+abs)
 	}
 	return Session{
+		binEnv:    env,
 		Binary:    os.Args[0],
 		binArgs:   []string{"-test.run=TestHelperProcess", "--"},
 		Dir:       t.TempDir(),
@@ -84,6 +85,7 @@ func fakeSession(t *testing.T, fixture string) Session {
 }
 
 func TestBuildArgsExact(t *testing.T) {
+	t.Parallel()
 	s := Session{
 		AddDirs: []string{"/d1", "/d2"}, Schema: `{"type":"object"}`,
 		Model: "claude-opus-5-5", Effort: "high", MaxTurns: 100, MaxBudgetUSD: 15,
@@ -121,6 +123,7 @@ func TestBuildArgsExact(t *testing.T) {
 // settings source claude reads from the project would let the PR add hooks,
 // env, MCP servers or instructions.
 func TestBuildArgsNeverLoadsProjectSettings(t *testing.T) {
+	t.Parallel()
 	for _, resume := range []bool{false, true} {
 		got := BuildArgs(Session{SessionID: "abc", Resume: resume, AddDirs: []string{"/d"}})
 		for _, a := range got {
@@ -139,6 +142,7 @@ func TestBuildArgsNeverLoadsProjectSettings(t *testing.T) {
 }
 
 func TestRunParsesStream(t *testing.T) {
+	t.Parallel()
 	res, err := Run(context.Background(), fakeSession(t, "stream-ok.jsonl"), "review this", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -165,6 +169,7 @@ func TestRunParsesStream(t *testing.T) {
 }
 
 func TestRunEmitsEvents(t *testing.T) {
+	t.Parallel()
 	var got []Event
 	if _, err := Run(context.Background(), fakeSession(t, "stream-ok.jsonl"), "p", func(e Event) { got = append(got, e) }); err != nil {
 		t.Fatal(err)
@@ -176,6 +181,7 @@ func TestRunEmitsEvents(t *testing.T) {
 }
 
 func TestRunHandlesHugeLine(t *testing.T) {
+	t.Parallel()
 	big := strings.Repeat("x", 3<<20)
 	line := `{"type":"result","subtype":"success","is_error":false,"session_id":"s","structured_output":{"b":"` + big + `"},"total_cost_usd":1,"num_turns":1,"duration_ms":1,"usage":{}}` + "\n"
 	p := filepath.Join(t.TempDir(), "big.jsonl")
@@ -183,7 +189,7 @@ func TestRunHandlesHugeLine(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := fakeSession(t, "")
-	t.Setenv("GO_FIXTURE", p)
+	s.binEnv = append(s.binEnv, "GO_FIXTURE="+p)
 	res, err := Run(context.Background(), s, "p", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -194,9 +200,10 @@ func TestRunHandlesHugeLine(t *testing.T) {
 }
 
 func TestRunTimeoutKillsProcessGroup(t *testing.T) {
+	t.Parallel()
 	pidFile := filepath.Join(t.TempDir(), "child.pid")
 	s := fakeSession(t, "")
-	t.Setenv("GO_CHILD_PIDFILE", pidFile)
+	s.binEnv = append(s.binEnv, "GO_CHILD_PIDFILE="+pidFile)
 	s.Timeout = 300 * time.Millisecond
 	start := time.Now()
 	res, err := Run(context.Background(), s, "p", nil)
@@ -228,6 +235,7 @@ func TestRunTimeoutKillsProcessGroup(t *testing.T) {
 }
 
 func TestRunCancelKeepsResultSeen(t *testing.T) {
+	t.Parallel()
 	// The fixture has a result; cancelling afterwards must not discard it.
 	ctx, cancel := context.WithCancel(context.Background())
 	res, err := Run(ctx, fakeSession(t, "stream-ok.jsonl"), "p", func(Event) { cancel() })
@@ -240,17 +248,20 @@ func TestRunCancelKeepsResultSeen(t *testing.T) {
 }
 
 func TestRunMissingResultIsError(t *testing.T) {
+	t.Parallel()
 	_, err := Run(context.Background(), fakeSession(t, "stream-noresult.jsonl"), "p", nil)
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	t.Setenv("GO_EXIT_CODE", "1")
-	if _, err := Run(context.Background(), fakeSession(t, "stream-noresult.jsonl"), "p", nil); err == nil {
+	s := fakeSession(t, "stream-noresult.jsonl")
+	s.binEnv = append(s.binEnv, "GO_EXIT_CODE=1")
+	if _, err := Run(context.Background(), s, "p", nil); err == nil {
 		t.Fatal("expected error on non-zero exit")
 	}
 }
 
 func TestRunIsErrorResult(t *testing.T) {
+	t.Parallel()
 	res, err := Run(context.Background(), fakeSession(t, "stream-iserror.jsonl"), "p", nil)
 	if err == nil {
 		t.Fatal("expected error")
@@ -261,6 +272,7 @@ func TestRunIsErrorResult(t *testing.T) {
 }
 
 func TestNewIDIsV4(t *testing.T) {
+	t.Parallel()
 	re := regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
 	a, b := NewID(), NewID()
 	if !re.MatchString(a) || a == b {

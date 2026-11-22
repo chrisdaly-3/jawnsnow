@@ -27,6 +27,7 @@ func fakeClaudeCLI(t *testing.T, version, auth string) string {
 }
 
 func TestDetectClaude(t *testing.T) {
+	t.Parallel()
 	bin := fakeClaudeCLI(t, "2.1.327 (Claude Code)", `{"loggedIn": true, "authMethod": "claude.ai", "extra": 1}`)
 	got := DetectClaude(context.Background(), bin)
 	want := ClaudeInfo{Found: true, Path: bin, Version: "2.1.327", LoggedIn: true, AuthMethod: "claude.ai"}
@@ -39,6 +40,7 @@ func TestDetectClaude(t *testing.T) {
 }
 
 func TestDetectClaudeLoggedOut(t *testing.T) {
+	t.Parallel()
 	bin := fakeClaudeCLI(t, "2.1.327 (Claude Code)", `{"loggedIn": false}`)
 	got := DetectClaude(context.Background(), bin)
 	if !got.Found || got.LoggedIn || got.Version != "2.1.327" {
@@ -50,6 +52,7 @@ func TestDetectClaudeLoggedOut(t *testing.T) {
 }
 
 func TestDetectClaudeBadAuthJSON(t *testing.T) {
+	t.Parallel()
 	bin := fakeClaudeCLI(t, "2.1.327 (Claude Code)", `not json`)
 	got := DetectClaude(context.Background(), bin)
 	if !got.Found || got.LoggedIn || got.Err == "" {
@@ -61,6 +64,7 @@ func TestDetectClaudeBadAuthJSON(t *testing.T) {
 }
 
 func TestDetectClaudeMissing(t *testing.T) {
+	t.Parallel()
 	got := DetectClaude(context.Background(), filepath.Join(t.TempDir(), "nope"))
 	if got.Found || got.LoggedIn || got.Err == "" {
 		t.Fatalf("DetectClaude = %+v, want not found with Err set", got)
@@ -71,6 +75,7 @@ func TestDetectClaudeMissing(t *testing.T) {
 }
 
 func TestDetectClaudeTimeout(t *testing.T) {
+	t.Parallel()
 	p := filepath.Join(t.TempDir(), "claude")
 	if err := os.WriteFile(p, []byte("#!/bin/sh\nexec sleep 5\n"), 0o755); err != nil {
 		t.Fatal(err)
@@ -106,6 +111,7 @@ func TestDetectClaudeForkingWrapperTimesOut(t *testing.T) {
 }
 
 func TestDetectClaudeTruncatesHugeOutput(t *testing.T) {
+	t.Parallel()
 	p := filepath.Join(t.TempDir(), "claude")
 	script := "#!/bin/sh\ncase \"$1\" in\n  --version) echo '2.1.327 (Claude Code)' ;;\n  auth) echo '{\"loggedIn\": true}'; head -c 200000 /dev/zero | tr '\\0' x ;;\nesac\n"
 	if err := os.WriteFile(p, []byte(script), 0o755); err != nil {

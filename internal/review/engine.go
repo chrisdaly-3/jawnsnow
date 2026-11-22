@@ -62,6 +62,7 @@ type Engine struct {
 	CloneURL        func(string) string // nil → https://github.com/<name>.git
 
 	binArgs    []string // tests run the test binary as a fake claude
+	binEnv     []string // and script it through its environment
 	beforeSave func()   // tests widen the gap between a review and its save
 
 	mu    sync.Mutex
@@ -281,6 +282,7 @@ func (e *Engine) review(ctx context.Context, req Request, rv *store.Review, onEv
 		SessionID:    NewID(),
 		Timeout:      cfg.Review.RunTimeout.Duration,
 		binArgs:      e.binArgs,
+		binEnv:       e.binEnv,
 	}
 	rv.SessionID = sess.SessionID
 
