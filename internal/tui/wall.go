@@ -85,7 +85,7 @@ func newWall() wallModel {
 	in.Prompt = "/ "
 	in.Placeholder = "title, repo, number or author"
 	return wallModel{
-		spring: harmonica.NewSpring(harmonica.FPS(60), 6.0, 1.0),
+		spring: harmonica.NewSpring(harmonica.FPS(60), 15.0, 1.0),
 		input:  in, w: 160, h: 30,
 	}
 }
