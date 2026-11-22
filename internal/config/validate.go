@@ -3,9 +3,9 @@ package config
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"regexp"
 	"slices"
-	"sort"
 	"strconv"
 	"time"
 )
@@ -37,8 +37,25 @@ func (c Config) Validate() error {
 		bad("github.poll_interval %s: must be at least 1m", c.GitHub.PollInterval)
 	}
 
+	validateFeeds(c.Feeds, bad)
+	for _, name := range slices.Sorted(maps.Keys(c.Repos)) {
+		if s := c.Repos[name].Scope; s != "full" && s != "pr-only" {
+			bad("repos.%q.scope %q: must be \"full\" or \"pr-only\"", name, s)
+		}
+	}
+	validateReview(c.Review, bad)
+	validateTheme(c.Theme, bad)
+
+	return errors.Join(errs...)
+}
+
+// reportFunc records one validation problem, formatted as fmt.Errorf does.
+type reportFunc func(format string, args ...any)
+
+// validateFeeds checks each feed has a unique name, a query and a window.
+func validateFeeds(feeds []Feed, bad reportFunc) {
 	seen := map[string]bool{}
-	for i, f := range c.Feeds {
+	for i, f := range feeds {
 		switch {
 		case f.Name == "":
 			bad("feeds[%d].name: must not be empty", i)
@@ -53,19 +70,10 @@ func (c Config) Validate() error {
 			bad("feeds[%d].since: must be greater than 0", i)
 		}
 	}
+}
 
-	repos := make([]string, 0, len(c.Repos))
-	for name := range c.Repos {
-		repos = append(repos, name)
-	}
-	sort.Strings(repos)
-	for _, name := range repos {
-		if s := c.Repos[name].Scope; s != "full" && s != "pr-only" {
-			bad("repos.%q.scope %q: must be \"full\" or \"pr-only\"", name, s)
-		}
-	}
-
-	r := c.Review
+// validateReview checks the review limits, budgets, tiers and overrides.
+func validateReview(r ReviewConfig, bad reportFunc) {
 	if r.MaxInFlight < 1 {
 		bad("review.max_in_flight %d: must be at least 1", r.MaxInFlight)
 	}
@@ -75,35 +83,37 @@ func (c Config) Validate() error {
 	if r.Budget.DailyUSD <= 0 {
 		bad("review.budget.daily_usd %v: must be greater than 0", r.Budget.DailyUSD)
 	}
-	if !slices.Contains(efforts, r.FirstPass.Effort) {
-		bad("review.first_pass.effort %q: must be one of %v", r.FirstPass.Effort, efforts)
-	}
-	if !slices.Contains(efforts, r.FollowUp.Effort) {
-		bad("review.follow_up.effort %q: must be one of %v", r.FollowUp.Effort, efforts)
-	}
+	checkEffort("review.first_pass.effort", r.FirstPass.Effort, bad)
+	checkEffort("review.follow_up.effort", r.FollowUp.Effort, bad)
 	for i, o := range r.Overrides {
 		if !slices.Contains([]string{"first_pass", "follow_up", "any"}, o.Tier) {
 			bad("review.overrides[%d].tier %q: must be \"first_pass\", \"follow_up\" or \"any\"", i, o.Tier)
 		}
-		if o.Effort != "" && !slices.Contains(efforts, o.Effort) {
-			bad("review.overrides[%d].effort %q: must be one of %v", i, o.Effort, efforts)
+		// An override with no effort keeps its tier's.
+		if o.Effort != "" {
+			checkEffort(fmt.Sprintf("review.overrides[%d].effort", i), o.Effort, bad)
 		}
 		if o.PerReviewUSD != nil && *o.PerReviewUSD <= 0 {
 			bad("review.overrides[%d].per_review_usd %v: must be greater than 0", i, *o.PerReviewUSD)
 		}
 	}
+}
 
-	if m := c.Theme.Markdown; m != "" && m != "dark" && m != "light" {
+// checkEffort reports effort, set at key, unless it is one of efforts.
+func checkEffort(key, effort string, bad reportFunc) {
+	if !slices.Contains(efforts, effort) {
+		bad("%s %q: must be one of %v", key, effort, efforts)
+	}
+}
+
+// validateTheme checks the markdown style, each status style and the chrome
+// colors. Status keys are checked in sorted order so the output is stable.
+func validateTheme(t ThemeConfig, bad reportFunc) {
+	if m := t.Markdown; m != "" && m != "dark" && m != "light" {
 		bad("theme.markdown must be \"dark\" or \"light\", got %q", m)
 	}
-
-	keys := make([]string, 0, len(c.Theme.Status))
-	for k := range c.Theme.Status {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		s := c.Theme.Status[k]
+	for _, k := range slices.Sorted(maps.Keys(t.Status)) {
+		s := t.Status[k]
 		if !slices.Contains(statusKeys, k) {
 			bad("theme.status.%s: unknown status; must be one of %v", k, statusKeys)
 			continue
@@ -115,14 +125,12 @@ func (c Config) Validate() error {
 			bad("theme.status.%s.spinner %q: must be one of %v", k, s.Spinner, spinners)
 		}
 	}
-	if err := checkColor(c.Theme.Chrome.Accent); err != nil {
-		bad("theme.chrome.accent %q: %v", c.Theme.Chrome.Accent, err)
+	if err := checkColor(t.Chrome.Accent); err != nil {
+		bad("theme.chrome.accent %q: %v", t.Chrome.Accent, err)
 	}
-	if err := checkColor(c.Theme.Chrome.Muted); err != nil {
-		bad("theme.chrome.muted %q: %v", c.Theme.Chrome.Muted, err)
+	if err := checkColor(t.Chrome.Muted); err != nil {
+		bad("theme.chrome.muted %q: %v", t.Chrome.Muted, err)
 	}
-
-	return errors.Join(errs...)
 }
 
 // checkColor accepts "" (use the default), a decimal index 16–255, or #rrggbb.

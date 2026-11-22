@@ -3,6 +3,7 @@
 package costs
 
 import (
+	"maps"
 	"slices"
 	"sort"
 	"time"
@@ -32,7 +33,11 @@ const (
 // the maxSeries-1 biggest spenders stay and the rest fold into "other".
 const maxSeries = 6
 
-const otherName = "other"
+const (
+	otherName = "other"
+	// totalName is the one series when rows are not grouped.
+	totalName = "total"
+)
 
 type Query struct {
 	Filter     store.CostFilter
@@ -131,7 +136,7 @@ func groupOf(r store.CostRow, g GroupBy) string {
 	case ByTier:
 		v = r.Tier
 	default:
-		return "total"
+		return totalName
 	}
 	if v == "" {
 		return "(none)"
@@ -156,65 +161,17 @@ func Aggregate(rows []store.CostRow, q Query) ([]Series, Summary) {
 	}
 	sum := summarise(kept)
 
-	// Bucket range: the filter's, else the rows' own extent.
-	from, to := q.Filter.From, q.Filter.To
-	if len(kept) > 0 {
-		lo, hi := kept[0].At, kept[0].At
-		for _, r := range kept {
-			if r.At.Before(lo) {
-				lo = r.At
-			}
-			if r.At.After(hi) {
-				hi = r.At
-			}
-		}
-		if from.IsZero() {
-			from = lo
-		}
-		if to.IsZero() {
-			to = hi.Add(time.Nanosecond)
-		}
-	}
-	var starts []time.Time
-	if !from.IsZero() && !to.IsZero() {
-		for s := BucketStart(from, q.Bucket); s.Before(to); s = nextBucket(s, q.Bucket) {
-			starts = append(starts, s)
-		}
-	}
+	starts := bucketStarts(kept, q)
 	index := make(map[int64]int, len(starts))
 	for i, s := range starts {
 		index[s.UnixNano()] = i
 	}
 
-	// Totals per group decide which groups stay and which fold into other.
 	spend := map[string]float64{}
 	for _, r := range kept {
 		spend[groupOf(r, q.GroupBy)] += usd(r)
 	}
-	names := make([]string, 0, len(spend))
-	for n := range spend {
-		names = append(names, n)
-	}
-	sort.Slice(names, func(i, j int) bool {
-		if spend[names[i]] != spend[names[j]] {
-			return spend[names[i]] > spend[names[j]]
-		}
-		return names[i] < names[j]
-	})
-	folded := map[string]bool{}
-	if len(names) > maxSeries {
-		for _, n := range names[maxSeries-1:] {
-			folded[n] = true
-		}
-		names = names[:maxSeries-1]
-	}
-	sort.Strings(names)
-	if len(folded) > 0 {
-		names = append(names, otherName)
-	}
-	if len(names) == 0 {
-		names = []string{"total"}
-	}
+	names, folded := seriesNames(spend)
 
 	byName := make(map[string]*Series, len(names))
 	series := make([]Series, len(names))
@@ -244,6 +201,66 @@ func Aggregate(rows []store.CostRow, q Query) ([]Series, Summary) {
 		}
 	}
 	return series, sum
+}
+
+// bucketStarts lists the start of every bucket in range. The range is the
+// filter's, else the kept rows' own extent; with neither end known it is
+// empty.
+func bucketStarts(kept []store.CostRow, q Query) []time.Time {
+	from, to := q.Filter.From, q.Filter.To
+	if len(kept) > 0 {
+		lo, hi := kept[0].At, kept[0].At
+		for _, r := range kept {
+			if r.At.Before(lo) {
+				lo = r.At
+			}
+			if r.At.After(hi) {
+				hi = r.At
+			}
+		}
+		if from.IsZero() {
+			from = lo
+		}
+		if to.IsZero() {
+			to = hi.Add(time.Nanosecond)
+		}
+	}
+	var starts []time.Time
+	if !from.IsZero() && !to.IsZero() {
+		for s := BucketStart(from, q.Bucket); s.Before(to); s = nextBucket(s, q.Bucket) {
+			starts = append(starts, s)
+		}
+	}
+	return starts
+}
+
+// seriesNames picks the series from each group's total spend. Past
+// maxSeries, the biggest spenders keep their own series and the rest are
+// folded into otherName, which comes last. With no groups at all there is
+// one totalName series.
+func seriesNames(spend map[string]float64) (names []string, folded map[string]bool) {
+	names = slices.Collect(maps.Keys(spend))
+	sort.Slice(names, func(i, j int) bool {
+		if spend[names[i]] != spend[names[j]] {
+			return spend[names[i]] > spend[names[j]]
+		}
+		return names[i] < names[j]
+	})
+	folded = map[string]bool{}
+	if len(names) > maxSeries {
+		for _, n := range names[maxSeries-1:] {
+			folded[n] = true
+		}
+		names = names[:maxSeries-1]
+	}
+	sort.Strings(names)
+	if len(folded) > 0 {
+		names = append(names, otherName)
+	}
+	if len(names) == 0 {
+		names = []string{totalName}
+	}
+	return names, folded
 }
 
 func summarise(rows []store.CostRow) Summary {

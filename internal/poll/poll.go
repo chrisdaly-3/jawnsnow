@@ -54,22 +54,13 @@ type Result struct {
 func Fetch(ctx context.Context, c github.Client, req Request) (res Result) {
 	res.Found = map[string][]string{}
 	unreachable := map[string]github.SkippedPR{}
-	sortedUnreachable := func() []github.SkippedPR {
-		var out []github.SkippedPR
-		for _, id := range slices.Sorted(maps.Keys(unreachable)) {
-			out = append(out, unreachable[id])
-		}
-		return out
-	}
 	fresh := map[string]github.Fingerprint{}
 	defer func() {
-		res.Unreachable = sortedUnreachable()
-		reached := slices.Collect(maps.Keys(fresh))
-		for _, s := range res.Snapshots {
-			reached = append(reached, s.ID)
+		// A NothingReachedError has set Unreachable already.
+		if res.Unreachable == nil {
+			res.Unreachable = sortedByID(unreachable)
 		}
-		slices.Sort(reached)
-		res.Reached = slices.Compact(reached)
+		res.Reached = reachedIDs(fresh, res.Snapshots)
 	}()
 	// asked counts the PRs the lookup and detail calls asked for, and
 	// missed the ones they skipped.
@@ -83,35 +74,12 @@ func Fetch(ctx context.Context, c github.Client, req Request) (res Result) {
 			}
 		}
 	}
-	for _, f := range req.Feeds {
-		fps, rl, err := c.Search(ctx, github.FeedQuery(f, req.Now))
-		res.observe(rl)
-		if err != nil {
-			err = fmt.Errorf("search feed %q: %w", f.Name, err)
-			if github.IsRateLimited(err) {
-				res.Err = err
-				return res
-			}
-			res.FeedErrs = append(res.FeedErrs, err)
-			continue
-		}
-		for _, fp := range fps {
-			fresh[fp.ID] = fp
-			if !slices.Contains(res.Found[fp.ID], f.Name) {
-				res.Found[fp.ID] = append(res.Found[fp.ID], f.Name)
-			}
-		}
+	if err := res.searchFeeds(ctx, c, req, fresh); err != nil {
+		res.Err = err
+		return res
 	}
 
-	var lookup []string
-	for _, id := range req.Watch {
-		if _, ok := fresh[id]; !ok {
-			lookup = append(lookup, id)
-		}
-	}
-	slices.Sort(lookup)
-	lookup = slices.Compact(lookup)
-	if len(lookup) > 0 {
+	if lookup := unfound(req.Watch, fresh); len(lookup) > 0 {
 		fps, skipped, rl, err := c.Fingerprints(ctx, lookup)
 		res.observe(rl)
 		if err != nil {
@@ -124,15 +92,7 @@ func Fetch(ctx context.Context, c github.Client, req Request) (res Result) {
 		}
 	}
 
-	ids := slices.Clone(req.DetailIDs)
-	for id, fp := range fresh {
-		if known, ok := req.Known[id]; !ok || !known.Same(fp) {
-			ids = append(ids, id)
-		}
-	}
-	slices.Sort(ids)
-	ids = slices.Compact(ids)
-	if len(ids) > 0 {
+	if ids := detailIDs(req, fresh); len(ids) > 0 {
 		snaps, skipped, rl, err := c.Details(ctx, req.Viewer, ids)
 		res.observe(rl)
 		if err != nil {
@@ -144,9 +104,85 @@ func Fetch(ctx context.Context, c github.Client, req Request) (res Result) {
 	}
 	// A search that succeeds reached GitHub, even an empty one.
 	if len(req.Feeds) > 0 && len(res.FeedErrs) == len(req.Feeds) && (asked == 0 || missed == asked) {
-		res.Err = &NothingReachedError{FeedErrs: res.FeedErrs, Unreachable: sortedUnreachable()}
+		res.Unreachable = sortedByID(unreachable)
+		res.Err = &NothingReachedError{FeedErrs: res.FeedErrs, Unreachable: res.Unreachable}
 	}
 	return res
+}
+
+// searchFeeds runs each feed's search, putting every PR it returns in fresh
+// and the feed's name in r.Found. A failed search is added to r.FeedErrs and
+// skipped. A rate limit stops the searches and is returned.
+func (r *Result) searchFeeds(ctx context.Context, c github.Client, req Request, fresh map[string]github.Fingerprint) error {
+	for _, f := range req.Feeds {
+		fps, rl, err := c.Search(ctx, github.FeedQuery(f, req.Now))
+		r.observe(rl)
+		if err != nil {
+			err = fmt.Errorf("search feed %q: %w", f.Name, err)
+			if github.IsRateLimited(err) {
+				return err
+			}
+			r.FeedErrs = append(r.FeedErrs, err)
+			continue
+		}
+		for _, fp := range fps {
+			fresh[fp.ID] = fp
+			if !slices.Contains(r.Found[fp.ID], f.Name) {
+				r.Found[fp.ID] = append(r.Found[fp.ID], f.Name)
+			}
+		}
+	}
+	return nil
+}
+
+// unfound lists the watched PRs no feed returned, sorted and once each.
+func unfound(watch []string, fresh map[string]github.Fingerprint) []string {
+	var ids []string
+	for _, id := range watch {
+		if _, ok := fresh[id]; !ok {
+			ids = append(ids, id)
+		}
+	}
+	return sortUnique(ids)
+}
+
+// detailIDs lists the PRs due a full fetch, sorted and once each: those in
+// req.DetailIDs, and those in fresh that are new or have moved since
+// req.Known.
+func detailIDs(req Request, fresh map[string]github.Fingerprint) []string {
+	ids := slices.Clone(req.DetailIDs)
+	for id, fp := range fresh {
+		if known, ok := req.Known[id]; !ok || !known.Same(fp) {
+			ids = append(ids, id)
+		}
+	}
+	return sortUnique(ids)
+}
+
+// reachedIDs lists the PRs a search, lookup or detail fetch returned, sorted
+// and once each.
+func reachedIDs(fresh map[string]github.Fingerprint, snaps []github.Snapshot) []string {
+	ids := slices.Collect(maps.Keys(fresh))
+	for _, s := range snaps {
+		ids = append(ids, s.ID)
+	}
+	return sortUnique(ids)
+}
+
+// sortUnique sorts ids in place and drops repeats.
+func sortUnique(ids []string) []string {
+	slices.Sort(ids)
+	return slices.Compact(ids)
+}
+
+// sortedByID returns the skipped PRs ordered by ID, or nil when there are
+// none.
+func sortedByID(skipped map[string]github.SkippedPR) []github.SkippedPR {
+	var out []github.SkippedPR
+	for _, id := range slices.Sorted(maps.Keys(skipped)) {
+		out = append(out, skipped[id])
+	}
+	return out
 }
 
 // NothingReachedError fails a poll that reached nothing: every feed search

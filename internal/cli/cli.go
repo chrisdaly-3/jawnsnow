@@ -139,20 +139,12 @@ var newPoster = github.NewGHPoster
 func buildDeps(getenv func(string) string, newClient func() (github.Client, error)) (tui.Deps, func(), error) {
 	noop := func() {}
 	var banners []string
-	var configBanner string
 
 	path, _, ignoredXDG := config.Resolve(getenv, fileExists)
 	if ignoredXDG != "" {
 		banners = append(banners, "config: "+ignoredXDGNote(ignoredXDG))
 	}
-	shown := tildePath(path, getenv("HOME"))
-	created, createErr := config.WriteDefaultIfMissing(path)
-	switch {
-	case createErr != nil:
-		configBanner = fmt.Sprintf("No config at %s — using defaults (could not create it: %v). Run \"snow config default\" to start one.", shown, createErr)
-	case created:
-		configBanner = fmt.Sprintf("Created %s with the defaults — edit it any time; snow reloads on save.", shown)
-	}
+	configBanner := createConfig(path, getenv("HOME"))
 	cfg, warnings, err := config.Load(path)
 	switch {
 	case errors.Is(err, os.ErrNotExist):
@@ -173,7 +165,8 @@ func buildDeps(getenv func(string) string, newClient func() (github.Client, erro
 		return tui.Deps{}, noop, err
 	}
 
-	st, err := store.Open(store.DataPath())
+	dataPath := store.DataPath()
+	st, err := store.Open(dataPath)
 	if err != nil {
 		return tui.Deps{}, noop, err
 	}
@@ -181,31 +174,7 @@ func buildDeps(getenv func(string) string, newClient func() (github.Client, erro
 	deps := tui.Deps{Config: cfg, Theme: th, Store: st, ConfigBanner: configBanner, ConfigPath: path, Now: time.Now}
 	var watcher *config.Watcher
 	cur := &currentConfig{cfg: cfg}
-
-	// The TUI looks up the gh user itself, so a failed lookup is retried
-	// rather than turning polling off for the session.
-	client, err := newClient()
-	switch {
-	case err != nil:
-		deps.LoginWarning = fmt.Sprintf(`gh client failed: %v — snow can't poll GitHub or run reviews. Run "gh auth login", then restart snow.`, err)
-	case client == nil:
-		deps.LoginWarning = `No gh login found — snow can't poll GitHub or run reviews. Run "gh auth login", then restart snow.`
-	default:
-		deps.Client = client
-	}
-
-	// The poster is the tool's only GitHub write; it needs the same gh
-	// login as the client.
-	switch deps.Client {
-	case nil:
-		deps.PostOff = "gh is not logged in"
-	default:
-		if p, err := newPoster(); err != nil {
-			deps.PostOff = fmt.Sprintf("could not set up posting: %v", err)
-		} else {
-			deps.Poster = p
-		}
-	}
+	setUpGitHub(&deps, newClient)
 
 	// A missing config directory means creating the file failed, which the
 	// banner above already explains, so it is not an error.
@@ -217,7 +186,7 @@ func buildDeps(getenv func(string) string, newClient func() (github.Client, erro
 		banners = append(banners, fmt.Sprintf("config reload is off: %v", err))
 	}
 
-	dataDir := filepath.Dir(store.DataPath())
+	dataDir := filepath.Dir(dataPath)
 	deps.DataDir = dataDir
 	unlockData, lockOff, lockHeld := lockDataDir(dataDir)
 	// The post flow's double-post guard reads this process's memory as
@@ -253,26 +222,12 @@ func buildDeps(getenv func(string) string, newClient func() (github.Client, erro
 
 	// The sweep frees every stored slot, so it is only safe for the snow
 	// holding the lock.
-	sweepCtx, stopSweep := context.WithCancel(context.Background())
-	sweepDone := make(chan struct{})
-	var sweepErr error
-	if lockOff == "" {
-		go func() {
-			defer close(sweepDone)
-			sweepErr = sweepStartup(sweepCtx, st, cur.get, dataDir)
-		}()
-	} else {
-		close(sweepDone)
-	}
+	sweep := startSweep(st, cur.get, dataDir, lockOff == "")
 	if engine != nil {
-		deps.Reviewer = &sweepGated{Engine: engine, ready: sweepDone}
+		deps.Reviewer = &sweepGated{Engine: engine, ready: sweep.done}
 	}
-	select {
-	case <-sweepDone:
-		if sweepErr != nil {
-			banners = append(banners, "worktree cleanup: "+sweepErr.Error())
-		}
-	case <-time.After(sweepBannerWait):
+	if err := sweep.wait(); err != nil {
+		banners = append(banners, "worktree cleanup: "+err.Error())
 	}
 
 	cleanup := func() {
@@ -281,7 +236,7 @@ func buildDeps(getenv func(string) string, newClient func() (github.Client, erro
 			w = engine
 		}
 		shutdown(w, shutdownWait,
-			func() { stopSweep(); <-sweepDone },
+			sweep.stop,
 			stopTee,
 			func() {
 				if watcher != nil {
@@ -294,6 +249,90 @@ func buildDeps(getenv func(string) string, newClient func() (github.Client, erro
 
 	deps.Banners = banners
 	return deps, cleanup, nil
+}
+
+// createConfig writes the default config to path when none is there. It
+// returns the banner saying it did, or why it could not, else "".
+func createConfig(path, home string) string {
+	shown := tildePath(path, home)
+	created, err := config.WriteDefaultIfMissing(path)
+	switch {
+	case err != nil:
+		return fmt.Sprintf("No config at %s — using defaults (could not create it: %v). Run \"snow config default\" to start one.", shown, err)
+	case created:
+		return fmt.Sprintf("Created %s with the defaults — edit it any time; snow reloads on save.", shown)
+	}
+	return ""
+}
+
+// setUpGitHub sets the gh client and poster on deps, or the warning and
+// PostOff reason that say why they are missing.
+func setUpGitHub(deps *tui.Deps, newClient func() (github.Client, error)) {
+	// The TUI looks up the gh user itself, so a failed lookup is retried
+	// rather than turning polling off for the session.
+	client, err := newClient()
+	switch {
+	case err != nil:
+		deps.LoginWarning = fmt.Sprintf(`gh client failed: %v — snow can't poll GitHub or run reviews. Run "gh auth login", then restart snow.`, err)
+	case client == nil:
+		deps.LoginWarning = `No gh login found — snow can't poll GitHub or run reviews. Run "gh auth login", then restart snow.`
+	default:
+		deps.Client = client
+	}
+
+	// The poster is the tool's only GitHub write; it needs the same gh
+	// login as the client.
+	switch deps.Client {
+	case nil:
+		deps.PostOff = "gh is not logged in"
+	default:
+		if p, err := newPoster(); err != nil {
+			deps.PostOff = fmt.Sprintf("could not set up posting: %v", err)
+		} else {
+			deps.Poster = p
+		}
+	}
+}
+
+// startupSweep is the worktree cleanup that runs in the background at
+// startup.
+type startupSweep struct {
+	done   chan struct{} // closed once the sweep has ended
+	err    error         // the sweep's error, set before done is closed
+	cancel context.CancelFunc
+}
+
+// startSweep starts sweepStartup in the background when run is set; when it
+// is not, the sweep counts as done at once.
+func startSweep(st *store.Store, cfg func() config.Config, dataDir string, run bool) *startupSweep {
+	ctx, cancel := context.WithCancel(context.Background())
+	s := &startupSweep{done: make(chan struct{}), cancel: cancel}
+	if !run {
+		close(s.done)
+		return s
+	}
+	go func() {
+		defer close(s.done)
+		s.err = sweepStartup(ctx, st, cfg, dataDir)
+	}()
+	return s
+}
+
+// wait gives the sweep up to sweepBannerWait to finish and returns its
+// error. A sweep still running then returns nil.
+func (s *startupSweep) wait() error {
+	select {
+	case <-s.done:
+		return s.err
+	case <-time.After(sweepBannerWait):
+		return nil
+	}
+}
+
+// stop cancels the sweep and waits for it to end.
+func (s *startupSweep) stop() {
+	s.cancel()
+	<-s.done
 }
 
 // lockDataDir takes the lock that lets one snow per data dir run reviews:

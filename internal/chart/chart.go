@@ -137,37 +137,9 @@ func Render(lines []Line, o Options) []string {
 		plotW = 0
 	}
 
-	grid := make([][]cell, plotRows)
-	for y := range grid {
-		grid[y] = make([]cell, plotW)
-		for x := range grid[y] {
-			grid[y][x].color = -1
-		}
-	}
-
+	grid := newGrid(plotRows, plotW)
 	if plotW > 0 {
-		dw, dh := plotW*2, plotRows*4
-		// A cell crossed by several lines takes the color of the line drawn
-		// last (the later entry in lines).
-		plot := func(l Line, x, y int) {
-			c := &grid[y/4][x/2]
-			c.set(x%2, y%4)
-			c.color = l.Color
-		}
-		for _, l := range lines {
-			var px, py int
-			for i, raw := range l.Values {
-				x := pointX(i, len(l.Values), dw)
-				y := (dh - 1) - int(math.Round(clean(raw)/top*float64(dh-1)))
-				y = min(max(y, 0), dh-1)
-				if i == 0 {
-					plot(l, x, y)
-				} else {
-					bresenham(px, py, x, y, func(x, y int) { plot(l, x, y) })
-				}
-				px, py = x, y
-			}
-		}
+		drawLines(grid, lines, top)
 	}
 
 	cursorCol := -1
@@ -175,33 +147,9 @@ func Render(lines []Line, o Options) []string {
 		cursorCol = pointX(o.Cursor, longest, plotW*2) / 2
 	}
 
-	midRow := (plotRows - 1) / 2
 	for y := range plotRows {
-		var lab string
-		switch {
-		case y == 0:
-			lab = topL
-		case y == plotRows-1:
-			lab = botL
-		case y == midRow && plotRows >= 3:
-			lab = midL
-		}
-		var b strings.Builder
-		b.WriteString(strings.Repeat(" ", max(lw-1-lipgloss.Width(lab), 0)))
-		b.WriteString(lab)
-		b.WriteString("┤")
-		for x := 0; x < plotW; x++ {
-			c := grid[y][x]
-			switch {
-			case c.bits != 0:
-				b.WriteString(paint.paint(string(rune(0x2800+int(c.bits))), c.color))
-			case x == cursorCol:
-				b.WriteString(paint.paint("│", cursorColor))
-			default:
-				b.WriteString(" ")
-			}
-		}
-		rows[y] = ansi.Truncate(b.String(), o.Width, "")
+		lab := axisLabel(y, plotRows, topL, midL, botL)
+		rows[y] = ansi.Truncate(plotRow(grid[y], lab, lw, cursorCol, paint), o.Width, "")
 	}
 
 	if o.Height >= 2 {
@@ -209,6 +157,80 @@ func Render(lines []Line, o Options) []string {
 	}
 	rows[o.Height-1] = legend(lines, o, paint)
 	return rows
+}
+
+// newGrid returns a rows by cols grid of empty cells, none yet colored.
+func newGrid(rows, cols int) [][]cell {
+	grid := make([][]cell, rows)
+	for y := range grid {
+		grid[y] = make([]cell, cols)
+		for x := range grid[y] {
+			grid[y][x].color = -1
+		}
+	}
+	return grid
+}
+
+// drawLines plots each line's dots into a non-empty grid, scaled so top is
+// the top dot row and joining each point to the one before. A cell crossed
+// by several lines takes the color of the line drawn last (the later entry
+// in lines).
+func drawLines(grid [][]cell, lines []Line, top float64) {
+	dw, dh := len(grid[0])*2, len(grid)*4
+	plot := func(l Line, x, y int) {
+		c := &grid[y/4][x/2]
+		c.set(x%2, y%4)
+		c.color = l.Color
+	}
+	for _, l := range lines {
+		var px, py int
+		for i, raw := range l.Values {
+			x := pointX(i, len(l.Values), dw)
+			y := (dh - 1) - int(math.Round(clean(raw)/top*float64(dh-1)))
+			y = min(max(y, 0), dh-1)
+			if i == 0 {
+				plot(l, x, y)
+			} else {
+				bresenham(px, py, x, y, func(x, y int) { plot(l, x, y) })
+			}
+			px, py = x, y
+		}
+	}
+}
+
+// plotRow draws one row of the plot: its label right-aligned in an axis
+// column lw wide, the "┤" glyph, then each cell's braille dots, the cursor
+// or a blank.
+func plotRow(cells []cell, lab string, lw, cursorCol int, paint *painter) string {
+	var b strings.Builder
+	b.WriteString(strings.Repeat(" ", max(lw-1-lipgloss.Width(lab), 0)))
+	b.WriteString(lab)
+	b.WriteString("┤")
+	for x, c := range cells {
+		switch {
+		case c.bits != 0:
+			b.WriteString(paint.paint(string(rune(0x2800+int(c.bits))), c.color))
+		case x == cursorCol:
+			b.WriteString(paint.paint("│", cursorColor))
+		default:
+			b.WriteString(" ")
+		}
+	}
+	return b.String()
+}
+
+// axisLabel is the y-axis label for plot row y of rows: top on the first,
+// bottom on the last, and mid on the middle row when there are at least 3.
+func axisLabel(y, rows int, topL, midL, botL string) string {
+	switch {
+	case y == 0:
+		return topL
+	case y == rows-1:
+		return botL
+	case y == (rows-1)/2 && rows >= 3:
+		return midL
+	}
+	return ""
 }
 
 // pointX is the dot column of point i of n across dw dots; one point sits at
