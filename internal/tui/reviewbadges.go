@@ -63,8 +63,6 @@ func (m Model) badge(t tracker.Tracked, frame int) string {
 	case s.running:
 		f := reviewSpinner.Frames[frame%len(reviewSpinner.Frames)]
 		return th.Accent().Render(strings.TrimSpace(f) + " Claude reviewing…")
-	case s.skip == "teammate" && !reviewedAt(s.latest, t.PR.HeadOID):
-		return th.Muted().Render("· teammate reviewed")
 	}
 	return latestBadge(th, s, t.PR.HeadOID)
 }

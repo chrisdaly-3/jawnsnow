@@ -20,18 +20,25 @@ type ModeConfig struct {
 
 // GitHubConfig controls polling and which checks are ignored everywhere.
 type GitHubConfig struct {
-	PollInterval     Duration `toml:"poll_interval"`
-	IdlePollInterval Duration `toml:"idle_poll_interval"`
-	IgnoreChecks     []string `toml:"ignore_checks"`
+	PollInterval Duration `toml:"poll_interval"`
+	IgnoreChecks []string `toml:"ignore_checks"`
+}
+
+// IdlePollEvery is how many poll intervals pass between checks of the PRs
+// waiting for new activity (hidden or stale), to save rate limit.
+const IdlePollEvery = 5
+
+// IdlePollInterval is how often hidden and stale PRs are checked for new
+// activity: IdlePollEvery poll intervals.
+func (g GitHubConfig) IdlePollInterval() time.Duration {
+	return IdlePollEvery * g.PollInterval.Duration
 }
 
 // Feed is one GitHub search whose results land on the wall.
 type Feed struct {
-	Name          string   `toml:"name"`
-	Query         string   `toml:"query"`
-	Since         Duration `toml:"since"`
-	Team          bool     `toml:"team"`
-	IncludeDrafts bool     `toml:"include_drafts"`
+	Name  string   `toml:"name"`
+	Query string   `toml:"query"`
+	Since Duration `toml:"since"`
 }
 
 // DoneConfig controls how long finished PRs stay tracked.
@@ -54,9 +61,7 @@ type ReviewConfig struct {
 	QuietPeriod           Duration   `toml:"quiet_period"`
 	MaxInFlight           int        `toml:"max_in_flight"`
 	MaxReviewsPerPRPerDay int        `toml:"max_reviews_per_pr_per_day"`
-	MaxTurns              int        `toml:"max_turns"`
 	RunTimeout            Duration   `toml:"run_timeout"`
-	WorktreeIdle          Duration   `toml:"worktree_idle"`
 	Budget                Budget     `toml:"budget"`
 	FirstPass             Tier       `toml:"first_pass"`
 	FollowUp              Tier       `toml:"follow_up"`
@@ -125,8 +130,7 @@ func Defaults() Config {
 	return Config{
 		Mode: ModeConfig{Default: "watcher"},
 		GitHub: GitHubConfig{
-			PollInterval:     Duration{3 * time.Minute},
-			IdlePollInterval: Duration{15 * time.Minute},
+			PollInterval: Duration{3 * time.Minute},
 		},
 		Feeds: []Feed{{
 			Name:  "review-requested",
@@ -138,9 +142,7 @@ func Defaults() Config {
 			QuietPeriod:           Duration{5 * time.Minute},
 			MaxInFlight:           2,
 			MaxReviewsPerPRPerDay: 4,
-			MaxTurns:              100,
 			RunTimeout:            Duration{25 * time.Minute},
-			WorktreeIdle:          Duration{2 * time.Hour},
 			Budget:                Budget{PerReviewUSD: 15, DailyUSD: 250},
 			FirstPass:             Tier{Model: "claude-opus-5-5", Effort: "high"},
 			FollowUp:              Tier{Model: "claude-sonnet-5-5", Effort: "medium"},

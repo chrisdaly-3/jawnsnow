@@ -102,9 +102,9 @@ func TestDefaultTOMLNamesEveryKey(t *testing.T) {
 
 var assignRE = regexp.MustCompile(`^\s*#?\s*[A-Za-z_][A-Za-z0-9_]*\s*=`)
 
-// Every live or commented-out assignment sits under a comment: walking up from
-// it past other assignments, the first non-blank line is a comment, or a table
-// header that is itself preceded by a comment.
+// Every live or commented-out assignment ends in a one-line comment after its
+// value. The [theme.status] rows are the exception: they are wide, so the
+// comment above the table header explains them.
 func TestDefaultTOMLEveryAssignmentCommented(t *testing.T) {
 	lines := strings.Split(string(DefaultTOML()), "\n")
 	isAssign := func(s string) bool { return assignRE.MatchString(s) }
@@ -112,27 +112,28 @@ func TestDefaultTOMLEveryAssignmentCommented(t *testing.T) {
 		s = strings.TrimSpace(s)
 		return strings.HasPrefix(s, "#") && !isAssign(s)
 	}
-	isHeader := func(s string) bool { return strings.HasPrefix(strings.TrimSpace(s), "[") }
-	prevNonBlank := func(i int) int {
-		for i--; i >= 0 && strings.TrimSpace(lines[i]) == ""; i-- {
-		}
-		return i
+	// value is the assignment with any leading "#" removed, from the "=" on.
+	value := func(s string) string {
+		s = strings.TrimPrefix(strings.TrimSpace(s), "#")
+		return s[strings.Index(s, "="):]
 	}
+	table, tableProse := "", false
 	n := 0
 	for i, l := range lines {
+		if h := strings.TrimSpace(l); strings.HasPrefix(h, "[") {
+			table = h
+			tableProse = i > 0 && isProse(lines[i-1])
+			continue
+		}
 		if !isAssign(l) {
 			continue
 		}
 		n++
-		j := prevNonBlank(i)
-		for j >= 0 && isAssign(lines[j]) {
-			j = prevNonBlank(j)
+		if table == "[theme.status]" && tableProse {
+			continue
 		}
-		if j >= 0 && isHeader(lines[j]) {
-			j = prevNonBlank(j)
-		}
-		if j < 0 || !isProse(lines[j]) {
-			t.Errorf("line %d has no comment above it: %q", i+1, l)
+		if !strings.Contains(value(l), " # ") {
+			t.Errorf("line %d has no comment after its value: %q", i+1, l)
 		}
 	}
 	if n < 40 {

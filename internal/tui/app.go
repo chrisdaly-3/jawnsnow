@@ -775,7 +775,7 @@ func (m Model) startPoll() (Model, tea.Cmd) {
 		return m.lookUpViewer()
 	}
 	now := m.now()
-	idleDue := m.lastIdlePoll.IsZero() || now.Sub(m.lastIdlePoll) >= m.cfg.GitHub.IdlePollInterval.Duration
+	idleDue := m.lastIdlePoll.IsZero() || now.Sub(m.lastIdlePoll) >= m.cfg.GitHub.IdlePollInterval()
 	known := make(map[string]github.Fingerprint, len(m.prs))
 	var watch, force []string
 	for id, t := range m.prs {

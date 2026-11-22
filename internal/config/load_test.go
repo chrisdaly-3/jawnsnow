@@ -29,7 +29,7 @@ func TestDefaults(t *testing.T) {
 	d := Defaults()
 	assertEq(t, d.Mode.Default, "watcher")
 	assertEq(t, d.GitHub.PollInterval.Duration, 3*time.Minute)
-	assertEq(t, d.GitHub.IdlePollInterval.Duration, 15*time.Minute)
+	assertEq(t, d.GitHub.IdlePollInterval(), 15*time.Minute)
 	assertEq(t, len(d.Feeds), 1)
 	assertEq(t, d.Feeds[0].Name, "review-requested")
 	assertEq(t, d.Feeds[0].Query, "is:pr is:open review-requested:@me")
@@ -38,9 +38,7 @@ func TestDefaults(t *testing.T) {
 	assertEq(t, d.Review.QuietPeriod.Duration, 5*time.Minute)
 	assertEq(t, d.Review.MaxInFlight, 2)
 	assertEq(t, d.Review.MaxReviewsPerPRPerDay, 4)
-	assertEq(t, d.Review.MaxTurns, 100)
 	assertEq(t, d.Review.RunTimeout.Duration, 25*time.Minute)
-	assertEq(t, d.Review.WorktreeIdle.Duration, 2*time.Hour)
 	assertEq(t, d.Review.Budget.PerReviewUSD, 15.0)
 	assertEq(t, d.Review.Budget.DailyUSD, 250.0)
 	assertEq(t, d.Review.FirstPass, Tier{"claude-opus-5-5", "high"})
@@ -53,7 +51,7 @@ func TestLoadOverlaysFileOnDefaults(t *testing.T) {
 		t.Fatalf("err=%v warns=%v", err, warns)
 	}
 	assertEq(t, cfg.GitHub.PollInterval.Duration, time.Minute)
-	assertEq(t, cfg.GitHub.IdlePollInterval.Duration, 15*time.Minute)
+	assertEq(t, cfg.GitHub.IdlePollInterval(), 5*time.Minute)
 	assertEq(t, len(cfg.Feeds), 1)
 }
 
@@ -63,7 +61,6 @@ func TestLoadFeedsReplaceDefaultFeed(t *testing.T) {
 name = "team"
 query = "is:pr team-review-requested:o/t"
 since = "14d"
-team = true
 
 [[feeds]]
 name = "asked-me"
@@ -75,7 +72,6 @@ since = "36h"
 	}
 	assertEq(t, len(cfg.Feeds), 2)
 	assertEq(t, cfg.Feeds[0].Name, "team")
-	assertEq(t, cfg.Feeds[0].Team, true)
 	assertEq(t, cfg.Feeds[1].Name, "asked-me")
 	assertEq(t, cfg.Feeds[1].Since.Duration, 36*time.Hour)
 }
@@ -87,6 +83,41 @@ func TestLoadMissingFile(t *testing.T) {
 	}
 	if !reflect.DeepEqual(cfg, Defaults()) {
 		t.Errorf("cfg = %+v, want Defaults()", cfg)
+	}
+}
+
+// A config written before the keys below were removed still loads; each
+// removed key comes back as a warning.
+func TestLoadRemovedKeysWarn(t *testing.T) {
+	cfg, warns, err := Load(writeConfig(t, `
+[github]
+idle_poll_interval = "15m"
+
+[[feeds]]
+name = "team"
+query = "is:pr"
+team = true
+include_drafts = true
+
+[review]
+max_turns = 50
+worktree_idle = "1h"
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() = %v", err)
+	}
+	want := []string{
+		`unknown key "github.idle_poll_interval"`,
+		`unknown key "feeds.team"`,
+		`unknown key "feeds.include_drafts"`,
+		`unknown key "review.max_turns"`,
+		`unknown key "review.worktree_idle"`,
+	}
+	if !reflect.DeepEqual(warns, want) {
+		t.Errorf("warnings = %q, want %q", warns, want)
 	}
 }
 

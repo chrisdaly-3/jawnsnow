@@ -2,6 +2,7 @@ package github
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -62,14 +63,19 @@ var checksPageQuery = `query ChecksPage($id: ID!, $after: String) {
   ` + rateLimitFields + `
 }`
 
-// FeedQuery turns a feed into a GitHub search string, bounded to PRs updated
-// within the feed's window. The bound is truncated to the UTC day (or hour for
-// windows under a day) so the string, and so the search cache key, is stable.
+// draftQualifier finds a draft: or -draft: qualifier in a search string.
+var draftQualifier = regexp.MustCompile(`(^|\s)-?draft:`)
+
+// FeedQuery turns a feed into a GitHub search string. It adds draft:false
+// unless the feed's query has its own draft: qualifier, and bounds the search
+// to PRs updated within the feed's window. The bound is truncated to the UTC
+// day (or hour for windows under a day) so the string, and so the search
+// cache key, is stable.
 // Search returns at most 100 PRs; sorting by update makes the ones it drops
 // the least recently active.
 func FeedQuery(f config.Feed, now time.Time) string {
 	q := f.Query
-	if !f.IncludeDrafts {
+	if !draftQualifier.MatchString(q) {
 		q += " draft:false"
 	}
 	if f.Since.Duration > 0 {

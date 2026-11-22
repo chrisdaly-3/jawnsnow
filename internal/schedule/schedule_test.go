@@ -37,15 +37,7 @@ func TestDecideOrder(t *testing.T) {
 		{"unknown head time is quiet", func(c *Candidate) { c.T.HeadSeenAt = time.Time{} }, 0, Decision{false, "quiet"}},
 		{"reviewed", func(c *Candidate) { c.Latest = &store.Review{HeadOID: "h1", Outcome: "complete"} }, 0, Decision{false, "reviewed"}},
 		{"reviewed incomplete", func(c *Candidate) { c.Latest = &store.Review{HeadOID: "h1", Outcome: "incomplete"} }, 0, Decision{false, "reviewed"}},
-		{"teammate", func(c *Candidate) {
-			c.TeamFeed = true
-			c.T.PR.Reviews = []github.Review{{Author: "bob", State: "APPROVED", CommitOID: "h1"}}
-		}, 0, Decision{false, "teammate"}},
-		{"teammate with the viewer in another case", func(c *Candidate) {
-			c.TeamFeed = true
-			c.T.PR.Reviews = []github.Review{{Author: "ME", State: "APPROVED", CommitOID: "h1"}}
-		}, 0, Decision{true, ""}},
-		{"teammate off a team feed", func(c *Candidate) {
+		{"another reviewer at head does not block", func(c *Candidate) {
 			c.T.PR.Reviews = []github.Review{{Author: "bob", State: "APPROVED", CommitOID: "h1"}}
 		}, 0, Decision{true, ""}},
 		{"cap", func(c *Candidate) { c.AutoToday = 4 }, 0, Decision{false, "cap"}},
@@ -69,35 +61,6 @@ func TestDecideOrder(t *testing.T) {
 			tt.mod(&c)
 			if got := Decide(c, cfg, tt.spent, "me", now); got != tt.want {
 				t.Fatalf("Decide = %+v, want %+v", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestTeammate(t *testing.T) {
-	pr := func(r ...github.Review) github.Snapshot {
-		return github.Snapshot{HeadOID: "h1", Author: "alice", Reviews: r}
-	}
-	tests := []struct {
-		name string
-		pr   github.Snapshot
-		want bool
-	}{
-		{"teammate approval", pr(github.Review{Author: "bob", State: "APPROVED", CommitOID: "h1"}), true},
-		{"commented counts", pr(github.Review{Author: "bob", State: "COMMENTED", CommitOID: "h1"}), true},
-		{"bot ignored", pr(github.Review{Author: "Copilot[BOT]", State: "COMMENTED", CommitOID: "h1"}), false},
-		{"pending ignored", pr(github.Review{Author: "bob", State: "PENDING", CommitOID: "h1"}), false},
-		{"older commit ignored", pr(github.Review{Author: "bob", State: "APPROVED", CommitOID: "h0"}), false},
-		{"author ignored", pr(github.Review{Author: "alice", State: "COMMENTED", CommitOID: "h1"}), false},
-		{"viewer ignored", pr(github.Review{Author: "me", State: "APPROVED", CommitOID: "h1"}), false},
-		{"viewer in another case ignored", pr(github.Review{Author: "Me", State: "APPROVED", CommitOID: "h1"}), false},
-		{"author in another case ignored", pr(github.Review{Author: "Alice", State: "COMMENTED", CommitOID: "h1"}), false},
-		{"none", pr(), false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := Teammate(tt.pr, "me"); got != tt.want {
-				t.Fatalf("Teammate = %v, want %v", got, tt.want)
 			}
 		})
 	}

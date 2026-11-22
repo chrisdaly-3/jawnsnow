@@ -3,11 +3,9 @@
 package schedule
 
 import (
-	"strings"
 	"time"
 
 	"github.com/chrisdaly-3/jawnsnow/internal/config"
-	"github.com/chrisdaly-3/jawnsnow/internal/github"
 	"github.com/chrisdaly-3/jawnsnow/internal/status"
 	"github.com/chrisdaly-3/jawnsnow/internal/store"
 	"github.com/chrisdaly-3/jawnsnow/internal/tracker"
@@ -20,8 +18,6 @@ type Candidate struct {
 	Latest *store.Review
 	// AutoToday counts today's auto reviews of this PR, failed ones included.
 	AutoToday int
-	// TeamFeed is true when the PR came from a feed marked team = true.
-	TeamFeed bool
 	// Failures and LastFailure describe the run of failed reviews at the head.
 	Failures    int
 	LastFailure time.Time
@@ -29,7 +25,7 @@ type Candidate struct {
 }
 
 // Decision is the verdict. Reason is one of "running", "status", "quiet",
-// "reviewed", "teammate", "cap", "budget", "backoff", "stopped", or "" when
+// "reviewed", "cap", "budget", "backoff", "stopped", or "" when
 // Review is true.
 type Decision struct {
 	Review bool
@@ -55,9 +51,6 @@ func Decide(c Candidate, cfg config.Config, spentToday float64, viewer string, n
 	atHead := c.Latest != nil && c.Latest.HeadOID == pr.HeadOID
 	if atHead && c.Latest.Outcome != "failed" {
 		return no("reviewed")
-	}
-	if c.TeamFeed && Teammate(pr, viewer) {
-		return no("teammate")
 	}
 	if c.AutoToday >= cfg.Review.MaxReviewsPerPRPerDay {
 		return no("cap")
@@ -93,25 +86,6 @@ func Backoff(failures int) (wait time.Duration, stop bool) {
 		return 0, false
 	}
 	return 0, true
-}
-
-// Teammate reports whether someone other than the viewer and the PR's author
-// has submitted a non-pending review at the PR's current head. Bots don't
-// count.
-func Teammate(pr github.Snapshot, viewer string) bool {
-	for _, r := range pr.Reviews {
-		if r.State == "PENDING" || r.CommitOID != pr.HeadOID {
-			continue
-		}
-		if strings.EqualFold(r.Author, viewer) || strings.EqualFold(r.Author, pr.Author) {
-			continue
-		}
-		if strings.HasSuffix(strings.ToLower(r.Author), "[bot]") {
-			continue
-		}
-		return true
-	}
-	return false
 }
 
 // DayStart is the local midnight that began now's day, when the daily budget

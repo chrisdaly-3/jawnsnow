@@ -555,7 +555,7 @@ func (m Model) autoStart() (Model, tea.Cmd) {
 			m = m.withState(id, func(s *reviewState) { s.movedHead = "" })
 		}
 		c := schedule.Candidate{
-			T: t, Latest: s.latest, AutoToday: m.reviews.autoToday[id], TeamFeed: m.teamFeed(t),
+			T: t, Latest: s.latest, AutoToday: m.reviews.autoToday[id],
 			Running: s.running || m.queued(id),
 		}
 		if s.failHead == t.PR.HeadOID {
@@ -576,16 +576,6 @@ func (m Model) autoStart() (Model, tea.Cmd) {
 	}
 	m.reviews.budgetPaused = paused
 	return m, tea.Batch(cmds...)
-}
-
-// teamFeed reports whether any of t's feeds is a team feed in the config.
-func (m Model) teamFeed(t tracker.Tracked) bool {
-	for _, f := range m.cfg.Feeds {
-		if f.Team && slices.Contains(t.Feeds, f.Name) {
-			return true
-		}
-	}
-	return false
 }
 
 // toggleMode switches between watcher and auto. Auto needs a reviewer.

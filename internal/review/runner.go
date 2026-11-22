@@ -15,6 +15,14 @@ import (
 	"time"
 )
 
+// MaxTurns is the most turns one claude run may take (--max-turns). A run is
+// also bounded by review.budget.per_review_usd and review.run_timeout.
+const MaxTurns = 100
+
+// WorktreeIdle is how long a worktree may go unused before PruneIdle removes
+// it.
+const WorktreeIdle = 2 * time.Hour
+
 // Session describes one claude invocation.
 type Session struct {
 	Binary, Dir  string

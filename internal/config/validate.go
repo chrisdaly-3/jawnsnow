@@ -36,10 +36,6 @@ func (c Config) Validate() error {
 	if c.GitHub.PollInterval.Duration < time.Minute {
 		bad("github.poll_interval %s: must be at least 1m", c.GitHub.PollInterval)
 	}
-	if c.GitHub.IdlePollInterval.Duration < c.GitHub.PollInterval.Duration {
-		bad("github.idle_poll_interval %s: must be at least github.poll_interval (%s)",
-			c.GitHub.IdlePollInterval, c.GitHub.PollInterval)
-	}
 
 	seen := map[string]bool{}
 	for i, f := range c.Feeds {

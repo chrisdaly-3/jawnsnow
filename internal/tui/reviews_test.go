@@ -374,17 +374,15 @@ func TestIncompleteBadgeSaysSo(t *testing.T) {
 	}
 }
 
-func TestTeammateBadge(t *testing.T) {
+// Another reviewer's review at the head doesn't hold back an auto review.
+func TestAutoReviewsAfterAnotherReviewer(t *testing.T) {
 	pr := wallPR("1")
 	pr.PR.Reviews = []github.Review{{Author: "bob", State: "APPROVED", CommitOID: "head-1"}}
-	h := newHarness(t, opts{reviews: true, auto: true, config: func(c *config.Config) { c.Feeds[0].Team = true }}, pr)
+	h := newHarness(t, opts{reviews: true, auto: true}, pr)
 	h.client.snaps["1"] = pr.PR
 	h.finishPoll(t)
-	if len(h.runs) != 0 {
-		t.Fatal("auto mode reviewed a team PR a teammate already reviewed")
-	}
-	if c := content(h.m); !strings.Contains(c, "· teammate reviewed") {
-		t.Errorf("no teammate badge:\n%s", c)
+	if len(h.runs) != 1 {
+		t.Fatalf("auto mode started %d reviews of a PR another reviewer reviewed, want 1", len(h.runs))
 	}
 }
 

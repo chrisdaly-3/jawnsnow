@@ -19,7 +19,6 @@ func TestValidateRejects(t *testing.T) {
 		want   string
 	}{
 		{"poll too short", func(c *Config) { c.GitHub.PollInterval = Duration{30 * time.Second} }, "github.poll_interval"},
-		{"idle below poll", func(c *Config) { c.GitHub.IdlePollInterval = Duration{time.Minute} }, "github.idle_poll_interval"},
 		{"bad mode", func(c *Config) { c.Mode.Default = "manual" }, "mode.default"},
 		{"duplicate feed name", func(c *Config) {
 			c.Feeds = append(c.Feeds, Feed{Name: c.Feeds[0].Name, Query: "q", Since: Duration{time.Hour}})

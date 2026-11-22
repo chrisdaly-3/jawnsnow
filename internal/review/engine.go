@@ -279,7 +279,7 @@ func (e *Engine) review(ctx context.Context, req Request, rv *store.Review, onEv
 		Schema:       prompt.Schema(),
 		Model:        choice.Model,
 		Effort:       choice.Effort,
-		MaxTurns:     cfg.Review.MaxTurns,
+		MaxTurns:     MaxTurns,
 		MaxBudgetUSD: choice.PerReviewUSD,
 		SessionID:    NewID(),
 		Timeout:      cfg.Review.RunTimeout.Duration,
@@ -582,12 +582,12 @@ func (e *Engine) ReleasePR(ctx context.Context, repo string, number int) error {
 	return rp.pool.ReleasePR(ctx, number, dirs)
 }
 
-// PruneIdle removes worktrees idle for longer than review.worktree_idle
+// PruneIdle removes worktrees idle for longer than WorktreeIdle
 // from every repo with stored slots, as well as every pool this Engine has
 // made. A repo this process never reviewed gets its pool only when it has
 // a slot to prune; one that can't be resolved is skipped with its error.
 func (e *Engine) PruneIdle(ctx context.Context) error {
-	idle := e.Config().Review.WorktreeIdle.Duration
+	idle := WorktreeIdle
 	names, err := e.Store.SlotRepos(ctx)
 	if err != nil {
 		return err
