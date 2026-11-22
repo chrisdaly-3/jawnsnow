@@ -662,25 +662,7 @@ func (m Model) finishPost(msg postDoneMsg) (Model, tea.Cmd) {
 		return m, nil
 	}
 	if msg.Err != nil {
-		refused := github.IsRefused(msg.Err)
-		text := "post failed: " + msg.Err.Error()
-		if !refused {
-			text = uncertainPost + msg.Err.Error()
-			m = m.withUnconfirmed(msg.ReviewID, unconfirmedPost{Event: msg.Event, At: m.now(), Kind: postUncertain})
-			// It may well be on GitHub, so the card stops calling it Drafted.
-			m = m.markPosted(msg.ReviewID)
-		}
-		if current {
-			p := *m.post
-			p.inFlight, p.quitArmed, p.err = false, false, text
-			if !refused {
-				p.mustAsk = true
-			}
-			m.post = &p
-		} else {
-			m.notice = text
-		}
-		return m, nil
+		return m.postFailed(msg, current), nil
 	}
 	if msg.RecordErr != nil {
 		m = m.withUnconfirmed(msg.ReviewID, unconfirmedPost{Event: msg.Posted.Event, At: msg.Posted.At, Kind: postUnrecorded})
@@ -757,4 +739,29 @@ func (d drawerModel) withPosted(p store.Posted) drawerModel {
 	posted[p.ReviewID] = p
 	d.posted = posted
 	return d
+}
+
+// postFailed reports a post that returned an error, in the modal when it
+// is still open on this review (current) and as a notice when not. Only
+// GitHub's refusal means nothing was posted; any other error may have
+// reached GitHub, so the review counts as posted but unconfirmed, and the
+// next post asks first.
+func (m Model) postFailed(msg postDoneMsg, current bool) Model {
+	refused := github.IsRefused(msg.Err)
+	text := "post failed: " + msg.Err.Error()
+	if !refused {
+		text = uncertainPost + msg.Err.Error()
+		m = m.withUnconfirmed(msg.ReviewID, unconfirmedPost{Event: msg.Event, At: m.now(), Kind: postUncertain})
+		// It may well be on GitHub, so the card stops calling it Drafted.
+		m = m.markPosted(msg.ReviewID)
+	}
+	if !current {
+		m.notice = text
+		return m
+	}
+	p := *m.post
+	p.inFlight, p.quitArmed, p.err = false, false, text
+	p.mustAsk = p.mustAsk || !refused
+	m.post = &p
+	return m
 }

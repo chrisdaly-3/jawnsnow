@@ -146,33 +146,13 @@ func safeANSI(s string) string {
 	for i := 0; i < len(s); {
 		switch {
 		case s[i] == 0x1b && i+1 < len(s) && s[i+1] == '[':
-			j := i + 2
-			for j < len(s) && s[j] >= 0x30 && s[j] <= 0x3f {
-				j++
+			end, keep := scanCSI(s, i)
+			if keep {
+				b.WriteString(s[i:end])
 			}
-			params, inter := s[i+2:j], j
-			for j < len(s) && s[j] >= 0x20 && s[j] <= 0x2f {
-				j++
-			}
-			if j < len(s) && s[j] >= 0x40 && s[j] <= 0x7e {
-				if s[j] == 'm' && j == inter && paletteSGR(params) {
-					b.WriteString(s[i : j+1])
-				}
-				j++
-			}
-			i = j
+			i = end
 		case s[i] == 0x1b && i+1 < len(s) && s[i+1] == ']':
-			j := i + 2
-			for j < len(s) && s[j] != 0x07 && s[j] != 0x1b {
-				j++
-			}
-			switch {
-			case j < len(s) && s[j] == 0x07:
-				j++
-			case j+1 < len(s) && s[j] == 0x1b && s[j+1] == '\\':
-				j += 2
-			}
-			i = j
+			i = scanOSC(s, i)
 		default:
 			r, size := utf8.DecodeRuneInString(s[i:])
 			if r == '\n' || r == '\t' || !unicode.IsControl(r) && !post.IsInvisible(r) {
@@ -182,6 +162,42 @@ func safeANSI(s string) string {
 		}
 	}
 	return b.String()
+}
+
+// scanCSI reads the CSI escape at s[i:] (ESC [ params intermediates
+// final) and returns where it ends, and whether it is an SGR with only
+// palette parameters, the one kind safeANSI keeps. An unterminated
+// sequence runs to the end of s.
+func scanCSI(s string, i int) (end int, keep bool) {
+	j := i + 2
+	for j < len(s) && s[j] >= 0x30 && s[j] <= 0x3f {
+		j++
+	}
+	params, inter := s[i+2:j], j
+	for j < len(s) && s[j] >= 0x20 && s[j] <= 0x2f {
+		j++
+	}
+	if j < len(s) && s[j] >= 0x40 && s[j] <= 0x7e {
+		keep = s[j] == 'm' && j == inter && paletteSGR(params)
+		j++
+	}
+	return j, keep
+}
+
+// scanOSC returns where the OSC escape at s[i:] ends: after its BEL or ST
+// terminator, or at the next ESC or the end of s when it has none.
+func scanOSC(s string, i int) int {
+	j := i + 2
+	for j < len(s) && s[j] != 0x07 && s[j] != 0x1b {
+		j++
+	}
+	switch {
+	case j < len(s) && s[j] == 0x07:
+		j++
+	case j+1 < len(s) && s[j] == 0x1b && s[j+1] == '\\':
+		j += 2
+	}
+	return j
 }
 
 // paletteSGR reports whether an SGR's parameters, in semicolon or colon

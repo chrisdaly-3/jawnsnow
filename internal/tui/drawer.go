@@ -513,6 +513,37 @@ func (m drawerModel) layout(c drawerCtx) (lines []string, spans []itemSpan) {
 		return lines, nil
 	}
 
+	add(m.reviewSummary(c, r, inner)...)
+	findings, spans := m.findingLines(c, r.Findings, inner, len(lines))
+	add(findings...)
+	add(m.section(th, "Understanding", m.understanding, "u", inner, func() []string {
+		return m.md.render(cleanBlock(r.Understanding), inner-2, th)
+	})...)
+	add(m.section(th, "Assumptions", m.assumptions, "a", inner, func() []string {
+		return assumptionLines(th, r.Assumptions, inner)
+	})...)
+	if notes := checkNotes(r.Note); len(notes) > 0 {
+		add(ansi.Truncate(th.Accent().Render("Check notes")+th.Muted().Render(" ● Press Y to copy"), inner, "…"))
+		for _, n := range notes {
+			for _, l := range wrapLines(n, inner) {
+				add(th.Muted().Render(l))
+			}
+		}
+	}
+	return lines, spans
+}
+
+// wrapLines wraps s to width cells and splits it into lines.
+func wrapLines(s string, width int) []string { return strings.Split(ansi.Wrap(s, width, ""), "\n") }
+
+// reviewSummary is the lines above a review's findings: its tier, model and
+// cost, the verdict banner, whether it was posted, the verdict's reason,
+// why it failed, and the ledger's tally.
+func (m drawerModel) reviewSummary(c drawerCtx, r *store.Review, inner int) []string {
+	th := c.Theme
+	var lines []string
+	add := func(ls ...string) { lines = append(lines, ls...) }
+
 	meta := []string{cleanLine(r.Tier), cleanLine(r.Model), cleanLine(r.Effort), costText(*r)}
 	if !r.StartedAt.IsZero() {
 		meta = append(meta, ago(c.Now.Sub(r.StartedAt))+" ago")
@@ -521,7 +552,7 @@ func (m drawerModel) layout(c drawerCtx) (lines []string, spans []itemSpan) {
 		meta = append(meta, fmt.Sprintf("pass %d/%d", len(m.reviews)-m.pass, len(m.reviews)))
 	}
 	meta = slices.DeleteFunc(meta, func(s string) bool { return s == "" })
-	for _, l := range wrap(strings.Join(meta, " · ")) {
+	for _, l := range wrapLines(strings.Join(meta, " · "), inner) {
 		add(th.Muted().Render(l))
 	}
 	add("")
@@ -545,66 +576,63 @@ func (m drawerModel) layout(c drawerCtx) (lines []string, spans []itemSpan) {
 		add(th.Accent().Render(ansi.Truncate("Posted as "+eventLabel(p.Event)+" · "+postedAgo(c.Now.Sub(p.At)), inner, "…")))
 	}
 	if reason := cleanLine(r.VerdictReason); reason != "" {
-		add(wrap(reason)...)
+		add(wrapLines(reason, inner)...)
 	}
 	if r.Outcome == "failed" && r.Error != "" {
-		for _, l := range wrap(cleanLine(r.Error)) {
+		for _, l := range wrapLines(cleanLine(r.Error), inner) {
 			add(th.StatusFg("CI_FAILED").Render(l))
 		}
 	}
 	if s := ledgerSummary(r.Findings); s != "" {
 		add(th.Muted().Render(s))
 	}
-	add("")
+	return append(lines, "")
+}
 
-	fs := orderedFindings(r.Findings)
+// findingLines draws each finding in orderedFindings order, its header and
+// then its body, and returns where each sits, counting from first, the
+// line the findings start on.
+func (m drawerModel) findingLines(c drawerCtx, findings []store.Finding, inner, first int) (lines []string, spans []itemSpan) {
+	th := c.Theme
+	fs := orderedFindings(findings)
 	if len(fs) == 0 {
-		add(th.Muted().Render("No findings."), "")
+		return []string{th.Muted().Render("No findings."), ""}, nil
 	}
 	for i, f := range fs {
-		start := len(lines)
-		add(m.findingHeader(c, f, i == m.sel, inner)...)
-		head := len(lines)
+		start := first + len(lines)
+		lines = append(lines, m.findingHeader(c, f, i == m.sel, inner)...)
+		head := first + len(lines)
 		for _, l := range m.md.render(cleanBlock(f.Body), inner-2, th) {
-			add("  " + l)
+			lines = append(lines, "  "+l)
 		}
-		spans = append(spans, itemSpan{start: start, head: head, end: len(lines)})
-		add("")
-	}
-
-	lines = append(lines, m.section(th, "Understanding", m.understanding, "u", inner, func() []string {
-		return m.md.render(cleanBlock(r.Understanding), inner-2, th)
-	})...)
-	lines = append(lines, m.section(th, "Assumptions", m.assumptions, "a", inner, func() []string {
-		var out []string
-		for _, a := range r.Assumptions {
-			for i, l := range strings.Split(ansi.Wrap(cleanLine(a.Claim), max(inner-4, 1), ""), "\n") {
-				bullet := "  "
-				if i == 0 {
-					bullet = "• "
-				}
-				out = append(out, bullet+l)
-			}
-			if ev := cleanLine(a.Evidence); ev != "" {
-				for l := range strings.SplitSeq(ansi.Wrap(ev, max(inner-4, 1), ""), "\n") {
-					out = append(out, th.Muted().Render("  "+l))
-				}
-			}
-		}
-		if len(out) == 0 {
-			out = []string{th.Muted().Render("None.")}
-		}
-		return out
-	})...)
-	if notes := checkNotes(r.Note); len(notes) > 0 {
-		add(ansi.Truncate(th.Accent().Render("Check notes")+th.Muted().Render(" ● Press Y to copy"), inner, "…"))
-		for _, n := range notes {
-			for _, l := range wrap(n) {
-				add(th.Muted().Render(l))
-			}
-		}
+		spans = append(spans, itemSpan{start: start, head: head, end: first + len(lines)})
+		lines = append(lines, "")
 	}
 	return lines, spans
+}
+
+// assumptionLines is the Assumptions section's body: each claim as a
+// bullet, with its evidence muted under it.
+func assumptionLines(th theme.Theme, as []store.Assumption, inner int) []string {
+	var out []string
+	for _, a := range as {
+		for i, l := range wrapLines(cleanLine(a.Claim), max(inner-4, 1)) {
+			bullet := "  "
+			if i == 0 {
+				bullet = "• "
+			}
+			out = append(out, bullet+l)
+		}
+		if ev := cleanLine(a.Evidence); ev != "" {
+			for _, l := range wrapLines(ev, max(inner-4, 1)) {
+				out = append(out, th.Muted().Render("  "+l))
+			}
+		}
+	}
+	if len(out) == 0 {
+		out = []string{th.Muted().Render("None.")}
+	}
+	return out
 }
 
 // checkNotes are a review's check notes, one per line as the engine writes
@@ -622,10 +650,11 @@ func checkNotes(note string) []string {
 // section is a heading that u or a opens and closes, with the key's hint
 // after it, and its body when open.
 func (m drawerModel) section(th theme.Theme, title string, expanded bool, key string, inner int, body func() []string) []string {
+	heading := ansi.Truncate(th.Accent().Render(foldMark(expanded)+title)+th.Muted().Render(foldHint(key, expanded)), inner, "…")
 	if !expanded {
-		return []string{ansi.Truncate(th.Accent().Render("▸ "+title)+th.Muted().Render(foldHint(key, false)), inner, "…"), ""}
+		return []string{heading, ""}
 	}
-	out := []string{ansi.Truncate(th.Accent().Render("▾ "+title)+th.Muted().Render(foldHint(key, true)), inner, "…")}
+	out := []string{heading}
 	for _, l := range body() {
 		out = append(out, "  "+l)
 	}

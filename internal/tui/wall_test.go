@@ -612,3 +612,8 @@ func TestWallScrollsOverDraftedCards(t *testing.T) {
 		}
 	}
 }
+
+// renderCard is badgedCard with no badge, for tests of the card itself.
+func renderCard(t tracker.Tracked, width int, selected bool, th theme.Theme, now time.Time, frame int) []string {
+	return badgedCard(t, width, selected, th, now, frame, "", false)
+}

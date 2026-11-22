@@ -736,17 +736,13 @@ func narrowHeading(lane int, cards []tracker.Tracked, width int, th theme.Theme,
 	return ansi.Truncate(line+th.Muted().Render(strings.Repeat("─", fill)), max(width, 0), "")
 }
 
-// renderCard draws one PR as cardLines lines, each exactly width cells
-// wide: the repo and number, the title, who and when, and the status chip.
-func renderCard(t tracker.Tracked, width int, selected bool, th theme.Theme, now time.Time, frame int) []string {
-	return badgedCard(t, width, selected, th, now, frame, "", false)
-}
-
-// badgedCard is renderCard with a Claude badge after the status chip. When
-// both don't fit, the badge takes the chip's place: the lane already
-// groups by status, and the badge is what changes. A drafted card is a line
-// taller: the Drafted pill takes the chip's line and the badge gets the one
-// below, so neither crowds the other out.
+// badgedCard draws one PR as cardLines lines, each exactly width cells
+// wide: the repo and number, the title, who and when, and the status chip
+// with a Claude badge after it. When both don't fit, the badge takes the
+// chip's place: the lane already groups by status, and the badge is what
+// changes. A drafted card is a line taller: the Drafted pill takes the
+// chip's line and the badge gets the one below, so neither crowds the
+// other out.
 func badgedCard(t tracker.Tracked, width int, selected bool, th theme.Theme, now time.Time, frame int, badge string, drafted bool) []string {
 	st := string(t.Status.Status)
 	marker := " "
@@ -754,9 +750,9 @@ func badgedCard(t tracker.Tracked, width int, selected bool, th theme.Theme, now
 		marker = th.Accent().Render("▌")
 	}
 	glyph := " "
-	switch {
-	case t.Status.Spinning && spinGlyph(th, t, frame) != "":
-		glyph = th.StatusFg(st).Render(spinGlyph(th, t, frame))
+	switch spin := spinGlyph(th, t, frame); {
+	case t.Status.Spinning && spin != "":
+		glyph = th.StatusFg(st).Render(spin)
 	case t.Status.Status == status.CIFailed:
 		glyph = th.StatusFg(st).Render("✗")
 	}

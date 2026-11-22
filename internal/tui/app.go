@@ -379,14 +379,7 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 		}
 		return m.drawerUpdate(m.withUnrecorded(msg))
 	case loadedMsg:
-		m.loaded = true
-		if msg.err != nil {
-			m.readOnly = true
-			m.banners = append(slices.Clone(m.banners), "could not load saved PRs: "+msg.err.Error()+" — not saving this session")
-		} else {
-			m.prs = msg.prs
-		}
-		return m.startPoll()
+		return m.applyLoaded(msg)
 	case pollTickMsg:
 		if msg.gen == m.pollGen {
 			return m.startPoll()
@@ -400,14 +393,7 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 		m.polling, m.viewer = false, msg.login
 		return m.startPoll()
 	case savedMsg:
-		m.saving = false
-		if msg.err != nil {
-			m.notice = "could not save PRs: " + msg.err.Error()
-		}
-		if m.quitting {
-			return m.quit()
-		}
-		return m.flush()
+		return m.applySaved(msg)
 	case editedMsg:
 		if msg.err != nil {
 			m.notice = "could not run the editor: " + msg.err.Error()
@@ -448,6 +434,35 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 	return m, nil
 }
 
+// applyLoaded takes the saved PRs and starts the first poll. A database
+// that can't be read leaves the session read-only, so it can't overwrite
+// what it failed to load.
+func (m Model) applyLoaded(msg loadedMsg) (Model, tea.Cmd) {
+	m.loaded = true
+	if msg.err != nil {
+		m.readOnly = true
+		m.banners = append(slices.Clone(m.banners), "could not load saved PRs: "+msg.err.Error()+" — not saving this session")
+	} else {
+		m.prs = msg.prs
+	}
+	return m.startPoll()
+}
+
+// applySaved ends a save, then quits if a quit was waiting on it, or saves
+// what changed meanwhile.
+func (m Model) applySaved(msg savedMsg) (Model, tea.Cmd) {
+	m.saving = false
+	if msg.err != nil {
+		m.notice = "could not save PRs: " + msg.err.Error()
+	}
+	if m.quitting {
+		return m.quit()
+	}
+	return m.flush()
+}
+
+// handleKey routes a key: to whatever is capturing keys, then the help
+// overlay, then the global keys, then the current view.
 func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	// A review question or the model picker takes every key but ctrl+c.
 	if m.reviews.capturing() && msg.String() != "ctrl+c" {

@@ -9,6 +9,8 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/chrisdaly-3/jawnsnow/internal/store"
+	"github.com/chrisdaly-3/jawnsnow/internal/theme"
 )
 
 // The post flow's modal, drawn over the view, and its footer.
@@ -76,6 +78,81 @@ func (m Model) postBody(width, height int) string {
 // postInner is the content width inside the box's border and padding.
 func postInner(width int) int { return max(min(width, postMaxWidth)-6, 10) }
 
+// Each heading says how to reach or use its part from where the focus is:
+// tab goes down the screen and shift+tab up.
+var (
+	postEventHints = map[postFocus]string{
+		focusEvent:    " ● h/l to move · space to choose",
+		focusSummary:  " ● shift+tab to change",
+		focusFindings: " ● tab to change",
+	}
+	postFindingsHints = map[postFocus]string{
+		focusEvent:    " ● shift+tab to choose which to post",
+		focusSummary:  " ● tab to choose which to post",
+		focusFindings: " ● j/k to move · space to include or leave out",
+	}
+)
+
+// checklistRow is f's line in the findings checklist: the cursor mark,
+// whether it is included, where it is, and its ledger and posted tags. The
+// cursor row is filled like the drawer's selection while the checklist
+// has the keys.
+func checklistRow(th theme.Theme, p *postFlow, f store.Finding, atCursor bool, inner int) string {
+	mark, box := "  ", "[ ] "
+	if atCursor {
+		mark = th.Accent().Render("▸ ")
+	}
+	if included(p.sel, f.ID) {
+		box = "[x] "
+	}
+	var row strings.Builder
+	row.WriteString(mark)
+	row.WriteString(box)
+	row.WriteString(findingLocation(f))
+	for _, l := range ledgerLabels[:3] {
+		if f.Ledger == l.ledger {
+			row.WriteString(th.Muted().Render("  [" + l.label + "]"))
+		}
+	}
+	if f.ThreadID != "" {
+		row.WriteString(th.Muted().Render("  [posted]"))
+	}
+	line := ansi.Truncate(row.String(), inner, "…")
+	if atCursor && p.focus == focusFindings {
+		line = th.Selected(line, inner)
+	}
+	return line
+}
+
+// postPreview is the "What will be posted" section. Each part is drawn
+// from the payload's own string, so what shows is what is sent. built
+// says whether the payload was built; one that wasn't has no parts.
+func (m Model) postPreview(p *postFlow, built bool, inner int) []string {
+	th, pv := m.theme, p.built.pv
+	raw := "m for the raw markdown"
+	if p.raw {
+		raw = "m for the rendered view"
+	}
+	out := []string{ansi.Truncate(th.Accent().Render("What will be posted")+th.Muted().Render(" ● "+raw), inner, "…")}
+	if built && len(pv.Parts) == 0 {
+		out = append(out, th.Muted().Render("No summary or comments: only the event is posted."))
+	}
+	for _, part := range pv.Parts {
+		out = append(out, th.Accent().Render(ansi.Truncate(cleanLine(part.Label), inner, "…")))
+		var ls []string
+		if p.raw {
+			ls = strings.Split(ansi.Wrap(cleanBlock(part.Markdown), inner-2, ""), "\n")
+		} else {
+			ls = m.drawer.md.render(part.Markdown, inner-2, th)
+		}
+		for _, l := range ls {
+			out = append(out, "  "+l)
+		}
+		out = append(out, "")
+	}
+	return out
+}
+
 // postFrame lays the modal out: the lines that stay put, the lines that
 // scroll, the scrolling line the cursor is on, and the rows inside the box.
 func (m Model) postFrame(width, height int) (top, body []string, cursorRow, rows int) {
@@ -133,13 +210,7 @@ func (m Model) postFrame(width, height int) (top, body []string, cursorRow, rows
 		}
 		top = append(top, wrap("Rendered view hides: "+strings.Join(items, "; ")+" — press m to see the raw text", th.StatusFg("CI_WAITING"))...)
 	}
-	// Each heading says how to reach or use its part from where the focus
-	// is: tab goes down the screen and shift+tab up.
-	eventHint := map[postFocus]string{
-		focusEvent:    " ● h/l to move · space to choose",
-		focusSummary:  " ● shift+tab to change",
-		focusFindings: " ● tab to change",
-	}[p.focus]
+	eventHint := postEventHints[p.focus]
 	top = append(top, "")
 	// The event row and the box scroll with the rest, so a short window
 	// still shows the checklist; the scroll follows whichever part has the
@@ -155,67 +226,18 @@ func (m Model) postFrame(width, height int) (top, body []string, cursorRow, rows
 
 	fs := orderedFindings(p.review.Findings)
 	if len(fs) > 0 {
-		hint := map[postFocus]string{
-			focusEvent:    " ● shift+tab to choose which to post",
-			focusSummary:  " ● tab to choose which to post",
-			focusFindings: " ● j/k to move · space to include or leave out",
-		}[p.focus]
-		body = append(body, ansi.Truncate(th.Accent().Render("Findings")+th.Muted().Render(hint), inner, "…"))
+		body = append(body, ansi.Truncate(th.Accent().Render("Findings")+th.Muted().Render(postFindingsHints[p.focus]), inner, "…"))
 	}
 	for i, f := range fs {
-		mark, box := "  ", "[ ] "
 		if i == p.cursor {
-			mark, cursorRow = th.Accent().Render("▸ "), len(body)
+			cursorRow = len(body)
 		}
-		if included(p.sel, f.ID) {
-			box = "[x] "
-		}
-		var row strings.Builder
-		row.WriteString(mark)
-		row.WriteString(box)
-		row.WriteString(findingLocation(f))
-		for _, l := range ledgerLabels[:3] {
-			if f.Ledger == l.ledger {
-				row.WriteString(th.Muted().Render("  [" + l.label + "]"))
-			}
-		}
-		if f.ThreadID != "" {
-			row.WriteString(th.Muted().Render("  [posted]"))
-		}
-		line := ansi.Truncate(row.String(), inner, "…")
-		// The checklist's cursor row is filled like the drawer's selection
-		// while the checklist has the keys.
-		if i == p.cursor && p.focus == focusFindings {
-			line = th.Selected(line, inner)
-		}
-		body = append(body, line)
+		body = append(body, checklistRow(th, p, f, i == p.cursor, inner))
 	}
 	if len(fs) > 0 {
 		body = append(body, "")
 	}
-	raw := "m for the raw markdown"
-	if p.raw {
-		raw = "m for the rendered view"
-	}
-	body = append(body, ansi.Truncate(th.Accent().Render("What will be posted")+th.Muted().Render(" ● "+raw), inner, "…"))
-	if err == nil && len(pv.Parts) == 0 {
-		body = append(body, th.Muted().Render("No summary or comments: only the event is posted."))
-	}
-	// Each part is drawn from the payload's own string, so what shows is
-	// what is sent.
-	for _, part := range pv.Parts {
-		body = append(body, th.Accent().Render(ansi.Truncate(cleanLine(part.Label), inner, "…")))
-		var ls []string
-		if p.raw {
-			ls = strings.Split(ansi.Wrap(cleanBlock(part.Markdown), inner-2, ""), "\n")
-		} else {
-			ls = m.drawer.md.render(part.Markdown, inner-2, th)
-		}
-		for _, l := range ls {
-			body = append(body, "  "+l)
-		}
-		body = append(body, "")
-	}
+	body = append(body, m.postPreview(p, err == nil, inner)...)
 	switch p.focus {
 	case focusEvent:
 		cursorRow = eventRow
