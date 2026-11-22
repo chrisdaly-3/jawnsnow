@@ -23,6 +23,17 @@ type Finding struct {
 	ThreadID        string // set by plan 3 when posted
 }
 
+// A review's Outcome, as stored, and of each run in it.
+const (
+	// OutcomeComplete is a review that read what the coverage checks ask.
+	OutcomeComplete = "complete"
+	// OutcomeIncomplete is a review with reading gaps left, or one whose
+	// continuation failed after an earlier run gave a usable review.
+	OutcomeIncomplete = "incomplete"
+	// OutcomeFailed is a review that gave no usable output.
+	OutcomeFailed = "failed"
+)
+
 type Review struct {
 	ID, PRID, Repo                        string
 	Number                                int
@@ -33,7 +44,7 @@ type Review struct {
 	Verdict, VerdictReason, Understanding string
 	Note                                  string
 	Assumptions                           []Assumption
-	Outcome                               string // "complete" | "incomplete" | "failed"
+	Outcome                               string // OutcomeComplete, OutcomeIncomplete or OutcomeFailed
 	Error                                 string
 	Raw                                   json.RawMessage `json:",omitempty"` // omitempty keeps a nil Raw from becoming "null"
 	CostUSD                               float64         // the session's final reported total

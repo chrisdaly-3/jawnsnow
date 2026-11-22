@@ -49,7 +49,7 @@ func Decide(c Candidate, cfg config.Config, spentToday float64, viewer string, n
 		return no("quiet")
 	}
 	atHead := c.Latest != nil && c.Latest.HeadOID == pr.HeadOID
-	if atHead && c.Latest.Outcome != "failed" {
+	if atHead && c.Latest.Outcome != store.OutcomeFailed {
 		return no("reviewed")
 	}
 	if c.AutoToday >= cfg.Review.MaxReviewsPerPRPerDay {
@@ -58,7 +58,7 @@ func Decide(c Candidate, cfg config.Config, spentToday float64, viewer string, n
 	if spentToday >= cfg.Review.Budget.DailyUSD {
 		return no("budget")
 	}
-	if atHead && c.Latest.Outcome == "failed" {
+	if atHead && c.Latest.Outcome == store.OutcomeFailed {
 		wait, stop := Backoff(c.Failures)
 		if stop {
 			return no("stopped")

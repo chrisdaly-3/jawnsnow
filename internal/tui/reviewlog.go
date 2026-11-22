@@ -18,7 +18,7 @@ import (
 
 // reviewLogOutcomes is the order o cycles the outcome filter through; ""
 // is every outcome.
-var reviewLogOutcomes = []string{"", "complete", "incomplete", "failed"}
+var reviewLogOutcomes = []string{"", store.OutcomeComplete, store.OutcomeIncomplete, store.OutcomeFailed}
 
 // reviewLogLoadedMsg carries the reviews Filter matched. It is applied only
 // while Filter is still the one selected.

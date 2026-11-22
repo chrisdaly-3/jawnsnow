@@ -32,13 +32,6 @@ var ErrHeadMoved = errors.New("the PR's head moved since the last poll")
 // reading gaps or reword findings.
 const maxContinuations = 2
 
-// Outcomes of a review and of each run in it.
-const (
-	outcomeComplete   = "complete"
-	outcomeIncomplete = "incomplete"
-	outcomeFailed     = "failed"
-)
-
 // Request is one review to run.
 type Request struct {
 	PR      tracker.Tracked
@@ -109,7 +102,7 @@ func (e *Engine) Run(ctx context.Context, req Request, onEvent func(Event)) (sto
 		return rv, err // nothing ran, and the next poll plans the new head
 	}
 	if err != nil {
-		rv.Outcome, rv.Error, rv.Findings = outcomeFailed, err.Error(), nil
+		rv.Outcome, rv.Error, rv.Findings = store.OutcomeFailed, err.Error(), nil
 	}
 	if e.beforeSave != nil {
 		e.beforeSave()
@@ -331,7 +324,7 @@ func (e *Engine) runPass(ctx context.Context, rv *store.Review, sess Session, pi
 		if runErr == nil {
 			parsed, runErr = ParseOutput(res.Output)
 		}
-		p.outcome = outcomeFailed
+		p.outcome = store.OutcomeFailed
 		if runErr == nil {
 			p.check(parsed, res.Output, pin)
 		}
@@ -366,9 +359,9 @@ func (p *passResult) check(out Output, raw json.RawMessage, pin PromptInput) {
 	p.out, p.raw = out, raw
 	p.gaps, p.coverNote = ReviewGaps(pin.Pass, pin.Scope, pin.Files, pin.Worktree, p.seen, p.out)
 	p.kept, p.notes, p.lint = CheckFindings(p.out, pin.Files)
-	p.outcome = outcomeComplete
+	p.outcome = store.OutcomeComplete
 	if len(p.gaps) > 0 {
-		p.outcome = outcomeIncomplete
+		p.outcome = store.OutcomeIncomplete
 	}
 }
 
@@ -387,10 +380,10 @@ func (p *passResult) asks() []string {
 // ledger applied to earlier.
 func finishReview(rv *store.Review, p passResult, earlier []store.Finding, worktree string) error {
 	rv.Outcome = p.outcome
-	if p.outcome == outcomeFailed {
+	if p.outcome == store.OutcomeFailed {
 		// Only a continuation gets here failed: the review keeps the last
 		// parseable run's output.
-		rv.Outcome = outcomeIncomplete
+		rv.Outcome = store.OutcomeIncomplete
 	}
 	notes := p.notes
 	if p.coverNote != "" {

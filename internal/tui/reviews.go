@@ -351,7 +351,7 @@ func waitReview(ch <-chan tea.Msg) tea.Cmd {
 }
 
 func (m Model) finishReview(msg reviewDoneMsg) (Model, tea.Cmd) {
-	failed := msg.Err != nil || msg.Review.Outcome == "failed"
+	failed := msg.Err != nil || msg.Review.Outcome == store.OutcomeFailed
 	// A head that moved stops the run before it does anything, like a
 	// cancel: nothing failed, nothing was saved, and the latest review
 	// stands until the next poll plans the new head.
@@ -371,7 +371,7 @@ func (m Model) finishReview(msg reviewDoneMsg) (Model, tea.Cmd) {
 			r = store.Review{PRID: msg.PRID, HeadOID: head, StartedAt: now}
 		}
 		if failed {
-			r.Outcome = "failed"
+			r.Outcome = store.OutcomeFailed
 			if r.Error == "" && msg.Err != nil {
 				r.Error = msg.Err.Error()
 			}

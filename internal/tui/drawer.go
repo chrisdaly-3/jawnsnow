@@ -343,7 +343,7 @@ func (m drawerModel) sharedKey(k string, c drawerCtx) (drawerModel, tea.Cmd, act
 	case "P":
 		switch r := m.current(); {
 		case r == nil:
-		case r.Outcome == "complete" || r.Outcome == "incomplete":
+		case r.Outcome == store.OutcomeComplete || r.Outcome == store.OutcomeIncomplete:
 			return m, nil, actionPost{ReviewID: r.ID}
 		default:
 			m.flash = "a failed review can't be posted"
@@ -564,9 +564,9 @@ func (m drawerModel) reviewSummary(c drawerCtx, r *store.Review, inner int) []st
 		banner = th.Muted().Render(verdictLabel(r.Verdict))
 	}
 	switch r.Outcome {
-	case "incomplete":
+	case store.OutcomeIncomplete:
 		banner += "  " + th.StatusFg("CI_WAITING").Render("incomplete")
-	case "failed":
+	case store.OutcomeFailed:
 		banner += "  " + th.StatusFg("CI_FAILED").Render("failed")
 	}
 	if strings.TrimSpace(banner) != "" {
@@ -578,7 +578,7 @@ func (m drawerModel) reviewSummary(c drawerCtx, r *store.Review, inner int) []st
 	if reason := cleanLine(r.VerdictReason); reason != "" {
 		add(wrapLines(reason, inner)...)
 	}
-	if r.Outcome == "failed" && r.Error != "" {
+	if r.Outcome == store.OutcomeFailed && r.Error != "" {
 		for _, l := range wrapLines(cleanLine(r.Error), inner) {
 			add(th.StatusFg("CI_FAILED").Render(l))
 		}

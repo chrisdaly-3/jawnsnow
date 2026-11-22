@@ -85,7 +85,7 @@ func (m Model) drafted(t tracker.Tracked) bool {
 	s := m.reviews.state[t.PR.ID]
 	r := s.latest
 	return !s.running && !s.cancelled && r != nil && r.ID != "" &&
-		r.Outcome == "complete" && r.HeadOID == t.PR.HeadOID && !m.reviews.posted[r.ID]
+		r.Outcome == store.OutcomeComplete && r.HeadOID == t.PR.HeadOID && !m.reviews.posted[r.ID]
 }
 
 // latestBadge is the badge for the PR's latest finished review; head is
@@ -107,14 +107,14 @@ func verdictBadge(th theme.Theme, r *store.Review, head string) string {
 	var text string
 	var style lipgloss.Style
 	switch n := blockingCount(r.Findings); {
-	case r.Outcome == "failed":
+	case r.Outcome == store.OutcomeFailed:
 		text, style = "! review failed", th.StatusFg(string(status.CIFailed))
 	case n > 0:
 		text, style = "✦ Claude: "+strconv.Itoa(n)+" blocking", th.StatusFg(string(status.CIFailed))
 	default:
 		text, style = "✦ Claude: clean", th.StatusFg(string(status.Approved))
 	}
-	if r.Outcome == "incomplete" {
+	if r.Outcome == store.OutcomeIncomplete {
 		text += " · incomplete"
 	}
 	if head != "" && r.HeadOID != head {
