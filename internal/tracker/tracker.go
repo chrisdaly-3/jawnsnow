@@ -114,8 +114,8 @@ func place(t Tracked, in PollInput, cfg config.Config) Tracked {
 	switch t.PR.State {
 	case github.PRMerged, github.PRClosed:
 		if t.Place != PlaceDone {
+			t = clearWait(t)
 			t.Place = PlaceDone
-			t.WaitReason, t.WaitingSince, t.WaitingHead = "", time.Time{}, ""
 		}
 		at := t.PR.MergedAt
 		if t.PR.State == github.PRClosed {
@@ -153,10 +153,7 @@ func place(t Tracked, in PollInput, cfg config.Config) Tracked {
 
 	// A PR with no recorded feeds is left alone rather than guessed at.
 	if t.Place == PlaceWall && len(t.Feeds) > 0 && !inFeed {
-		t.Place = PlaceWaiting
-		t.WaitReason = WaitNoFeed
-		t.WaitingSince = in.Now
-		t.WaitingHead = t.PR.HeadOID
+		t = toWaiting(t, WaitNoFeed, in.Now)
 	}
 
 	if t.Place == PlaceWall {
@@ -165,10 +162,7 @@ func place(t Tracked, in PollInput, cfg config.Config) Tracked {
 			last = t.ReturnedAt
 		}
 		if in.Now.Sub(last) > longestSince(t.Feeds, cfg) {
-			t.Place = PlaceWaiting
-			t.WaitReason = WaitStale
-			t.WaitingSince = in.Now
-			t.WaitingHead = t.PR.HeadOID
+			t = toWaiting(t, WaitStale, in.Now)
 		}
 	}
 	return t
@@ -191,11 +185,11 @@ func expired(t Tracked, now time.Time, keepFor time.Duration) bool {
 
 func longestSince(feeds []string, cfg config.Config) time.Duration {
 	if len(feeds) == 0 {
-		return config.DefaultSince // the feed is no longer in the config
+		return config.DefaultSince
 	}
 	var longest time.Duration
 	for _, name := range feeds {
-		since := config.DefaultSince
+		since := config.DefaultSince // for a feed no longer in the config
 		for _, f := range cfg.Feeds {
 			if f.Name == name {
 				since = f.Since.Duration
@@ -214,19 +208,29 @@ func unionSorted(a, b []string) []string {
 }
 
 // Hide moves a PR to waiting/hidden.
-func Hide(t Tracked, now time.Time) Tracked {
+func Hide(t Tracked, now time.Time) Tracked { return toWaiting(t, WaitHidden, now) }
+
+// Unhide returns a PR to the wall and clears its wait fields.
+func Unhide(t Tracked, now time.Time) Tracked {
+	t = clearWait(t)
+	t.Place = PlaceWall
+	t.ReturnedAt = now
+	return t
+}
+
+// toWaiting moves a PR to waiting for reason, noting when and at which
+// head, so new commits or others' activity can bring it back.
+func toWaiting(t Tracked, reason WaitReason, now time.Time) Tracked {
 	t.Place = PlaceWaiting
-	t.WaitReason = WaitHidden
+	t.WaitReason = reason
 	t.WaitingSince = now
 	t.WaitingHead = t.PR.HeadOID
 	return t
 }
 
-// Unhide returns a PR to the wall and clears its wait fields.
-func Unhide(t Tracked, now time.Time) Tracked {
-	t.Place = PlaceWall
+// clearWait drops the wait fields of a PR leaving waiting.
+func clearWait(t Tracked) Tracked {
 	t.WaitReason, t.WaitingSince, t.WaitingHead = "", time.Time{}, ""
-	t.ReturnedAt = now
 	return t
 }
 
