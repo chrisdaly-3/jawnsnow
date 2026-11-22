@@ -119,11 +119,12 @@ func onWall(prs []tracker.Tracked) []tracker.Tracked {
 	})
 }
 
-func (m wallModel) matches(t tracker.Tracked) bool {
+// matches reports whether t passes the author pick and q, the filter text
+// already lower-cased.
+func (m wallModel) matches(t tracker.Tracked, q string) bool {
 	if m.author != "" && !strings.EqualFold(t.PR.Author, m.author) {
 		return false
 	}
-	q := strings.ToLower(m.filterText())
 	if q == "" {
 		return true
 	}
@@ -134,8 +135,9 @@ func (m wallModel) matches(t tracker.Tracked) bool {
 // lanes groups the visible PRs by lane, newest head first.
 func (m wallModel) lanes(prs []tracker.Tracked) [laneCount][]tracker.Tracked {
 	var out [laneCount][]tracker.Tracked
+	q := strings.ToLower(m.filterText())
 	for _, t := range onWall(prs) {
-		if m.matches(t) {
+		if m.matches(t, q) {
 			l := t.Status.Status.Lane()
 			out[l] = append(out[l], t)
 		}

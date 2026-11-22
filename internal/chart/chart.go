@@ -80,11 +80,27 @@ func paletteColor(c int) int {
 	return c
 }
 
-func colorize(s string, color int, noColor bool) string {
-	if noColor || s == "" {
+// painter colours strings with the chart palette. It builds each colour's
+// style once per Render rather than once per braille cell.
+type painter struct {
+	noColor bool
+	styles  map[int]lipgloss.Style
+}
+
+func newPainter(noColor bool) *painter {
+	return &painter{noColor: noColor, styles: map[int]lipgloss.Style{}}
+}
+
+func (p *painter) paint(s string, color int) string {
+	if p.noColor || s == "" {
 		return s
 	}
-	return lipgloss.NewStyle().Foreground(lipgloss.Color(strconv.Itoa(paletteColor(color)))).Render(s)
+	st, ok := p.styles[color]
+	if !ok {
+		st = lipgloss.NewStyle().Foreground(lipgloss.Color(strconv.Itoa(paletteColor(color))))
+		p.styles[color] = st
+	}
+	return st.Render(s)
 }
 
 // Render draws the lines as exactly Height rows, each at most Width cells
@@ -94,6 +110,7 @@ func Render(lines []Line, o Options) []string {
 		return nil
 	}
 	rows := make([]string, o.Height)
+	paint := newPainter(o.NoColor)
 	if o.Width <= 0 {
 		return rows
 	}
@@ -177,9 +194,9 @@ func Render(lines []Line, o Options) []string {
 			c := grid[y][x]
 			switch {
 			case c.bits != 0:
-				b.WriteString(colorize(string(rune(0x2800+int(c.bits))), c.color, o.NoColor))
+				b.WriteString(paint.paint(string(rune(0x2800+int(c.bits))), c.color))
 			case x == cursorCol:
-				b.WriteString(colorize("│", cursorColor, o.NoColor))
+				b.WriteString(paint.paint("│", cursorColor))
 			default:
 				b.WriteString(" ")
 			}
@@ -190,7 +207,7 @@ func Render(lines []Line, o Options) []string {
 	if o.Height >= 2 {
 		rows[o.Height-2] = ansi.Truncate(strings.Repeat(" ", lw)+xLabelRow(o.XLabels, max(o.Width-lw, 0)), o.Width, "")
 	}
-	rows[o.Height-1] = legend(lines, o)
+	rows[o.Height-1] = legend(lines, o, paint)
 	return rows
 }
 
@@ -226,10 +243,10 @@ func xLabelRow(labels []string, w int) string {
 	return strings.TrimRight(string(buf), " ")
 }
 
-func legend(lines []Line, o Options) string {
-	var parts []string
+func legend(lines []Line, o Options, paint *painter) string {
+	parts := make([]string, 0, len(lines))
 	for _, l := range lines {
-		parts = append(parts, colorize("■ "+l.Name, l.Color, o.NoColor))
+		parts = append(parts, paint.paint("■ "+l.Name, l.Color))
 	}
 	return ansi.Truncate(strings.Join(parts, "  "), o.Width, "")
 }

@@ -580,9 +580,12 @@ func (m Model) toggleMode() (Model, tea.Cmd) {
 	if m.mode == modeAuto {
 		// Nothing is skipped in watcher mode, so the reasons go too.
 		m.mode, m.reviews.budgetPaused = modeWatcher, false
-		for id := range m.reviews.state {
-			m = m.withState(id, func(s *reviewState) { s.skip = "" })
+		state := cloneMap(m.reviews.state)
+		for id, s := range state {
+			s.skip = ""
+			state[id] = s
 		}
+		m.reviews.state = state
 		return m, nil
 	}
 	if m.unavailableReason() != "" {
