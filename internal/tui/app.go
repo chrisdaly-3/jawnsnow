@@ -578,15 +578,9 @@ func (m Model) loadDrawer(id string) (Model, tea.Cmd) {
 		if err != nil {
 			return drawerLoadedMsg{PRID: id, Seq: seq, Err: err}
 		}
-		posted := map[string]store.Posted{}
-		for _, r := range rs {
-			ps, err := st.PostedFor(ctx, r.ID)
-			if err != nil {
-				return drawerLoadedMsg{PRID: id, Seq: seq, Err: err}
-			}
-			if len(ps) > 0 {
-				posted[r.ID] = ps[0]
-			}
+		posted, err := st.LatestPostsOf(ctx, id)
+		if err != nil {
+			return drawerLoadedMsg{PRID: id, Seq: seq, Err: err}
 		}
 		return drawerLoadedMsg{PRID: id, Seq: seq, Reviews: rs, Posted: posted}
 	}

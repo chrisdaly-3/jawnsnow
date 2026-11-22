@@ -240,8 +240,8 @@ func topLabels(ctx context.Context, st *store.Store, top []costs.TopPR) map[stri
 	out := make(map[string]string, len(top))
 	for _, p := range top {
 		out[p.PRID] = ""
-		if rs, err := st.Reviews(ctx, p.PRID); err == nil && len(rs) > 0 && rs[0].Number > 0 {
-			out[p.PRID] = fmt.Sprintf("%s#%d", rs[0].Repo, rs[0].Number)
+		if r, ok, err := st.LatestReview(ctx, p.PRID); err == nil && ok && r.Number > 0 {
+			out[p.PRID] = fmt.Sprintf("%s#%d", r.Repo, r.Number)
 		}
 	}
 	return out

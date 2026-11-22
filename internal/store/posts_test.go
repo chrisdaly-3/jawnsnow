@@ -233,3 +233,27 @@ func TestSetThreadIDsAfterRecord(t *testing.T) {
 		t.Errorf("a failed write set thread %q", tid)
 	}
 }
+
+func TestLatestPostsOfKeepsNewestPerReview(t *testing.T) {
+	s, _ := openTemp(t)
+	ctx := context.Background()
+	seedReview(t, s, "r1", "pr1", 0)
+	seedReview(t, s, "r2", "pr1", 0)
+	seedReview(t, s, "r3", "pr2", 0)
+	for _, p := range []Posted{
+		{ReviewID: "r1", GitHubReviewID: "old", At: t0},
+		{ReviewID: "r1", GitHubReviewID: "new", At: t0.Add(time.Second)},
+		{ReviewID: "r3", GitHubReviewID: "elsewhere", At: t0.Add(time.Hour)},
+	} {
+		if err := s.RecordPost(ctx, p, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := s.LatestPostsOf(ctx, "pr1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got["r1"].GitHubReviewID != "new" {
+		t.Errorf("LatestPostsOf = %+v, want only r1's newest", got)
+	}
+}

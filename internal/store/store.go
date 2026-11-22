@@ -3,6 +3,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -83,6 +84,12 @@ func DataPath() string {
 	return filepath.Join(base, "jawnsnow", "jawnsnow.db")
 }
 
+// dsnOptions apply to every connection the pool opens: write-ahead
+// logging, a wait of up to 5s for another process's lock, and BEGIN
+// IMMEDIATE, so a transaction takes the write lock when it starts and two
+// processes can't both read a value and then race to write it.
+const dsnOptions = "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_txlock=immediate"
+
 // Open creates the database and its parent directories if needed, and
 // migrates it to the current schema. It refuses a database written by a
 // newer snow.
@@ -90,21 +97,14 @@ func Open(path string) (*Store, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, fmt.Errorf("create data directory: %w", err)
 	}
-	db, err := sql.Open("sqlite", path)
+	db, err := sql.Open("sqlite", path+dsnOptions)
 	if err != nil {
 		return nil, err
 	}
-	// One connection keeps the per-connection pragmas in force and
-	// serializes writes.
+	// One connection serializes writes.
 	db.SetMaxOpenConns(1)
 
 	s := &Store{db: db}
-	for _, p := range []string{`PRAGMA journal_mode=WAL`, `PRAGMA busy_timeout=5000`} {
-		if _, err := db.Exec(p); err != nil {
-			db.Close()
-			return nil, fmt.Errorf("%s: %w", p, err)
-		}
-	}
 	if err := s.migrate(); err != nil {
 		db.Close()
 		return nil, err
@@ -114,25 +114,30 @@ func Open(path string) (*Store, error) {
 
 func (s *Store) Close() error { return s.db.Close() }
 
+// migrate brings the schema up to date in one transaction. The version is
+// read inside it, under the write lock, so a second snow opening the same
+// database waits and then finds nothing left to do.
 func (s *Store) migrate() error {
-	if _, err := s.db.Exec(`CREATE TABLE IF NOT EXISTS schema_version (version INTEGER)`); err != nil {
-		return fmt.Errorf("create schema_version: %w", err)
-	}
-	var cur int
-	err := s.db.QueryRow(`SELECT version FROM schema_version`).Scan(&cur)
-	fresh := err == sql.ErrNoRows
-	if err != nil && !fresh {
-		return fmt.Errorf("read schema version: %w", err)
-	}
-	if cur > len(migrations) {
-		return fmt.Errorf("database schema v%d is newer than this snow (v%d); upgrade snow", cur, len(migrations))
-	}
-
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer tx.Rollback() //nolint:errcheck // a no-op after Commit
+	if _, err := tx.Exec(`CREATE TABLE IF NOT EXISTS schema_version (version INTEGER)`); err != nil {
+		return fmt.Errorf("create schema_version: %w", err)
+	}
+	var cur int
+	err = tx.QueryRow(`SELECT version FROM schema_version`).Scan(&cur)
+	fresh := errors.Is(err, sql.ErrNoRows)
+	if err != nil && !fresh {
+		return fmt.Errorf("read schema version: %w", err)
+	}
+	switch {
+	case cur > len(migrations):
+		return fmt.Errorf("database schema v%d is newer than this snow (v%d); upgrade snow", cur, len(migrations))
+	case cur == len(migrations):
+		return tx.Commit()
+	}
 	for i := cur; i < len(migrations); i++ {
 		if _, err := tx.Exec(migrations[i]); err != nil {
 			return fmt.Errorf("migrate to v%d: %w", i+1, err)

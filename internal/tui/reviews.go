@@ -462,13 +462,13 @@ func (m Model) loadReviewInputs() (Model, tea.Cmd) {
 			if err != nil {
 				return reviewInputsMsg{err: err}
 			}
-			rs, err := st.Reviews(ctx, id)
+			latest, ok, err := st.LatestReview(ctx, id)
 			if err != nil {
 				return reviewInputsMsg{err: err}
 			}
 			in := reviewInputs{autoToday: n}
-			if len(rs) > 0 {
-				in.latest = &rs[0]
+			if ok {
+				in.latest = &latest
 			}
 			prs[id] = in
 		}

@@ -336,3 +336,24 @@ func TestReviewIDsOf(t *testing.T) {
 		t.Errorf("ids for unreviewed PR = %v, %v", none, err)
 	}
 }
+
+func TestLatestReviewIncludesFailed(t *testing.T) {
+	s, _ := openTemp(t)
+	ctx := context.Background()
+	if _, ok, err := s.LatestReview(ctx, "pr1"); err != nil || ok {
+		t.Fatalf("empty: ok=%v err=%v", ok, err)
+	}
+	complete := sampleReview("r1", "pr1", t0, 2)
+	failed := sampleReview("r2", "pr1", t0.Add(time.Hour), 1)
+	failed.Outcome = "failed"
+	other := sampleReview("r3", "pr2", t0.Add(2*time.Hour), 0)
+	for _, r := range []Review{complete, failed, other} {
+		if err := s.SaveReview(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, ok, err := s.LatestReview(ctx, "pr1")
+	if err != nil || !ok || got.ID != "r2" || len(got.Findings) != 1 {
+		t.Fatalf("want r2 with its finding, got %+v ok=%v err=%v", got, ok, err)
+	}
+}

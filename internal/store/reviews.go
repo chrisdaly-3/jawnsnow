@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"time"
 )
 
@@ -137,11 +138,22 @@ func (s *Store) ReviewIDsOf(ctx context.Context, repo string, number int) ([]str
 	return ids, rows.Err()
 }
 
+// LatestReview returns prID's newest review, whatever its outcome.
+func (s *Store) LatestReview(ctx context.Context, prID string) (Review, bool, error) {
+	return s.latestReview(ctx, prID, "")
+}
+
 // LatestCompleted returns prID's newest review whose outcome is complete or
 // incomplete; failed runs are skipped.
 func (s *Store) LatestCompleted(ctx context.Context, prID string) (Review, bool, error) {
+	return s.latestReview(ctx, prID, ` AND r.outcome IN ('complete', 'incomplete')`)
+}
+
+// latestReview returns prID's newest review that also meets cond, a SQL
+// condition on r appended to the WHERE clause.
+func (s *Store) latestReview(ctx context.Context, prID, cond string) (Review, bool, error) {
 	rs, err := s.queryReviews(ctx, `SELECT r.data, `+costRunsSQL+` FROM reviews r
-		WHERE r.pr_id = ? AND r.outcome IN ('complete', 'incomplete')
+		WHERE r.pr_id = ?`+cond+`
 		ORDER BY r.started_at DESC, r.id LIMIT 1`, prID)
 	if err != nil || len(rs) == 0 {
 		return Review{}, false, err
@@ -150,8 +162,9 @@ func (s *Store) LatestCompleted(ctx context.Context, prID string) (Review, bool,
 }
 
 // queryReviews decodes the reviews the query selects, as data and the two
-// costRunsSQL counts, then loads their findings. The reviews are read to completion first: the pool holds one
-// connection, so a second query can't run while rows are open.
+// costRunsSQL counts, then loads their findings. The reviews are read to
+// completion first: the pool holds one connection, so a second query can't
+// run while rows are open.
 func (s *Store) queryReviews(ctx context.Context, query string, args ...any) ([]Review, error) {
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -178,35 +191,64 @@ func (s *Store) queryReviews(ctx context.Context, query string, args ...any) ([]
 	if err != nil {
 		return nil, err
 	}
+	ids := make([]string, len(out))
+	for i, r := range out {
+		ids[i] = r.ID
+	}
+	byReview, err := s.findingsOf(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
 	for i := range out {
-		if out[i].Findings, err = s.findings(ctx, out[i].ID); err != nil {
+		out[i].Findings = byReview[out[i].ID]
+	}
+	return out, nil
+}
+
+// findingsBatch caps the review IDs bound to one findings query, well
+// under SQLite's limit on bound parameters.
+const findingsBatch = 500
+
+// findingsOf returns the findings of each of reviewIDs, keyed by review ID
+// and in the order they were saved, with one query per findingsBatch
+// reviews rather than one per review.
+func (s *Store) findingsOf(ctx context.Context, reviewIDs []string) (map[string][]Finding, error) {
+	out := make(map[string][]Finding, len(reviewIDs))
+	for batch := range slices.Chunk(reviewIDs, findingsBatch) {
+		args := make([]any, len(batch))
+		for i, id := range batch {
+			args[i] = id
+		}
+		rows, err := s.db.QueryContext(ctx, `SELECT id, review_id, data FROM findings
+			WHERE review_id IN (`+placeholders(len(batch))+`) ORDER BY id`, args...)
+		if err != nil {
+			return nil, err
+		}
+		if err := scanFindings(rows, out); err != nil {
 			return nil, err
 		}
 	}
 	return out, nil
 }
 
-func (s *Store) findings(ctx context.Context, reviewID string) ([]Finding, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, data FROM findings WHERE review_id = ? ORDER BY id`, reviewID)
-	if err != nil {
-		return nil, err
-	}
+// scanFindings decodes rows of (id, review_id, data) into out and closes
+// rows.
+func scanFindings(rows *sql.Rows, out map[string][]Finding) error {
 	defer rows.Close()
-	var out []Finding
 	for rows.Next() {
 		var id int64
-		var data string
-		if err := rows.Scan(&id, &data); err != nil {
-			return nil, err
+		var reviewID, data string
+		if err := rows.Scan(&id, &reviewID, &data); err != nil {
+			return err
 		}
 		var f Finding
 		if err := json.Unmarshal([]byte(data), &f); err != nil {
-			return nil, fmt.Errorf("decode finding %d: %w", id, err)
+			return fmt.Errorf("decode finding %d: %w", id, err)
 		}
 		f.ID, f.ReviewID = id, reviewID
-		out = append(out, f)
+		out[reviewID] = append(out[reviewID], f)
 	}
-	return out, rows.Err()
+	return rows.Err()
 }
 
 // AddCost appends a row to the cost ledger.

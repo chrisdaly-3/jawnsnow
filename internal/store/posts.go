@@ -93,6 +93,34 @@ func (s *Store) PostedFor(ctx context.Context, reviewID string) ([]Posted, error
 	return out, rows.Err()
 }
 
+// LatestPostsOf returns the newest post of each of prID's reviews that was
+// posted, keyed by review ID.
+func (s *Store) LatestPostsOf(ctx context.Context, prID string) (map[string]Posted, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT p.review_id, p.data FROM posted_reviews p
+		JOIN reviews r ON r.id = p.review_id
+		WHERE r.pr_id = ? ORDER BY p.at DESC, p.id DESC`, prID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]Posted{}
+	for rows.Next() {
+		var reviewID, data string
+		if err := rows.Scan(&reviewID, &data); err != nil {
+			return nil, err
+		}
+		if _, seen := out[reviewID]; seen {
+			continue
+		}
+		var p Posted
+		if err := json.Unmarshal([]byte(data), &p); err != nil {
+			return nil, fmt.Errorf("decode post: %w", err)
+		}
+		out[reviewID] = p
+	}
+	return out, rows.Err()
+}
+
 // PostedReviewIDs is the set of review IDs that were posted at least once.
 func (s *Store) PostedReviewIDs(ctx context.Context) (map[string]bool, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT DISTINCT review_id FROM posted_reviews`)

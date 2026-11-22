@@ -182,3 +182,31 @@ func TestDataPathXDG(t *testing.T) {
 		t.Errorf("DataPath = %q, want %q", got, want)
 	}
 }
+
+func TestOpenAppliesPragmas(t *testing.T) {
+	s, _ := openTemp(t)
+	var mode string
+	var timeout int
+	if err := s.db.QueryRow(`PRAGMA journal_mode`).Scan(&mode); err != nil || mode != "wal" {
+		t.Errorf("journal_mode = %q, %v; want wal", mode, err)
+	}
+	if err := s.db.QueryRow(`PRAGMA busy_timeout`).Scan(&timeout); err != nil || timeout != 5000 {
+		t.Errorf("busy_timeout = %d, %v; want 5000", timeout, err)
+	}
+}
+
+func TestReopenKeepsSchemaVersion(t *testing.T) {
+	_, path := openTemp(t)
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	defer s.Close()
+	var rows, version int
+	if err := s.db.QueryRow(`SELECT COUNT(*), MAX(version) FROM schema_version`).Scan(&rows, &version); err != nil {
+		t.Fatal(err)
+	}
+	if rows != 1 || version != len(migrations) {
+		t.Errorf("schema_version has %d rows at v%d; want 1 at v%d", rows, version, len(migrations))
+	}
+}
