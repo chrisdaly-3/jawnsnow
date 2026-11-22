@@ -36,8 +36,8 @@ Everything is on one screen, top to bottom: the event, the summary box, the find
 ```
 Post review · acme/web#241 · c680736
 
-Post as ● tab, then h/l to change
- Approve   Comment   Request changes
+Post as ● shift+tab to change
+   Approve   ✓ Comment     Request changes
 
 Summary ● enter for a new line · tab for the findings, then enter to post
 ╭──────────────────────────────────────────────────────────────╮
@@ -50,11 +50,11 @@ Findings ● tab to choose which to post
 What will be posted ● m for the raw markdown
 ```
 
-Each heading says its keys after a `●`. The screen opens with the summary box focused; `tab` moves between the box and the checklist. On a short window the screen scrolls, following the box or the checklist's cursor.
+Each heading says its keys after a `●`. The screen opens with the summary box focused. `tab` moves down the screen, from the event row to the box to the checklist and round, and `shift+tab` moves up. On a short window the screen scrolls, following whichever part has the keys.
 
 ## The event
 
-`Post as` offers three events, the chosen one filled like the drawer's open tab:
+`Post as` offers three events side by side, the chosen one checked with a green `✓`:
 
 | Label | GitHub event |
 | --- | --- |
@@ -62,7 +62,7 @@ Each heading says its keys after a `●`. The screen opens with the summary box 
 | `Comment` | `COMMENT` |
 | `Request changes` | `REQUEST_CHANGES` |
 
-The one that matches the reviewer's verdict is chosen at the start (`approve`, `request_changes`, anything else `Comment`). On the checklist, `h` and `l` (or `←` and `→`) change it. Every event can carry a summary; only Request changes needs one.
+The one that matches the reviewer's verdict is checked at the start (`approve`, `request_changes`, anything else `Comment`). To change it, go to the row (`shift+tab` from the box): `h` and `l` (or `←` and `→`) move a cursor, marked `▸` and filled like the drawer's selection while the row has the keys, and `space` checks the event under it. Moving the cursor alone changes nothing: the checked event is what posts, wherever the cursor is left. `enter` on the row posts, as it does on the checklist. Every event can carry a summary; only Request changes needs one.
 
 ## The checklist
 
@@ -95,7 +95,7 @@ What `enter` does in the box depends on the terminal:
 - When the terminal reports `shift+enter` apart from `enter` (Ghostty, kitty, WezTerm, iTerm2 with its CSI u setting, tmux with `extended-keys` on), `shift+enter` is a new line and `enter` posts. The line above the box says `tab to leave the box · shift+enter for a new line · enter to post`.
 - Otherwise `shift+enter` arrives as plain `enter`, so posting on `enter` would send a half-written summary. There `enter` is a new line, and you leave the box with `tab` to post. The line says `tab to leave the box, then enter to post · enter for a new line`.
 
-`alt+enter` and `ctrl+j` are a new line in either case. `tab` or `esc` leaves the box for the checklist, and `tab` there goes back.
+`alt+enter` and `ctrl+j` are a new line in either case. `tab` or `esc` leaves the box for the checklist and `shift+tab` for the event row; `shift+tab` from the checklist comes back.
 
 On the checklist, `e` writes the current summary to a temporary file, `tmp/post-<review id>.md` in the data directory, readable only by you, and opens it in `$VISUAL`, else `$EDITOR`, else `vi`. The value is split on spaces and run without a shell, so `code -w` works. When the editor exits, snow reads the file back, trims trailing newlines, puts the text in the box, and deletes the file.
 

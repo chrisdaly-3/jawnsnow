@@ -91,11 +91,11 @@ The post flow takes every key while it is open, so the global keys don't apply: 
 | Key | Does |
 | --- | --- |
 | `y` `n` | post again, or not, when it was posted before |
-| `tab` | move between the summary box and the findings |
+| `tab` `shift+tab` | the event row, the summary box, the findings |
 | `shift+enter` | a new line in the summary box |
-| `h` `l` | Approve, Comment or Request changes |
-| `j` `k` | choose the finding |
-| `space` | include or leave out the finding |
+| `h` `l` | move along Approve, Comment, Request changes |
+| `j` `k` | move through the findings |
+| `space` | choose the event, or include or leave out the finding |
 | `e` | open the summary in `$VISUAL` or `$EDITOR` |
 | `m` | show the raw markdown or the rendered view |
 | `ctrl+d` `ctrl+u` | scroll the preview |
@@ -106,8 +106,9 @@ By stage:
 
 - While snow checks for earlier posts, `esc` cancels.
 - At the repost question, `y` goes on to the post screen; `n` or `esc` closes the flow.
-- The post screen opens in the summary box, where keys type. `shift+enter` (or `alt+enter`, `ctrl+j`) is a new line. `enter` posts when the terminal reports `shift+enter` apart from `enter`, and is a new line when it can't (see [the summary](posting.md#the-summary)). `tab` or `esc` leaves the box for the checklist.
-- On the checklist, `h` and `l` (or `←` and `→`) change the event, `j` and `k` move the cursor, `space` toggles the finding under it, `tab` goes back to the summary box, `e` opens the editor, `m` toggles raw markdown, `ctrl+d` and `ctrl+u` scroll half a screen, `enter` posts and `esc` closes the flow without posting.
+- The post screen opens in the summary box, where keys type. `shift+enter` (or `alt+enter`, `ctrl+j`) is a new line. `enter` posts when the terminal reports `shift+enter` apart from `enter`, and is a new line when it can't (see [the summary](posting.md#the-summary)). `tab` or `esc` leaves the box for the checklist, `shift+tab` for the event row.
+- On the event row, `h` and `l` (or `←` and `→`) move the cursor and `space` checks the event under it; the checked event (`✓`) is what posts. `tab` goes to the box, `shift+tab` to the checklist, and `enter` posts.
+- On the checklist, `j` and `k` move the cursor, `space` toggles the finding under it, `tab` goes to the event row and `shift+tab` back to the summary box, `e` opens the editor, `m` toggles raw markdown, `ctrl+d` and `ctrl+u` scroll half a screen, `enter` posts and `esc` closes the flow without posting.
 - While the post is being sent, every key but `ctrl+c` is ignored. The first `ctrl+c` warns `posting to GitHub — ctrl+c again to quit anyway`; a second quits.
 - After a post whose record failed, `esc` or `enter` closes the result.
 - `?` opens help from the checklist; in the summary box it is typed.
