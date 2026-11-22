@@ -172,17 +172,17 @@ func (r Repo) dir() string {
 // RemoteFor returns the name of the remote whose URL is r's base repo, or
 // "" when none is. A fork's origin does not match.
 func (r Repo) RemoteFor(ctx context.Context) (string, error) {
-	out, err := Git(ctx, r.dir(), "remote")
+	// One call lists every remote as "<name>\t<url> (fetch)", the URL being
+	// what get-url prints: the first, with insteadOf applied.
+	out, err := Git(ctx, r.dir(), "remote", "-v")
 	if err != nil {
 		return "", err
 	}
 	var match []string
-	for remote := range strings.FieldsSeq(string(out)) {
-		u, err := Git(ctx, r.dir(), "remote", "get-url", remote)
-		if err != nil {
-			continue
-		}
-		if sameRepo(strings.TrimSpace(string(u)), r.Name) {
+	for line := range strings.Lines(string(out)) {
+		remote, rest, ok := strings.Cut(strings.TrimRight(line, "\n"), "\t")
+		u, fetch := strings.CutSuffix(rest, " (fetch)")
+		if ok && fetch && sameRepo(u, r.Name) {
 			match = append(match, remote)
 		}
 	}

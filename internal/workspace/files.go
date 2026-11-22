@@ -124,60 +124,83 @@ func (r Repo) since(ctx context.Context, in FilesInput, changed []string, prFile
 	}
 
 	var out bytes.Buffer
+	sawLast := pathSet(lastChanged)
 	for _, p := range changed {
 		now := prFiles[p]
 		if now == nil {
 			return nil, fmt.Errorf("changed path %q is missing from the diff", p)
 		}
-		if !slices.Contains(lastChanged, p) {
-			for _, s := range now.sections {
-				out.Write(s.header)
-				for _, h := range s.hunks {
-					out.Write(h.text)
-				}
-			}
+		if !sawLast[p] {
+			writeHunks(&out, now, func(*hunk) bool { return true })
 			continue
 		}
 		last := lastFiles[p]
 		if last == nil {
 			return nil, fmt.Errorf("changed path %q is missing from the last reviewed diff", p)
 		}
-
 		reviewed := last.hunkKeys()
-		for _, s := range now.sections {
-			var fresh []*hunk
-			for _, h := range s.hunks {
-				if k := h.key(); reviewed[k] > 0 {
-					reviewed[k]--
-				} else {
-					fresh = append(fresh, h)
-				}
-			}
-			if len(fresh) > 0 {
-				out.Write(s.header)
-				for _, h := range fresh {
-					out.Write(h.text)
-				}
-			}
-		}
-
-		current := now.hunkKeys()
-		for _, s := range last.sections {
-			for _, h := range s.hunks {
-				if k := h.key(); current[k] > 0 {
-					current[k]--
-				} else if h.header != "" {
-					fmt.Fprintf(&out, "# reverted hunk in %s: %s\n", quotePath(p), h.header)
-				}
-			}
-		}
+		writeHunks(&out, now, func(h *hunk) bool { return !take(reviewed, h.key()) })
+		writeRevertedHunks(&out, p, last, now.hunkKeys())
 	}
+	changedNow := pathSet(changed)
 	for _, p := range lastChanged {
-		if !slices.Contains(changed, p) {
+		if !changedNow[p] {
 			fmt.Fprintf(&out, "# reverted: %s\n", quotePath(p))
 		}
 	}
 	return out.Bytes(), nil
+}
+
+// writeHunks writes each of f's hunks that keep accepts, under its
+// section's header; a section with none is left out.
+func writeHunks(out *bytes.Buffer, f *fileDiff, keep func(*hunk) bool) {
+	for _, s := range f.sections {
+		var kept []*hunk
+		for _, h := range s.hunks {
+			if keep(h) {
+				kept = append(kept, h)
+			}
+		}
+		if len(kept) == 0 {
+			continue
+		}
+		out.Write(s.header)
+		for _, h := range kept {
+			out.Write(h.text)
+		}
+	}
+}
+
+// writeRevertedHunks notes each hunk of last, path's patch at the last
+// review, that is not among current, the counts of its hunks now.
+func writeRevertedHunks(out *bytes.Buffer, path string, last *fileDiff, current map[string]int) {
+	for _, s := range last.sections {
+		for _, h := range s.hunks {
+			if !take(current, h.key()) && h.header != "" {
+				fmt.Fprintf(out, "# reverted hunk in %s: %s\n", quotePath(path), h.header)
+			}
+		}
+	}
+}
+
+// take uses up one of counts[k], reporting whether there was one. Hunks
+// are counted, not just matched, so a patch that repeats a hunk keeps the
+// repeat.
+func take(counts map[string]int, k string) bool {
+	if counts[k] == 0 {
+		return false
+	}
+	counts[k]--
+	return true
+}
+
+// pathSet is paths as a set, for lookups in a loop.
+func pathSet(paths []string) map[string]bool {
+	set := make(map[string]bool, len(paths))
+	for _, p := range paths {
+		set[p] = true
+	}
+	return set
 }
 
 // diffFormat pins the settings in a user's git config that would change

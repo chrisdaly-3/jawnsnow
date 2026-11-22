@@ -285,3 +285,22 @@ while :; do sleep 0.05; done
 		t.Errorf("git was not sent SIGTERM: %v", err)
 	}
 }
+
+// RemoteFor reads URLs from `git remote -v`, so it must see them as
+// get-url does: rewritten by insteadOf, and whole when they hold a space.
+func TestRemoteForReadsRewrittenAndSpacedURLs(t *testing.T) {
+	ctx := context.Background()
+	s := newScratch(t)
+	r := Repo{Name: "o/n", GitDir: filepath.Join(s.clone, ".git"), WorkDir: s.clone}
+
+	git(t, s.clone, "config", "url.https://github.com/.insteadOf", "gh:")
+	git(t, s.clone, "remote", "set-url", "upstream", "gh:o/n")
+	if got, err := r.RemoteFor(ctx); err != nil || got != "upstream" {
+		t.Errorf("insteadOf: RemoteFor = %q, %v; want upstream", got, err)
+	}
+
+	git(t, s.clone, "remote", "set-url", "upstream", "/tmp/a dir/o/n")
+	if got, err := r.RemoteFor(ctx); err != nil || got != "upstream" {
+		t.Errorf("spaced path: RemoteFor = %q, %v; want upstream", got, err)
+	}
+}
