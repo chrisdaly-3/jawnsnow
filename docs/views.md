@@ -163,7 +163,7 @@ Draft PRs are left out unless the feed sets `include_drafts = true`.
 
 `enter` on a card, a Done row or a Reviews row slides the drawer in from the right. It takes 45% of the terminal's width. `esc` slides it out. Opening the drawer focuses it; `tab` moves focus between it and the view beside it, and its left edge is in the accent colour when it has focus. Whichever side doesn't have focus, the view or the drawer, is drawn faint (the terminal's dim text, so how faint varies by terminal; not with `NO_COLOR` set).
 
-On every tab the selected finding, check or entry has a `▸` mark and a dark grey fill (with `NO_COLOR` set, only the mark). `n` and `N` scroll only as far as needed to keep three lines of room above and below it.
+On every tab the selected finding, check or entry has a `▸` mark and a dark grey fill (with `NO_COLOR` set, only the mark). `j` and `k` move the selection, and the drawer scrolls only as far as needed to keep three lines of room above and below it.
 
 ![The review drawer](assets/drawer.png)
 
@@ -201,7 +201,7 @@ The Review tab, top to bottom:
 9. `▸ Assumptions ● Press a to show`: each assumption the change relies on, with the evidence the reviewer cited under it, or `None.` Collapsed until you press `a`.
 10. `Check notes ● Press Y to copy`: one line per note from the reviewer and from snow's checks. `Y` copies them all. See [check notes](reviews.md#check-notes).
 
-The bottom line shows the running review's latest tool call (`reading internal/foo/bar.go`, `searching internal`, `listing …`), a short message after a key (`copied the finding`), or the key hints: `j/k scroll · n/N finding · </> pass · y copy · O open line · P post` on the Review tab, `h/l tab · j/k scroll · n/N check · O open · y copy` on the Checks tab, `h/l tab · j/k scroll · n/N item · O open · y copy` on the Activity tab.
+The bottom line shows the running review's latest tool call (`reading internal/foo/bar.go`, `searching internal`, `listing …`), a short message after a key (`copied the finding`), or the key hints: `j/k finding · </> pass · y copy · O open line · P post` on the Review tab, `h/l tab · j/k check · O open · y copy` on the Checks tab, `h/l tab · j/k entry · O open · y copy` on the Activity tab.
 
 Before reviews load it says `Loading reviews…`; a PR with none says `No reviews yet. Press space to review.` The drawer follows the newest pass while you are on it, so a review you just started appears when it finishes. On an older pass it stays on that pass. When the drawer's PR stops being tracked, the drawer closes.
 
@@ -221,7 +221,7 @@ The Checks tab lists every check at the PR's head, grouped by how it counted tow
 
 A check that branch protection requires is tagged `required`. Within a group, checks are listed as GitHub lists them. A PR with no checks says `No checks.` The tab reads the PR's stored data with the current config, so it needs no reviews, and a change to `ignore_checks` shows at once.
 
-`n` and `N` select a check, marked `▸`, and `J` and `K` jump to the last or first one. `O` opens the check's own page, or the PR's checks page when snow has no link for it yet (a PR stored before snow fetched check links gets them at its next detail fetch). `y` copies the check's name.
+`j` and `k` select a check, marked `▸`, and `J` and `K` jump to the last or first one. `O` opens the check's own page, or the PR's checks page when snow has no link for it yet (a PR stored before snow fetched check links gets them at its next detail fetch). `y` copies the check's name.
 
 ### The Activity tab
 
@@ -244,7 +244,7 @@ A review's or comment's text shows its first 2 lines; `O` opens the rest on GitH
 
 Bots, such as CI and preview bots, are muted and folded at the bottom of each side of the divider, as `▸ 2 bot items ● Press b to show`. `b` shows or hides them, and the line then says `to hide`. A bot's entry from after your review stays above the divider.
 
-`n` and `N` select an entry, and `J` and `K` jump to the last or first one. `O` opens the entry on GitHub (the PR for a force-push), and `y` copies its text, or a run's headlines.
+`j` and `k` select an entry, and `J` and `K` jump to the last or first one. `O` opens the entry on GitHub (the PR for a force-push), and `y` copies its text, or a run's headlines.
 
 snow keeps each PR's timeline for the session. Opening the drawer again on a PR that hasn't changed uses it; a PR that changed, including one whose drawer is open when a poll brings the change, is fetched again. A PR with 50 entries ends with `Older activity isn't shown.` The tab can also say `Rate limited — activity loads after GitHub's limit resets`, `could not load activity: <error>` or `No activity`.
 

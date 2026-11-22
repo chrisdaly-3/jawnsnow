@@ -60,9 +60,8 @@ These work when the drawer has focus. Opening it with `enter` focuses it, and `t
 | --- | --- |
 | `esc` | close the drawer |
 | `h` `l` | Review, Checks or Activity tab |
-| `j` `k` | scroll |
+| `j` `k` | next or previous finding, check or entry |
 | `J` `K` | jump to the bottom or top |
-| `n` `N` | next or previous finding, check or entry |
 | `<` `>` | older or newer pass |
 | `o` | open the PR |
 | `O` | open the finding's line, the check or the entry |
@@ -73,16 +72,16 @@ These work when the drawer has focus. Opening it with `enter` focuses it, and `t
 More on these:
 
 - `h` and `l` (or `←` and `→`) move between the [Review, Checks and Activity tabs](views.md#the-drawer). Opening the drawer with `enter` always shows the Review tab. Each tab keeps its own scroll. `<`, `>`, `u`, `a` and `Y` act on the Review tab, `s` on the Checks tab, and `b` on the Activity tab; the other keys act on whichever tab is open.
-- `J` and `K` (`shift+j` and `shift+k`) jump the open tab to its bottom or top, with a short eased scroll. On the Checks and Activity tabs they also select the last or first check or entry. Pressing `J` or `K` again mid-jump turns it around; `h` and `l` finish it before changing tab, and any other key stops it where it is.
-- `n` and `N` select a finding and scroll it into view, keeping three lines of room above and below it. Findings are listed blocking first, then those starting `nit:`, `non-blocking:` and `question:`, then the rest.
+- `J` and `K` (`shift+j` and `shift+k`) jump the open tab to its bottom or top, with a short eased scroll, and select the last or first finding, check or entry. Pressing `J` or `K` again mid-jump turns it around; `h` and `l` finish it before changing tab, and any other key stops it where it is.
+- `j` and `k` (or `↓` and `↑`) select the next or previous finding, and the drawer scrolls as they go, keeping three lines of room above and below it. Where moving on would skip something they scroll a line instead: through a finding taller than the drawer, past the last finding to Understanding, Assumptions and Check notes, and above the first to the header. Findings are listed blocking first, then those starting `nit:`, `non-blocking:` and `question:`, then the rest.
 - `<` moves to an older pass (review) of the PR and `>` to a newer one. The header shows `pass 2/3` when there is more than one.
 - `O` opens the PR's Files tab in the browser at the selected finding's file, and at its line when the finding is anchored.
 - `y` copies the selected finding's body to the clipboard, using the terminal's OSC 52 support, and shows `copied the finding`.
 - `Y` (`shift+y`) copies the pass's [check notes](reviews.md#check-notes), one per line, and shows `copied the check notes`, or `no check notes to copy` when there are none.
 - `u` and `a` show or hide the Understanding and Assumptions sections.
 - `Y`, `u`, `a`, `s` and `b` aren't in the help overlay: the heading each one acts on says its key. Folding headings say `● Press u to show` (or `to hide` when open), as do the Checks tab's `▸ Passed (3) ● Press s to show` and the Activity tab's `▸ 1 bot item ● Press b to show`; the Check notes heading says `● Press Y to copy`.
-- On the Checks tab, `n` and `N` select a check, `O` opens the check's own page (or the PR's checks page when snow has no link for it), `y` copies its name and shows `copied the check's name`, and `s` shows or hides the passed checks.
-- On the Activity tab, `n` and `N` select an entry, `O` opens the entry's page (or the PR when the entry has none, such as a force-push), `y` copies its text (a comment's body or a commit's headline) and shows `copied the entry`, and `b` shows or hides the bot entries.
+- On the Checks tab, `j` and `k` select a check, `O` opens the check's own page (or the PR's checks page when snow has no link for it), `y` copies its name and shows `copied the check's name`, and `s` shows or hides the passed checks.
+- On the Activity tab, `j` and `k` select an entry, `O` opens the entry's page (or the PR when the entry has none, such as a force-push), `y` copies its text (a comment's body or a commit's headline) and shows `copied the entry`, and `b` shows or hides the bot entries.
 - `P` opens the [post flow](posting.md) on the pass on screen. A failed review can't be posted: the drawer says `a failed review can't be posted`.
 
 ## Post

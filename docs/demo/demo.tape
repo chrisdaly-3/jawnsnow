@@ -43,17 +43,15 @@ Sleep 60ms
 Type "k"
 Sleep 300ms
 
-# 3. Open the drawer on a reviewed PR (enter focuses it), scroll and step
-# through the findings.
+# 3. Open the drawer on a reviewed PR (enter focuses it) and step through
+# the findings with j.
 Enter
 Sleep 1000ms
-Type "jj"
-Sleep 500ms
-Type "n"
+Type "j"
 Sleep 500ms
 Screenshot docs/assets/drawer.png
 Sleep 500ms
-Type "n"
+Type "j"
 Sleep 500ms
 
 # The Checks tab: how each check counted towards the PR's lane.
