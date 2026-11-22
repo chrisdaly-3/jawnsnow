@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"image/color"
 	"io"
 	"maps"
 	"os/exec"
@@ -175,6 +176,10 @@ type Model struct {
 	// keys apart, so shift+enter doesn't arrive as enter. Only then does
 	// enter in the post flow's summary box post; otherwise it is a new line.
 	keysDisambiguated bool
+	// termBG and termFG are the terminal's background and default text
+	// colours, as it reports them at startup, or nil. With termBG known,
+	// the pane without focus is veiled toward it; without, it is faint.
+	termBG, termFG color.Color
 	// pollAgain asks for a poll as soon as the one in flight finishes.
 	pollAgain bool
 	// unconfirmedPosts are posts the store has no row for, by review ID:
@@ -296,7 +301,8 @@ func (m Model) Init() tea.Cmd {
 		prs, err := st.LoadTracked(context.Background())
 		return loadedMsg{prs: prs, err: err}
 	}
-	return tea.Batch(load, m.loadCostState(), m.clockTick(), m.reviewTicks(), m.listenReloads())
+	return tea.Batch(load, m.loadCostState(), m.clockTick(), m.reviewTicks(), m.listenReloads(),
+		tea.RequestBackgroundColor, tea.RequestForegroundColor)
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -425,6 +431,10 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 		return m.wallUpdate(msg)
 	case tea.KeyboardEnhancementsMsg:
 		m.keysDisambiguated = msg.SupportsKeyDisambiguation()
+	case tea.BackgroundColorMsg:
+		m.termBG = msg.Color
+	case tea.ForegroundColorMsg:
+		m.termFG = msg.Color
 	case tea.PasteMsg:
 		if m.post != nil && m.post.boxActive() {
 			return m.postPaste(msg)
@@ -1141,7 +1151,8 @@ func fit(s string, width, height int) []string {
 
 // withDrawer puts the drawer beside the view's lines, which it pads to
 // viewW cells so the drawer's edge lines up. Whichever side doesn't have
-// focus is dimmed, so the eye goes to the one that does.
+// focus is veiled toward the terminal's background (see theme.Dim), so the
+// eye goes to the one that does.
 func (m Model) withDrawer(view string, viewW, drawerW, height int) string {
 	c := m.drawerCtx()
 	left := fit(view, viewW, height)
@@ -1149,12 +1160,12 @@ func (m Model) withDrawer(view string, viewW, drawerW, height int) string {
 	for i := range left {
 		left[i] += strings.Repeat(" ", max(viewW-ansi.StringWidth(left[i]), 0))
 		if c.Focused {
-			left[i] = m.theme.Dim(left[i])
+			left[i] = m.theme.Dim(left[i], m.termBG, m.termFG)
 		}
 		if i < len(right) {
 			r := right[i]
 			if !c.Focused {
-				r = m.theme.Dim(r)
+				r = m.theme.Dim(r, m.termBG, m.termFG)
 			}
 			left[i] += r
 		}

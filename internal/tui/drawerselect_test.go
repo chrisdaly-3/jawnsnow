@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"image/color"
 	"strings"
 	"testing"
 
@@ -144,5 +145,31 @@ func TestDimWithNoColorIsUnchanged(t *testing.T) {
 	settleDrawer(t, h)
 	if l := h.m.withDrawer("wall", 60, 50, 3); strings.Contains(l, "\x1b[2m") {
 		t.Errorf("NO_COLOR: a pane is faint: %q", l)
+	}
+}
+
+// Once the terminal reports its colours, the side without focus is veiled
+// toward the background rather than faint.
+func TestWithDrawerVeilsOnceTheTerminalReportsItsBackground(t *testing.T) {
+	h := drawerHarness(t, opts{})
+	h.m, _ = update(t, h.m, tea.WindowSizeMsg{Width: 120, Height: 30})
+	h.m, _ = update(t, h.m, tea.BackgroundColorMsg{Color: color.RGBA{0x10, 0x10, 0x10, 0xff}})
+	h.m, _ = update(t, h.m, tea.ForegroundColorMsg{Color: color.RGBA{0xe0, 0xe0, 0xe0, 0xff}})
+	h.press(t, "enter")
+	settleDrawer(t, h)
+	// 0xe0 text 55% toward 0x10: 224×0.45 + 16×0.55 = 110.
+	veiled := "\x1b[38;2;110;110;110m"
+	line, _, _ := strings.Cut(h.m.withDrawer("wall", 60, 50, 3), "\n")
+	wall, drawer := line[:strings.Index(line, "wall")+4], line[strings.Index(line, "wall")+4:]
+	if !strings.HasPrefix(wall, veiled) {
+		t.Errorf("drawer focused: the Wall isn't veiled: %q", wall)
+	}
+	if strings.Contains(line, "\x1b[2m") || strings.Contains(drawer, "38;2;110;110;110") {
+		t.Errorf("drawer focused: want only the Wall veiled, not faint: %q", line)
+	}
+	h.press(t, "tab")
+	line, _, _ = strings.Cut(h.m.withDrawer("wall", 60, 50, 3), "\n")
+	if strings.HasPrefix(line, veiled) || !strings.Contains(line, "38;2;") {
+		t.Errorf("Wall focused: want the drawer veiled and the Wall not: %q", line)
 	}
 }

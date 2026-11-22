@@ -1110,11 +1110,19 @@ func TestReloadsAreListenedFor(t *testing.T) {
 	ch := make(chan config.Reload, 1)
 	ch <- config.Reload{Err: errors.New("boom")}
 	h := newHarness(t, opts{reloads: ch}, wallPR("1"))
-	if len(h.initMsgs) != 1 {
+	// Init also asks the terminal for its colours; only the reload counts
+	// here.
+	var reloads []tea.Msg
+	for _, msg := range h.initMsgs {
+		if _, ok := msg.(reloadMsg); ok {
+			reloads = append(reloads, msg)
+		}
+	}
+	if len(reloads) != 1 {
 		t.Fatalf("Init's reload listener produced %#v, want one reloadMsg", h.initMsgs)
 	}
 	var next tea.Cmd
-	h.m, next = update(t, h.m, h.initMsgs[0])
+	h.m, next = update(t, h.m, reloads[0])
 	if next == nil {
 		t.Error("the model stopped listening after a reload")
 	}
