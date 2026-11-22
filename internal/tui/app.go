@@ -461,13 +461,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	}
 	// An open filter box or author picker takes every key, or typing "q"
 	// would quit. ctrl+c still quits.
-	if m.view == ViewWall && !m.help && m.wall.capturing() && msg.String() != "ctrl+c" {
-		return m.updateView(msg)
-	}
-	if m.view == ViewCost && !m.help && m.cost.capturing() && msg.String() != "ctrl+c" {
-		return m.updateView(msg)
-	}
-	if m.view == ViewReviews && !m.help && m.reviewLog.typing && msg.String() != "ctrl+c" {
+	if !m.help && m.viewCapturing() && msg.String() != "ctrl+c" {
 		return m.updateView(msg)
 	}
 	// The help overlay hides the view, so only the keys that close it or
@@ -515,23 +509,32 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	return m, nil
 }
 
-// updateView passes a key the root model doesn't use to the current view.
-func (m Model) updateView(msg tea.KeyPressMsg) (Model, tea.Cmd) {
+// viewCapturing reports whether the current view has a text box or picker
+// open that takes every key.
+func (m Model) viewCapturing() bool {
 	switch m.view {
 	case ViewWall:
-		if m.drawerHere() && m.focus == m.drawerPane() {
-			return m.drawerUpdate(msg)
-		}
+		return m.wall.capturing()
+	case ViewCost:
+		return m.cost.capturing()
+	case ViewReviews:
+		return m.reviewLog.typing
+	}
+	return false
+}
+
+// updateView passes a key the root model doesn't use to the current view,
+// or to the drawer when it is open there and has the focus.
+func (m Model) updateView(msg tea.KeyPressMsg) (Model, tea.Cmd) {
+	if m.drawerHere() && m.focus == m.drawerPane() {
+		return m.drawerUpdate(msg)
+	}
+	switch m.view {
+	case ViewWall:
 		return m.wallUpdate(msg)
 	case ViewDone:
-		if m.drawerHere() && m.focus == m.drawerPane() {
-			return m.drawerUpdate(msg)
-		}
 		return m.doneUpdate(msg)
 	case ViewReviews:
-		if m.drawerHere() && m.focus == m.drawerPane() {
-			return m.drawerUpdate(msg)
-		}
 		return m.reviewLogKey(msg)
 	case ViewAgent:
 		return m.agentKey(msg)
@@ -605,9 +608,6 @@ func (m Model) closeGoneDrawer() (Model, tea.Cmd) {
 
 // doneUpdate gives msg to the Done view and applies the action it returns.
 func (m Model) doneUpdate(msg tea.Msg) (Model, tea.Cmd) {
-	w, h := m.bodySize()
-	w -= m.drawerWidthIn(ViewDone)
-	m.done.setSize(w, h)
 	m.done.now, m.done.focus = m.now(), m.focus
 	done, cmd, act := m.done.update(msg, m.wallPRs())
 	m.done = done
@@ -722,32 +722,32 @@ func (m Model) apply(a action) (Model, tea.Cmd) {
 	case actionPickModel:
 		return m.openPicker(a.ID), nil
 	case actionOpenDrawer:
-		var cmd tea.Cmd
-		m.drawerView = m.view
-		m.drawer, cmd = m.drawer.show(a.ID, m.width)
-		// Opening the drawer focuses it, so its keys work at once.
-		m.focus = m.drawerPane()
-		m, load := m.loadDrawer(a.ID)
-		m, act := m.fetchActivity(a.ID)
-		return m, tea.Batch(cmd, load, act)
+		return m.openDrawer(a.ID, func(d drawerModel) (drawerModel, tea.Cmd) { return d.show(a.ID, m.width) })
 	case actionOpenReview:
 		if _, ok := m.prs[a.PRID]; !ok {
 			m.notice = "that PR is no longer tracked"
 			return m, nil
 		}
-		var cmd tea.Cmd
-		m.drawerView = m.view
-		m.drawer, cmd = m.drawer.showReview(a.PRID, a.ReviewID, m.width)
-		m.focus = m.drawerPane()
-		m, load := m.loadDrawer(a.PRID)
-		m, act := m.fetchActivity(a.PRID)
-		return m, tea.Batch(cmd, load, act)
+		return m.openDrawer(a.PRID, func(d drawerModel) (drawerModel, tea.Cmd) { return d.showReview(a.PRID, a.ReviewID, m.width) })
 	case actionCopy:
 		return m, tea.SetClipboard(a.Text)
 	case actionPost:
 		return m.openPost(a.ReviewID)
 	}
 	return m, nil
+}
+
+// openDrawer opens the drawer on prID in the current view with show, which
+// picks the pass it opens on, and starts loading its reviews and activity.
+// Opening the drawer focuses it, so its keys work at once.
+func (m Model) openDrawer(prID string, show func(drawerModel) (drawerModel, tea.Cmd)) (Model, tea.Cmd) {
+	var cmd tea.Cmd
+	m.drawerView = m.view
+	m.drawer, cmd = show(m.drawer)
+	m.focus = m.drawerPane()
+	m, load := m.loadDrawer(prID)
+	m, act := m.fetchActivity(prID)
+	return m, tea.Batch(cmd, load, act)
 }
 
 func (m Model) updatePR(id string, change func(tracker.Tracked, time.Time) tracker.Tracked) (Model, tea.Cmd) {
@@ -888,10 +888,7 @@ func feedNote(errs []error) string {
 // the set when the poll reached it or it is no longer tracked, and the
 // poll's skips join it.
 func stillUnreachable(prev map[string]github.SkippedPR, res poll.Result, tracked map[string]tracker.Tracked) map[string]github.SkippedPR {
-	next := maps.Clone(prev)
-	if next == nil {
-		next = map[string]github.SkippedPR{}
-	}
+	next := cloneMap(prev)
 	for _, id := range res.Reached {
 		delete(next, id)
 	}
@@ -1083,7 +1080,7 @@ func (m Model) render() string {
 // bodySize is the room the view gets between the top line, banners and
 // footer.
 func (m Model) bodySize() (width, height int) {
-	return m.width, max(m.height-1-len(m.bannerLines(m.width))-1, 0)
+	return m.width, max(m.height-1-len(m.bannerTexts())-1, 0)
 }
 
 // body renders the current view into width×height. Each view supplies its
@@ -1099,39 +1096,34 @@ func (m Model) body(width, height int) string {
 		return m.postBody(width, height)
 	}
 	switch m.view {
-	case ViewWall:
-		w := m.wall
-		w.now, w.feeds, w.badges, w.drafted = m.now(), m.feedNames(), m.reviewBadges(m.spinFrame), m.draftedPRs()
-		dw := min(m.drawerWidthIn(ViewWall), max(width-1, 0))
-		w.setSize(width-dw, height)
-		wallView := w.view(width-dw, height, m.displayPRs(), m.theme, m.spinFrame)
-		if dw == 0 {
-			return wallView
-		}
-		return m.withDrawer(wallView, width-dw, dw, height)
-	case ViewDone:
-		dw := min(m.drawerWidthIn(ViewDone), max(width-1, 0))
-		d := m.done
-		d.now, d.focus, d.verdicts = m.now(), m.focus, m.reviewVerdicts()
-		d.setSize(width-dw, height)
-		doneView := d.view(width-dw, height, m.wallPRs(), m.theme)
-		if dw == 0 {
-			return doneView
-		}
-		return m.withDrawer(doneView, width-dw, dw, height)
 	case ViewAgent:
 		return m.agentBody(width, height)
 	case ViewCost:
 		return m.costBody(width, height)
-	case ViewReviews:
-		dw := min(m.drawerWidthIn(ViewReviews), max(width-1, 0))
-		logView := m.reviewLogBody(width-dw, height)
-		if dw == 0 {
-			return logView
-		}
-		return m.withDrawer(logView, width-dw, dw, height)
 	}
-	return ""
+	// The Wall, Done and Reviews views share the width with the drawer
+	// when it was opened there.
+	dw := min(m.drawerWidthIn(m.view), max(width-1, 0))
+	viewW := width - dw
+	var view string
+	switch m.view {
+	case ViewWall:
+		w := m.wall
+		w.now, w.feeds, w.badges, w.drafted = m.now(), m.feedNames(), m.reviewBadges(m.spinFrame), m.draftedPRs()
+		view = w.view(viewW, height, m.displayPRs(), m.theme, m.spinFrame)
+	case ViewDone:
+		d := m.done
+		d.now, d.focus, d.verdicts = m.now(), m.focus, m.reviewVerdicts()
+		view = d.view(viewW, height, m.wallPRs(), m.theme)
+	case ViewReviews:
+		view = m.reviewLogBody(viewW, height)
+	default:
+		return ""
+	}
+	if dw == 0 {
+		return view
+	}
+	return m.withDrawer(view, viewW, dw, height)
 }
 
 // fit cuts or pads s to exactly height lines of at most width cells.

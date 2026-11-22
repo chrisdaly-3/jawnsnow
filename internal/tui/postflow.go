@@ -3,7 +3,6 @@ package tui
 import (
 	"context"
 	"fmt"
-	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -410,16 +409,17 @@ func (m Model) previewKey(p postFlow, k string) (Model, tea.Cmd) {
 	case "space":
 		if p.cursor < len(fs) {
 			id := fs[p.cursor].ID
-			p.sel.Include = maps.Clone(p.sel.Include)
-			if p.sel.Include == nil {
-				p.sel.Include = map[int64]bool{}
-			}
+			p.sel.Include = cloneMap(p.sel.Include)
 			p.sel.Include[id] = !included(p.sel, id)
 			p.previewAt = m.now()
 			p.rebuild()
 		}
 	case "tab", "shift+tab":
-		p, follow = p.moveFocus(map[string]int{"tab": 1, "shift+tab": -1}[k]), true
+		dir := 1
+		if k == "shift+tab" {
+			dir = -1
+		}
+		p, follow = p.moveFocus(dir), true
 	case "m":
 		p.raw = !p.raw
 	case "ctrl+d", "ctrl+u":
@@ -652,10 +652,7 @@ func (m Model) finishPost(msg postDoneMsg) (Model, tea.Cmd) {
 		if current {
 			p := *m.post
 			p.inFlight, p.quitArmed = false, false
-			p.known = maps.Clone(p.known)
-			if p.known == nil {
-				p.known = map[string]bool{}
-			}
+			p.known = cloneMap(p.known)
 			p.known[postKey(*r)] = true
 			p.ask, p.stage = priorPost{event: r.Event, at: r.At}, postRepost
 			m.post = &p
@@ -733,10 +730,7 @@ func (m Model) finishPost(msg postDoneMsg) (Model, tea.Cmd) {
 
 // withUnconfirmed remembers a post the store has no row for.
 func (m Model) withUnconfirmed(reviewID string, u unconfirmedPost) Model {
-	m.unconfirmedPosts = maps.Clone(m.unconfirmedPosts)
-	if m.unconfirmedPosts == nil {
-		m.unconfirmedPosts = map[string]unconfirmedPost{}
-	}
+	m.unconfirmedPosts = cloneMap(m.unconfirmedPosts)
 	m.unconfirmedPosts[reviewID] = u
 	return m
 }
@@ -752,20 +746,14 @@ func (m Model) withUnrecorded(msg drawerLoadedMsg) drawerLoadedMsg {
 		if p, ok := msg.Posted[r.ID]; ok && !u.At.After(p.At) {
 			continue
 		}
-		msg.Posted = maps.Clone(msg.Posted)
-		if msg.Posted == nil {
-			msg.Posted = map[string]store.Posted{}
-		}
+		msg.Posted = cloneMap(msg.Posted)
 		msg.Posted[r.ID] = store.Posted{ReviewID: r.ID, Event: u.Event, At: u.At}
 	}
 	return msg
 }
 
 func (d drawerModel) withPosted(p store.Posted) drawerModel {
-	posted := maps.Clone(d.posted)
-	if posted == nil {
-		posted = map[string]store.Posted{}
-	}
+	posted := cloneMap(d.posted)
 	posted[p.ReviewID] = p
 	d.posted = posted
 	return d

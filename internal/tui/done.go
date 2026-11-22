@@ -42,9 +42,8 @@ type doneModel struct {
 	// owns it and copies it in before each call.
 	focus int
 
-	w, h int
-	now  time.Time
-	loc  *time.Location // the zone dates are shown in
+	now time.Time
+	loc *time.Location // the zone dates are shown in
 	// verdicts is each waiting PR's latest Claude verdict, by ID. The root
 	// model copies it in before each view.
 	verdicts map[string]string
@@ -104,9 +103,7 @@ func reviewCostText(st store.PRStat) string {
 	return text + " · " + costAmount(st.CostUSD, st.Known, st.Unknown)
 }
 
-func newDone() doneModel { return doneModel{w: 120, h: 30, loc: time.Local} }
-
-func (m *doneModel) setSize(w, h int) { m.w, m.h = w, h }
+func newDone() doneModel { return doneModel{loc: time.Local} }
 
 // mergedRows is the PRs that left the wall for good, newest first.
 func mergedRows(prs []tracker.Tracked) []tracker.Tracked {

@@ -280,23 +280,30 @@ func (m drawerModel) key(msg tea.KeyPressMsg, c drawerCtx) (drawerModel, tea.Cmd
 
 // reviewKey handles a key on the Review tab.
 func (m drawerModel) reviewKey(msg tea.KeyPressMsg, c drawerCtx) (drawerModel, tea.Cmd, action) {
-	_, spans := m.layout(c)
+	lines, spans := m.layout(c)
+	maxS := m.scrollLimit(lines, c)
 	var fs []store.Finding
 	if r := m.current(); r != nil {
 		fs = orderedFindings(r.Findings)
 	}
 	switch k := msg.String(); k {
 	case "j", "down", "k", "up":
-		m.sel, m.scroll = stepSelection(m.sel, m.scroll, spans, m.bodyHeight(c.Height), m.maxScroll(c), keyDir(k))
+		m.sel, m.scroll = stepSelection(m.sel, m.scroll, spans, m.bodyHeight(c.Height), maxS, keyDir(k))
 	case "<", ">":
-		next := m.pass + map[string]int{"<": 1, ">": -1}[k]
+		next := m.pass + 1
+		if k == ">" {
+			next = m.pass - 1
+		}
 		if next >= 0 && next < len(m.reviews) {
 			m.pass, m.sel, m.scroll = next, 0, 0
 		}
+		maxS = m.maxScroll(c)
 	case "u":
 		m.understanding = !m.understanding
+		maxS = m.maxScroll(c)
 	case "a":
 		m.assumptions = !m.assumptions
+		maxS = m.maxScroll(c)
 	case "O":
 		if len(fs) > 0 && m.sel < len(fs) {
 			return m, nil, actionOpen{URL: findingURL(c.PR.PR.URL, fs[m.sel])}
@@ -320,7 +327,7 @@ func (m drawerModel) reviewKey(msg tea.KeyPressMsg, c drawerCtx) (drawerModel, t
 	default:
 		return m.sharedKey(k, c)
 	}
-	m.scroll = min(max(m.scroll, 0), m.maxScroll(c))
+	m.scroll = min(max(m.scroll, 0), maxS)
 	return m, nil, actionNone{}
 }
 
@@ -348,6 +355,13 @@ func (m drawerModel) sharedKey(k string, c drawerCtx) (drawerModel, tea.Cmd, act
 // maxScroll is the largest scroll that still fills the drawer.
 func (m drawerModel) maxScroll(c drawerCtx) int {
 	lines, _ := m.layout(c)
+	return m.scrollLimit(lines, c)
+}
+
+// scrollLimit is maxScroll for lines already laid out. A key that only moves
+// the selection keeps the line count (the selection mark is as wide as the
+// space it replaces), so a key handler lays out once and reuses this.
+func (m drawerModel) scrollLimit(lines []string, c drawerCtx) int {
 	return max(len(lines)-m.bodyHeight(c.Height), 0)
 }
 
@@ -565,7 +579,11 @@ func (m drawerModel) layout(c drawerCtx) (lines []string, spans []itemSpan) {
 		var out []string
 		for _, a := range r.Assumptions {
 			for i, l := range strings.Split(ansi.Wrap(cleanLine(a.Claim), max(inner-4, 1), ""), "\n") {
-				out = append(out, map[bool]string{true: "• ", false: "  "}[i == 0]+l)
+				bullet := "  "
+				if i == 0 {
+					bullet = "• "
+				}
+				out = append(out, bullet+l)
 			}
 			if ev := cleanLine(a.Evidence); ev != "" {
 				for l := range strings.SplitSeq(ansi.Wrap(ev, max(inner-4, 1), ""), "\n") {
@@ -621,6 +639,15 @@ func foldHint(key string, open bool) string {
 		return " ● Press " + key + " to hide"
 	}
 	return " ● Press " + key + " to show"
+}
+
+// foldMark is the arrow before a foldable group's heading: down while it
+// is open.
+func foldMark(open bool) string {
+	if open {
+		return "▾ "
+	}
+	return "▸ "
 }
 
 // findingHeader is a finding's location line, and its tags (blocking, the

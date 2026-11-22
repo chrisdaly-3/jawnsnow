@@ -106,7 +106,7 @@ func (m Model) postFrame(width, height int) (top, body []string, cursorRow, rows
 	}
 
 	pv, err := p.built.pv, p.built.err
-	commit := shortCommit(p.review.HeadOID)
+	commit := shortOID(p.review.HeadOID)
 	if err == nil {
 		commit = pv.Commit
 	}
@@ -150,7 +150,7 @@ func (m Model) postFrame(width, height int) (top, body []string, cursorRow, rows
 	body = append(body, ansi.Truncate(th.Accent().Render("Summary")+th.Muted().Render(" ● "+p.boxHelp()), inner, "…"))
 	box := p.box
 	box.SetWidth(max(inner-4, 1))
-	body = append(body, strings.Split(boxFrame(th, p.inBox()).Render(box.View()), "\n")...)
+	body = append(body, strings.Split(th.Border(p.inBox()).Padding(0, 1).Render(box.View()), "\n")...)
 	body = append(body, "")
 
 	fs := orderedFindings(p.review.Findings)
@@ -224,5 +224,3 @@ func (m Model) postFrame(width, height int) (top, body []string, cursorRow, rows
 	}
 	return top, body, cursorRow, rows
 }
-
-func shortCommit(oid string) string { return oid[:min(len(oid), 7)] }

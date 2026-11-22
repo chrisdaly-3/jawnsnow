@@ -47,10 +47,7 @@ func (m Model) fetchActivity(id string) (Model, tea.Cmd) {
 	if cur.Loading || (cur.Loaded && cur.Err == "" && cur.UpdatedAt.Equal(t.PR.UpdatedAt)) {
 		return m, nil
 	}
-	m.activity = maps.Clone(m.activity)
-	if m.activity == nil {
-		m.activity = map[string]activityState{}
-	}
+	m.activity = cloneMap(m.activity)
 	if m.quota.Limited() {
 		cur.RateLimited = true
 		m.activity[id] = cur

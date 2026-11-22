@@ -1243,7 +1243,11 @@ func TestHelpListsEveryKey(t *testing.T) {
 			}
 		})
 	}
-	for _, k := range allKeys() {
+	var all []keyHint
+	for _, s := range keyMap {
+		all = append(all, s.keys...)
+	}
+	for _, k := range all {
 		if !seen[k.keys+"\x00"+k.help] {
 			t.Errorf("%q %q is in no view's help", k.keys, k.help)
 		}

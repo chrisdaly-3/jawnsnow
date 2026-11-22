@@ -174,8 +174,7 @@ func (m drawerModel) checksLayout(c drawerCtx, lines []string, inner int) ([]str
 		}
 		lines = append(lines, "")
 		if cg.group == status.GroupPassed {
-			mark := map[bool]string{true: "▾ ", false: "▸ "}[m.showPassed]
-			lines = append(lines, ansi.Truncate(th.Accent().Render(mark+cg.heading+" ("+strconv.Itoa(len(group))+")")+th.Muted().Render(foldHint("s", m.showPassed)), inner, "…"))
+			lines = append(lines, ansi.Truncate(th.Accent().Render(foldMark(m.showPassed)+cg.heading+" ("+strconv.Itoa(len(group))+")")+th.Muted().Render(foldHint("s", m.showPassed)), inner, "…"))
 			if !m.showPassed {
 				continue
 			}
@@ -214,15 +213,17 @@ func checkLine(th theme.Theme, r status.CheckRow, selected bool, inner int) stri
 
 // checksKey handles a key on the Checks tab.
 func (m drawerModel) checksKey(msg tea.KeyPressMsg, c drawerCtx) (drawerModel, tea.Cmd, action) {
-	_, spans := m.layout(c)
+	lines, spans := m.layout(c)
+	maxS := m.scrollLimit(lines, c)
 	shown := orderedChecks(checkRows(c), m.showPassed)
 	m.checkSel = min(m.checkSel, max(len(shown)-1, 0))
 	switch k := msg.String(); k {
 	case "j", "down", "k", "up":
-		m.checkSel, m.checkScroll = stepSelection(m.checkSel, m.checkScroll, spans, m.bodyHeight(c.Height), m.maxScroll(c), keyDir(k))
+		m.checkSel, m.checkScroll = stepSelection(m.checkSel, m.checkScroll, spans, m.bodyHeight(c.Height), maxS, keyDir(k))
 	case "s":
 		m.showPassed = !m.showPassed
 		m.checkSel = min(m.checkSel, max(len(orderedChecks(checkRows(c), m.showPassed))-1, 0))
+		maxS = m.maxScroll(c)
 	case "O":
 		if len(shown) > 0 {
 			return m, nil, actionOpen{URL: checkURL(c.PR.PR.URL, shown[m.checkSel])}
@@ -235,7 +236,7 @@ func (m drawerModel) checksKey(msg tea.KeyPressMsg, c drawerCtx) (drawerModel, t
 	default:
 		return m.sharedKey(k, c)
 	}
-	m.checkScroll = min(max(m.checkScroll, 0), m.maxScroll(c))
+	m.checkScroll = min(max(m.checkScroll, 0), maxS)
 	return m, nil, actionNone{}
 }
 

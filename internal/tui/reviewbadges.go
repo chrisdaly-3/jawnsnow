@@ -98,11 +98,6 @@ func latestBadge(th theme.Theme, s reviewState, head string) string {
 	return verdictBadge(th, s.latest, head)
 }
 
-// reviewedAt reports whether r is a review at head that didn't fail.
-func reviewedAt(r *store.Review, head string) bool {
-	return r != nil && r.HeadOID == head && r.Outcome != "failed"
-}
-
 // verdictBadge is the badge for a finished review, or "" for none. A
 // review of an older head than the PR's is muted, since it no longer says
 // what the PR is, and an incomplete one says so.

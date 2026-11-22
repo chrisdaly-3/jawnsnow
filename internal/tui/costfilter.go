@@ -117,7 +117,7 @@ func (m Model) costPickerKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		c.pickCur = max(c.pickCur-1, 0)
 	case "space":
 		if c.pickCur < len(vals) {
-			c = c.toggle(c.pickDim, vals[c.pickCur])
+			c = c.toggle(c.pickDim, vals[c.pickCur]).recompute()
 		}
 	case "esc", "f":
 		c.picking = false
@@ -125,7 +125,7 @@ func (m Model) costPickerKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		m.help = true
 		return m, nil
 	}
-	m.cost = c.recompute()
+	m.cost = c
 	return m, m.resolveLabels()
 }
 

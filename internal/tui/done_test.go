@@ -52,13 +52,11 @@ func donePRs() []tracker.Tracked {
 func testDone(width, height, focus int) doneModel {
 	d := newDone()
 	d.now, d.focus, d.loc = t0, focus, time.UTC
-	d.setSize(width, height)
 	return d
 }
 
 func renderDone(t *testing.T, d doneModel, width, height int, prs []tracker.Tracked) string {
 	t.Helper()
-	d.setSize(width, height)
 	return d.view(width, height, prs, testTheme(t))
 }
 

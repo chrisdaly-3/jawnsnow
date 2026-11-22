@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"cmp"
 	"fmt"
 	"maps"
 	"os"
@@ -95,7 +96,7 @@ func (m Model) agentBody(width, height int) string {
 			mark = th.Accent().Render("▸ ")
 		}
 		if p := m.sessionPick(t); p != nil {
-			row = fmt.Sprintf("%-10s %s · %s  %s", t, cmpOr(p.Model, base.Model), cmpOr(p.Effort, base.Effort),
+			row = fmt.Sprintf("%-10s %s · %s  %s", t, cmp.Or(p.Model, base.Model), cmp.Or(p.Effort, base.Effort),
 				th.Accent().Render("(session pick)"))
 		}
 		line("%s%s", mark, row)
@@ -123,13 +124,6 @@ func (m Model) agentBody(width, height int) string {
 	line("%s", th.Muted().Render("e edit config.toml in "+editorCommand(m.editPath()).Args[0]))
 
 	return strings.Join(fit(strings.TrimRight(b.String(), "\n"), width, height), "\n")
-}
-
-func cmpOr(a, b string) string {
-	if a != "" {
-		return a
-	}
-	return b
 }
 
 func (m Model) claudeLine() string {

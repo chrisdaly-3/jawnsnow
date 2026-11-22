@@ -70,6 +70,22 @@ func (m Model) tabs() string {
 // trouble, rate-limit pacing, a poll that reached nothing, skipped feeds,
 // unreachable PRs and failed saves or opens.
 func (m Model) bannerLines(width int) []string {
+	texts := m.bannerTexts()
+	lines := make([]string, len(texts))
+	for i, t := range texts {
+		style := m.theme.Accent()
+		if i == 0 && m.loginWarning != "" {
+			style, t = m.theme.StatusFg("CI_FAILED").Bold(true), "⚠ "+m.loginWarning
+		}
+		lines[i] = ansi.Truncate(" "+style.Render(t), max(width, 0), "…")
+	}
+	return lines
+}
+
+// bannerTexts are the banners' unstyled texts, one per line; a login
+// warning holds the first line, which bannerLines draws. bodySize counts
+// them without rendering.
+func (m Model) bannerTexts() []string {
 	var texts []string
 	if m.loginWarning != "" {
 		texts = append(texts, "")
@@ -86,15 +102,7 @@ func (m Model) bannerLines(width int) []string {
 			texts = append(texts, s)
 		}
 	}
-	lines := make([]string, len(texts))
-	for i, t := range texts {
-		style := m.theme.Accent()
-		if i == 0 && m.loginWarning != "" {
-			style, t = m.theme.StatusFg("CI_FAILED").Bold(true), "⚠ "+m.loginWarning
-		}
-		lines[i] = ansi.Truncate(" "+style.Render(t), max(width, 0), "…")
-	}
-	return lines
+	return texts
 }
 
 // unauthorizedNote is what a 401 from GitHub shows instead of a failed poll.

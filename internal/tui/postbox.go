@@ -72,7 +72,7 @@ func boxPlaceholder(e post.Event) string {
 // boxStyles draws the box's text in snow's own palette. textarea's
 // defaults use the basic ANSI colours, which terminal themes remap, so
 // every style is set here: plain text, muted placeholder text and an
-// accent cursor. The frame is drawn around the box by boxFrame, not here:
+// accent cursor. The frame is drawn around the box by theme.Border, not here:
 // textarea gives every line Base's style, so a border on Base is drawn
 // again inside the box.
 func boxStyles(th theme.Theme) textarea.Styles {
@@ -91,19 +91,6 @@ func boxStyles(th theme.Theme) textarea.Styles {
 		st.Cursor.Color = nil
 	}
 	return st
-}
-
-// boxFrame is the rounded frame around the box: in the accent colour while
-// it has the keys and muted when not, plain with NO_COLOR.
-func boxFrame(th theme.Theme, focused bool) lipgloss.Style {
-	f := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1)
-	switch {
-	case th.NoColor():
-		return f
-	case focused:
-		return f.BorderForeground(th.AccentColor())
-	}
-	return f.BorderForeground(th.MutedColor())
 }
 
 // boxWidth is the box's text width in a window width cells wide: the

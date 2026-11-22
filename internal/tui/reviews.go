@@ -518,10 +518,7 @@ func (m Model) markPosted(id string) Model {
 	if m.reviews.posted[id] {
 		return m
 	}
-	m.reviews.posted = maps.Clone(m.reviews.posted)
-	if m.reviews.posted == nil {
-		m.reviews.posted = map[string]bool{}
-	}
+	m.reviews.posted = cloneMap(m.reviews.posted)
 	m.reviews.posted[id] = true
 	return m
 }

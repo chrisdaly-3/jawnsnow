@@ -80,7 +80,7 @@ func (m drawerModel) activityLayout(c drawerCtx, lines []string, inner int) ([]s
 		if len(s.Bots) == 0 {
 			return
 		}
-		mark := map[bool]string{true: "▾ ", false: "▸ "}[m.showBots]
+		mark := foldMark(m.showBots)
 		noun := "bot items"
 		if len(s.Bots) == 1 {
 			noun = "bot item"
@@ -194,7 +194,11 @@ func activityEntryLines(th theme.Theme, e status.ActivityEntry, selected bool, n
 			what = "reviewed"
 		}
 		if n := it.InlineComments; n > 0 {
-			meta = append(meta, strconv.Itoa(n)+map[bool]string{true: " comment", false: " comments"}[n == 1])
+			noun := " comments"
+			if n == 1 {
+				noun = " comment"
+			}
+			meta = append(meta, strconv.Itoa(n)+noun)
 		}
 		body = excerpt(it.Text)
 	default:
@@ -231,7 +235,8 @@ func excerpt(text string) []string {
 
 // activityKey handles a key on the Activity tab (G6).
 func (m drawerModel) activityKey(msg tea.KeyPressMsg, c drawerCtx) (drawerModel, tea.Cmd, action) {
-	_, spans := m.layout(c)
+	lines, spans := m.layout(c)
+	maxS := m.scrollLimit(lines, c)
 	shown := shownActivity(activityView(c), m.showBots)
 	if !c.Activity.Loaded {
 		shown = nil
@@ -242,12 +247,13 @@ func (m drawerModel) activityKey(msg tea.KeyPressMsg, c drawerCtx) (drawerModel,
 		if len(spans) != len(shown) {
 			spans = nil // nothing to select: j and k scroll
 		}
-		m.actSel, m.actScroll = stepSelection(m.actSel, m.actScroll, spans, m.bodyHeight(c.Height), m.maxScroll(c), keyDir(k))
+		m.actSel, m.actScroll = stepSelection(m.actSel, m.actScroll, spans, m.bodyHeight(c.Height), maxS, keyDir(k))
 	case "b":
 		m.showBots = !m.showBots
 		if c.Activity.Loaded {
 			m.actSel = min(m.actSel, max(len(shownActivity(activityView(c), m.showBots))-1, 0))
 		}
+		maxS = m.maxScroll(c)
 	case "O":
 		if len(shown) > 0 {
 			return m, nil, actionOpen{URL: activityURL(c.PR.PR.URL, shown[m.actSel].Item)}
@@ -260,7 +266,7 @@ func (m drawerModel) activityKey(msg tea.KeyPressMsg, c drawerCtx) (drawerModel,
 	default:
 		return m.sharedKey(k, c)
 	}
-	m.actScroll = min(max(m.actScroll, 0), m.maxScroll(c))
+	m.actScroll = min(max(m.actScroll, 0), maxS)
 	return m, nil, actionNone{}
 }
 

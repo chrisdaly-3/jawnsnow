@@ -316,7 +316,7 @@ func (m Model) costKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	case m.cost.picking:
 		return m.costPickerKey(msg)
 	}
-	c := m.cost
+	c, requery := m.cost, false
 	switch msg.String() {
 	case "r":
 		next := (c.preset + 1) % len(costPresets)
@@ -339,11 +339,11 @@ func (m Model) costKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 				i = j
 			}
 		}
-		c.group = costGroups[(i+1)%len(costGroups)]
+		c.group, requery = costGroups[(i+1)%len(costGroups)], true
 	case "b":
-		c.bucket = c.nextBucket()
+		c.bucket, requery = c.nextBucket(), true
 	case "t":
-		c.cumulative = !c.cumulative
+		c.cumulative, requery = !c.cumulative, true
 	case "h", "left":
 		c.cursor = max(c.cursor-1, 0)
 	case "l", "right":
@@ -359,7 +359,12 @@ func (m Model) costKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			return m.showView(ViewReviews)
 		}
 	}
-	m.cost = c.recompute()
+	// Only a change to the query re-aggregates the rows; the other keys
+	// move a cursor that is already clamped.
+	if requery {
+		c = c.recompute()
+	}
+	m.cost = c
 	return m, m.resolveLabels()
 }
 

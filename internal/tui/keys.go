@@ -107,14 +107,6 @@ var keyMap = []keySection{
 	}},
 }
 
-func allKeys() []keyHint {
-	var out []keyHint
-	for _, s := range keyMap {
-		out = append(out, s.keys...)
-	}
-	return out
-}
-
 // footerKeys are the short hints for each view, before the global ones.
 var footerKeys = map[View][]keyHint{
 	ViewWall:    {{"h/l", "lane"}, {"j/k", "card"}, {"space", "review"}, {"x", "hide"}, {"o", "open"}, {"/", "filter"}, {"a", "author"}},

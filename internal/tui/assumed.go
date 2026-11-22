@@ -33,10 +33,7 @@ func (m Model) assumePosted(done postDoneMsg) Model {
 	if _, tracked := m.prs[done.PRID]; !ok || !tracked || m.viewer == "" {
 		return m
 	}
-	m.assumed = maps.Clone(m.assumed)
-	if m.assumed == nil {
-		m.assumed = map[string]assumedReview{}
-	}
+	m.assumed = cloneMap(m.assumed)
 	m.assumed[done.PRID] = assumedReview{
 		review: github.Review{
 			Author: m.viewer, State: state, Body: done.Body, CommitOID: done.Posted.CommitOID,
