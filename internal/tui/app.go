@@ -361,7 +361,7 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 		m.width, m.height = msg.Width, msg.Height
 		var cmd tea.Cmd
 		m.drawer, cmd = m.drawer.resize(msg.Width)
-		return m, cmd
+		return m.resizeBox(), cmd
 	case drawerTickMsg, drawerJumpMsg:
 		return m.drawerUpdate(msg)
 	case activityMsg:

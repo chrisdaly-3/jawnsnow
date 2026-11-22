@@ -38,8 +38,6 @@ func (p postFlow) hints() []keyHint {
 		return postLoadingKeys
 	case postRepost:
 		return postRepostKeys
-	case postPick:
-		return postPickKeys
 	case postResult:
 		return postResultKeys
 	}
@@ -102,28 +100,21 @@ func (m Model) postFrame(width, height int) (top, body []string, cursorRow, rows
 		return append([]string{th.Accent().Render(title), ""}, wrap(q, th.Accent())...), nil, 0, rows
 	case postResult:
 		return append([]string{th.Accent().Render(title), ""}, wrap(cleanLine(p.result), th.StatusFg("CI_FAILED"))...), nil, 0, rows
-	case postPick:
-		top = []string{th.Accent().Render(title), ""}
-		for i, e := range postEvents {
-			mark := "  "
-			if i == p.pick {
-				mark = th.Accent().Render("▸ ")
-			}
-			top = append(top, mark+e.label)
-		}
-		return top, nil, 0, rows
 	}
 
 	pv, err := p.built.pv, p.built.err
-	event, commit := string(p.sel.Event), shortCommit(p.review.HeadOID)
+	commit := shortCommit(p.review.HeadOID)
 	if err == nil {
-		event, commit = string(pv.Event), pv.Commit
+		commit = pv.Commit
 	}
-	top = []string{th.Accent().Render(title + " · " + eventLabel(event) + " · " + cleanLine(commit))}
+	top = []string{th.Accent().Render(title + " · " + cleanLine(commit))}
 	if t, ok := m.prs[p.review.PRID]; ok && t.PR.HeadOID != "" && t.PR.HeadOID != p.review.HeadOID {
 		top = append(top, wrap(headMovedWarning, th.StatusFg("CI_WAITING"))...)
 	}
-	if err != nil {
+	// Build's refusal (Request changes with no summary, a Comment with
+	// nothing in it) shows once enter has tried to post, not while you are
+	// still writing.
+	if err != nil && p.showBuildErr {
 		top = append(top, wrap(cleanLine(err.Error()), th.StatusFg("CI_FAILED"))...)
 	}
 	if p.err != "" {
@@ -139,15 +130,34 @@ func (m Model) postFrame(width, height int) (top, body []string, cursorRow, rows
 		}
 		top = append(top, wrap("Rendered view hides: "+strings.Join(items, "; ")+" — press m to see the raw text", th.StatusFg("CI_WAITING"))...)
 	}
-	top = append(top, "", ansi.Truncate(th.Accent().Render("Summary")+th.Muted().Render(" ● "+p.boxHelp()), inner, "…"))
-	box := p.box
-	box.SetWidth(inner)
-	top = append(top, strings.Split(box.View(), "\n")...)
+	// The event row: the three events as tabs, the chosen one filled.
+	eventHint := " ● h/l to change"
+	if p.inBox {
+		eventHint = " ● tab, then h/l to change"
+	}
+	tabs := make([]string, len(postEvents))
+	for i, e := range postEvents {
+		tabs[i] = th.Tab(e.label, e.event == p.sel.Event)
+	}
 	top = append(top, "")
+	// The event row and the box scroll with the rest, so a short window
+	// still shows the checklist; the scroll follows the box while it has
+	// the keys (summaryRow) and the checklist's cursor otherwise.
+	body = append(body, ansi.Truncate(th.Accent().Render("Post as")+th.Muted().Render(eventHint), inner, "…"), strings.Join(tabs, " "), "")
+	summaryRow := len(body)
+	body = append(body, ansi.Truncate(th.Accent().Render("Summary")+th.Muted().Render(" ● "+p.boxHelp()), inner, "…"))
+	box := p.box
+	box.SetWidth(max(inner-4, 1))
+	body = append(body, strings.Split(boxFrame(th, p.inBox).Render(box.View()), "\n")...)
+	body = append(body, "")
 
 	fs := orderedFindings(p.review.Findings)
 	if len(fs) > 0 {
-		body = append(body, th.Accent().Render("Findings"))
+		hint := " ● j/k to move · space to include or leave out"
+		if p.inBox {
+			hint = " ● tab to choose which to post"
+		}
+		body = append(body, ansi.Truncate(th.Accent().Render("Findings")+th.Muted().Render(hint), inner, "…"))
 	}
 	for i, f := range fs {
 		mark, box := "  ", "[ ] "
@@ -169,11 +179,22 @@ func (m Model) postFrame(width, height int) (top, body []string, cursorRow, rows
 		if f.ThreadID != "" {
 			row.WriteString(th.Muted().Render("  [posted]"))
 		}
-		body = append(body, ansi.Truncate(row.String(), inner, "…"))
+		line := ansi.Truncate(row.String(), inner, "…")
+		// The checklist's cursor row is filled like the drawer's selection
+		// while the checklist has the keys.
+		if i == p.cursor && !p.inBox {
+			line = th.Selected(line, inner)
+		}
+		body = append(body, line)
 	}
 	if len(fs) > 0 {
 		body = append(body, "")
 	}
+	raw := "m for the raw markdown"
+	if p.raw {
+		raw = "m for the rendered view"
+	}
+	body = append(body, ansi.Truncate(th.Accent().Render("What will be posted")+th.Muted().Render(" ● "+raw), inner, "…"))
 	if err == nil && len(pv.Parts) == 0 {
 		body = append(body, th.Muted().Render("No summary or comments: only the event is posted."))
 	}
@@ -191,6 +212,9 @@ func (m Model) postFrame(width, height int) (top, body []string, cursorRow, rows
 			body = append(body, "  "+l)
 		}
 		body = append(body, "")
+	}
+	if p.inBox {
+		cursorRow = summaryRow
 	}
 	return top, body, cursorRow, rows
 }

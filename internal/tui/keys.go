@@ -63,15 +63,16 @@ var keyMap = []keySection{
 	}},
 	{"Post", []keyHint{
 		{"y n", "post again, or not, when it was posted before"},
-		{"j k", "choose the event, or the finding"},
 		{"tab", "move between the summary box and the findings"},
 		{"shift+enter", "a new line in the summary box"},
+		{"h l", "Approve, Comment or Request changes"},
+		{"j k", "choose the finding"},
 		{"space", "include or leave out the finding"},
 		{"e", "open the summary in $VISUAL or $EDITOR"},
 		{"m", "show the raw markdown or the rendered view"},
 		{"ctrl+d ctrl+u", "scroll the preview"},
-		{"enter", "pick the event, then post"},
-		{"esc", "back out a step"},
+		{"enter", "post"},
+		{"esc", "leave the box, or cancel"},
 	}},
 	{"Cost filter", costPickerHelp},
 	{"Agent", []keyHint{
@@ -127,7 +128,6 @@ var footerKeys = map[View][]keyHint{
 var (
 	postLoadingKeys = []keyHint{{"esc", "cancel"}}
 	postRepostKeys  = []keyHint{{"y", "post again"}, {"n", "cancel"}}
-	postPickKeys    = []keyHint{{"j/k", "event"}, {"enter", "select"}, {"esc", "cancel"}, {"?", "help"}}
 	postPostingKeys = []keyHint{{"", "posting to GitHub…"}}
 	postResultKeys  = []keyHint{{"esc", "close"}}
 	// postHoldOnKey leads the preview's footer after an enter that came
@@ -140,17 +140,17 @@ func postPreviewKeys(raw bool) []keyHint {
 	if raw {
 		m.help = "rendered"
 	}
-	return []keyHint{{"tab", "summary"}, {"j/k", "finding"}, {"space", "toggle"}, {"e", "open in $EDITOR"}, m,
-		{"ctrl+d/ctrl+u", "scroll"}, {"enter", "post"}, {"esc", "back"}, {"?", "help"}}
+	return []keyHint{{"enter", "post"}, {"h/l", "event"}, {"j/k", "finding"}, {"space", "toggle"}, {"tab", "summary"},
+		{"e", "open in $EDITOR"}, m, {"ctrl+d/ctrl+u", "scroll"}, {"esc", "cancel"}, {"?", "help"}}
 }
 
 // postBoxKeys is the preview's footer while the summary box has the keys.
 // enterPosts is whether enter posts there (see postFlow.enterPosts).
 func postBoxKeys(enterPosts bool) []keyHint {
 	if enterPosts {
-		return []keyHint{{"shift+enter", "new line"}, {"enter", "post"}, {"tab/esc", "leave the box"}}
+		return []keyHint{{"enter", "post"}, {"shift+enter", "new line"}, {"tab/esc", "findings and event"}}
 	}
-	return []keyHint{{"enter", "new line"}, {"tab/esc", "leave the box"}}
+	return []keyHint{{"enter", "new line"}, {"tab/esc", "findings and event, then enter to post"}}
 }
 
 var footerGlobal = []keyHint{{"[ ]", "views"}, {"R", "poll"}, {"m", "mode"}, {"?", "help"}, {"q", "quit"}}

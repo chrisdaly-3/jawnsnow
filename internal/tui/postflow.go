@@ -28,9 +28,8 @@ type postStage int
 const (
 	postLoading postStage = iota // reading the review's earlier posts
 	postRepost                   // it was posted before: ask first
-	postPick
-	postPreview
-	postResult // posted, but recording it failed
+	postPreview                  // the one screen: event, summary, findings, what will be posted
+	postResult                   // posted, but recording it failed
 )
 
 type postEvent struct {
@@ -99,17 +98,23 @@ type postFlow struct {
 	// mustAsk is set when a post may have reached GitHub: the next enter
 	// asks again before sending.
 	mustAsk bool
-	pick    int // index into postEvents
 	sel     post.Selection
 	// box is the preview's summary box, which edits sel.Body. inBox is set
-	// while it has the keys; the preview opens with it set. enterPosts is
-	// whether enter in the box posts (shift+enter being the new line), which
-	// needs a terminal that reports shift+enter apart from enter.
-	box               textarea.Model
-	inBox, enterPosts bool
-	cursor            int // the checklist row, in orderedFindings order
-	scroll            int
-	raw               bool
+	// while it has the keys; the preview opens with it set, and the
+	// checklist has the keys otherwise. enterPosts is whether enter in the
+	// box posts (shift+enter being the new line), which needs a terminal
+	// that reports shift+enter apart from enter. opened is set once the
+	// preview has been shown, so coming back from a repost question keeps
+	// the box and the checklist.
+	box                       textarea.Model
+	inBox, enterPosts, opened bool
+	// showBuildErr is set when enter tried to post a selection Build
+	// refused (Request changes with no summary, a Comment with nothing in
+	// it); the preview shows Build's reason until a change fixes it.
+	showBuildErr bool
+	cursor       int // the checklist row, in orderedFindings order
+	scroll       int
+	raw          bool
 	// inFlight is set from the confirming enter until the post's result
 	// arrives; every key but ctrl+c is ignored meanwhile, so a second
 	// enter sends nothing. editing is the same for the editor. quitArmed
@@ -141,6 +146,28 @@ var buildPost = post.Build
 // rebuild builds the payload for the current selection.
 func (p *postFlow) rebuild() {
 	p.built.in, p.built.pv, p.built.err = buildPost(p.review, p.review.PRID, p.sel)
+	if p.built.err == nil {
+		p.showBuildErr = false
+	}
+}
+
+// openPreview shows the preview. The first time it opens with the summary
+// box focused; coming back from a repost question keeps the box and the
+// checklist as they were.
+func (m Model) openPreview(p postFlow) postFlow {
+	p.stage, p.previewAt = postPreview, m.now()
+	if !p.opened {
+		p.opened = true
+		p.rebuild()
+		p.box, p.inBox, p.enterPosts = m.summaryBox(p.sel), true, m.keysDisambiguated
+		p.box.Focus()
+	}
+	return p
+}
+
+// eventIndex is e's place in postEvents, the event row's order.
+func eventIndex(e post.Event) int {
+	return max(slices.IndexFunc(postEvents, func(pe postEvent) bool { return pe.event == e }), 0)
 }
 
 type (
@@ -192,9 +219,7 @@ func (m Model) openPost(reviewID string) (Model, tea.Cmd) {
 		return m, nil
 	}
 	rv := m.drawer.reviews[i]
-	sel := post.DefaultSelection(rv)
-	pick := slices.IndexFunc(postEvents, func(e postEvent) bool { return e.event == sel.Event })
-	m.post = &postFlow{stage: postLoading, review: rv, sel: sel, pick: max(pick, 0)}
+	m.post = &postFlow{stage: postLoading, review: rv, sel: post.DefaultSelection(rv)}
 	st := m.store
 	return m, func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), inputsTimeout)
@@ -232,9 +257,10 @@ func (m Model) updatePost(msg tea.Msg) (_ Model, _ tea.Cmd, ok bool) {
 		if u, ok := m.unconfirmedPosts[msg.ReviewID]; ok && (last == nil || u.At.After(last.at)) {
 			last = &priorPost{event: u.Event, at: u.At, uncertain: u.Kind == postUncertain}
 		}
-		p.stage = postPick
 		if last != nil {
 			p.ask, p.stage = *last, postRepost
+		} else {
+			p = m.openPreview(p)
 		}
 		m.post = &p
 	case postEditReadyMsg:
@@ -285,7 +311,7 @@ func (m Model) postCapture(msg tea.KeyPressMsg) (_ Model, _ tea.Cmd, ok bool) {
 		return m, nil, true
 	}
 	if msg.String() == "?" && !m.post.inFlight && !m.post.editing && !m.post.boxActive() &&
-		(m.post.stage == postPick || m.post.stage == postPreview) {
+		m.post.stage == postPreview {
 		m.help = true
 		return m, nil, true
 	}
@@ -314,25 +340,8 @@ func (m Model) postKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	case postRepost:
 		switch k {
 		case "y", "Y":
-			p.stage = postPick
+			p = m.openPreview(p)
 		case "n", "N", "esc":
-			m.post = nil
-			return m, nil
-		}
-	case postPick:
-		switch k {
-		case "j", "down":
-			p.pick = min(p.pick+1, len(postEvents)-1)
-		case "k", "up":
-			p.pick = max(p.pick-1, 0)
-		case "enter":
-			p.sel.Event, p.stage, p.scroll, p.err = postEvents[p.pick].event, postPreview, 0, ""
-			p.previewAt = m.now()
-			p.rebuild()
-			// The preview opens with the summary box focused.
-			p.box, p.inBox, p.enterPosts = m.summaryBox(p.sel), true, m.keysDisambiguated
-			p.box.Focus()
-		case "esc":
 			m.post = nil
 			return m, nil
 		}
@@ -374,8 +383,17 @@ func (m Model) previewKey(p postFlow, k string) (Model, tea.Cmd) {
 			p.previewAt = m.now()
 			p.rebuild()
 		}
+	case "h", "left", "l", "right":
+		// The event row: h and l pick Approve, Comment or Request changes.
+		i := eventIndex(p.sel.Event) + map[string]int{"h": -1, "left": -1, "l": 1, "right": 1}[k]
+		if i >= 0 && i < len(postEvents) {
+			p.sel.Event = postEvents[i].event
+			p.box.Placeholder = boxPlaceholder(p.sel.Event)
+			p.previewAt = m.now()
+			p.rebuild()
+		}
 	case "tab":
-		p.inBox = true
+		p.inBox, follow = true, true // the scroll goes back to the box
 		p.box.Focus()
 	case "m":
 		p.raw = !p.raw
@@ -397,7 +415,8 @@ func (m Model) previewKey(p postFlow, k string) (Model, tea.Cmd) {
 		}
 		in, pv, err := p.built.in, p.built.pv, p.built.err
 		if err != nil {
-			break // the preview shows why
+			p.showBuildErr = true // the preview now says why
+			break
 		}
 		if p.mustAsk {
 			u := m.unconfirmedPosts[p.review.ID]
@@ -411,8 +430,7 @@ func (m Model) previewKey(p postFlow, k string) (Model, tea.Cmd) {
 		m.post = &p
 		return m, m.postCmd(p.review, p.sel, in, pv.ThreadFindings, p.known)
 	case "esc":
-		p.stage, p.err = postPick, ""
-		m.post = &p
+		m.post = nil
 		return m, nil
 	}
 	m.post = &p
