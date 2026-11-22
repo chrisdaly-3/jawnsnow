@@ -72,25 +72,8 @@ func setThreads(ctx context.Context, tx *sql.Tx, reviewID string, threads map[in
 
 // PostedFor returns reviewID's posts, newest first.
 func (s *Store) PostedFor(ctx context.Context, reviewID string) ([]Posted, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT data FROM posted_reviews
+	return queryJSON[Posted](ctx, s.db, "post", `SELECT data FROM posted_reviews
 		WHERE review_id = ? ORDER BY at DESC, id DESC`, reviewID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []Posted
-	for rows.Next() {
-		var data string
-		if err := rows.Scan(&data); err != nil {
-			return nil, err
-		}
-		var p Posted
-		if err := json.Unmarshal([]byte(data), &p); err != nil {
-			return nil, fmt.Errorf("decode post: %w", err)
-		}
-		out = append(out, p)
-	}
-	return out, rows.Err()
 }
 
 // LatestPostsOf returns the newest post of each of prID's reviews that was
@@ -123,18 +106,13 @@ func (s *Store) LatestPostsOf(ctx context.Context, prID string) (map[string]Post
 
 // PostedReviewIDs is the set of review IDs that were posted at least once.
 func (s *Store) PostedReviewIDs(ctx context.Context) (map[string]bool, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT DISTINCT review_id FROM posted_reviews`)
+	ids, err := queryStrings(ctx, s.db, `SELECT DISTINCT review_id FROM posted_reviews`)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	out := map[string]bool{}
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
+	out := make(map[string]bool, len(ids))
+	for _, id := range ids {
 		out[id] = true
 	}
-	return out, rows.Err()
+	return out, nil
 }

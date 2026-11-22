@@ -46,24 +46,7 @@ func (s *Store) CostRows(ctx context.Context, f CostFilter) ([]CostRow, error) {
 	if len(where) > 0 {
 		q += ` WHERE ` + strings.Join(where, ` AND `)
 	}
-	rows, err := s.db.QueryContext(ctx, q+` ORDER BY at, id`, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []CostRow
-	for rows.Next() {
-		var data string
-		if err := rows.Scan(&data); err != nil {
-			return nil, err
-		}
-		var c CostRow
-		if err := json.Unmarshal([]byte(data), &c); err != nil {
-			return nil, fmt.Errorf("decode cost row: %w", err)
-		}
-		out = append(out, c)
-	}
-	return out, rows.Err()
+	return queryJSON[CostRow](ctx, s.db, "cost row", q+` ORDER BY at, id`, args...)
 }
 
 func placeholders(n int) string {

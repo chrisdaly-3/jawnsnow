@@ -120,22 +120,9 @@ func (s *Store) Reviews(ctx context.Context, prID string) ([]Review, error) {
 // It looks the PR up by repo and number because a PR that has stopped
 // being tracked may have no stored node ID left to look it up by.
 func (s *Store) ReviewIDsOf(ctx context.Context, repo string, number int) ([]string, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id FROM reviews
+	return queryStrings(ctx, s.db, `SELECT id FROM reviews
 		WHERE json_extract(data, '$.Repo') = ? AND json_extract(data, '$.Number') = ?
 		ORDER BY id`, repo, number)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var ids []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		ids = append(ids, id)
-	}
-	return ids, rows.Err()
 }
 
 // LatestReview returns prID's newest review, whatever its outcome.
@@ -281,24 +268,7 @@ func (s *Store) AutoReviewsSince(ctx context.Context, prID string, t time.Time) 
 
 // Slots returns repo's worktree slots ordered by path.
 func (s *Store) Slots(ctx context.Context, repo string) ([]Slot, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT data FROM worktree_slots WHERE repo = ? ORDER BY path`, repo)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []Slot
-	for rows.Next() {
-		var data string
-		if err := rows.Scan(&data); err != nil {
-			return nil, err
-		}
-		var sl Slot
-		if err := json.Unmarshal([]byte(data), &sl); err != nil {
-			return nil, fmt.Errorf("decode slot: %w", err)
-		}
-		out = append(out, sl)
-	}
-	return out, rows.Err()
+	return queryJSON[Slot](ctx, s.db, "slot", `SELECT data FROM worktree_slots WHERE repo = ? ORDER BY path`, repo)
 }
 
 // SaveSlot upserts a worktree slot keyed by its path.
@@ -315,20 +285,7 @@ func (s *Store) SaveSlot(ctx context.Context, sl Slot) error {
 
 // SlotRepos lists, sorted, every repo that has a stored slot.
 func (s *Store) SlotRepos(ctx context.Context) ([]string, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT DISTINCT repo FROM worktree_slots ORDER BY repo`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []string
-	for rows.Next() {
-		var repo string
-		if err := rows.Scan(&repo); err != nil {
-			return nil, err
-		}
-		out = append(out, repo)
-	}
-	return out, rows.Err()
+	return queryStrings(ctx, s.db, `SELECT DISTINCT repo FROM worktree_slots ORDER BY repo`)
 }
 
 // DeleteSlot removes the slot at path; an unknown path is ignored.

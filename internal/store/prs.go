@@ -65,15 +65,15 @@ func (s *Store) SaveTracked(ctx context.Context, ts []tracker.Tracked) error {
 
 // DeleteTracked removes the PRs with the given IDs; unknown IDs are ignored.
 func (s *Store) DeleteTracked(ctx context.Context, ids []string) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
+	if len(ids) == 0 {
+		return nil
 	}
-	defer tx.Rollback()
-	for _, id := range ids {
-		if _, err := tx.ExecContext(ctx, `DELETE FROM prs WHERE id = ?`, id); err != nil {
-			return fmt.Errorf("delete PR %s: %w", id, err)
-		}
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
 	}
-	return tx.Commit()
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM prs WHERE id IN (`+placeholders(len(ids))+`)`, args...); err != nil {
+		return fmt.Errorf("delete PRs: %w", err)
+	}
+	return nil
 }
