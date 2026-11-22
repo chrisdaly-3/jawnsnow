@@ -9,6 +9,7 @@ import (
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/extension"
 
+	"github.com/chrisdaly-3/jawnsnow/internal/github"
 	"github.com/chrisdaly-3/jawnsnow/internal/store"
 )
 
@@ -234,9 +235,17 @@ func TestBuildExcludesUnchecked(t *testing.T) {
 
 func TestBuildRequestChangesNeedsBody(t *testing.T) {
 	r := review(anchored(1, "a.go", 1, "x"))
-	_, _, err := Build(r, "PR", Selection{Event: "REQUEST_CHANGES", Body: " \n "})
+	in, pv, err := Build(r, "PR", Selection{Event: "REQUEST_CHANGES", Body: " \n "})
 	if err == nil || err.Error() != "Request changes needs a summary — write one in the box" {
 		t.Errorf("err = %v", err)
+	}
+	// The preview still shows the finding it would post; the payload is
+	// empty, so nothing can be sent.
+	if len(pv.Parts) != 1 || pv.Parts[0].Label != "a.go:1" {
+		t.Errorf("preview parts = %+v, want the a.go:1 thread", pv.Parts)
+	}
+	if !reflect.DeepEqual(in, github.PostInput{}) {
+		t.Errorf("payload = %+v, want none while the summary is missing", in)
 	}
 	if _, _, err := Build(r, "PR", Selection{Event: "REQUEST_CHANGES", Body: "why"}); err != nil {
 		t.Errorf("with body: %v", err)

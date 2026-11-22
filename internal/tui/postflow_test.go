@@ -288,9 +288,14 @@ func TestRequestChangesBlocksWithoutBody(t *testing.T) {
 	h := newPostHarness(t, postReview(), opts{})
 	h.press(t, "P", "tab") // Request changes, chosen from the verdict
 	const msg = "Request changes needs a summary — write one in the box"
-	// Nothing is flagged while you are still choosing and writing.
-	if got := modalText(h.m); strings.Contains(got, msg) {
+	// Nothing is flagged while you are still choosing and writing, and the
+	// checked findings already show under What will be posted.
+	got := modalText(h.m)
+	if strings.Contains(got, msg) {
 		t.Errorf("the validation error shows before enter:\n%s", got)
+	}
+	if !strings.Contains(got, "What will be posted ● m for the raw markdown pkg/policy/decision.go:12 nit: rename") {
+		t.Errorf("the findings to post don't show before a summary is written:\n%s", got)
 	}
 	h.wait()
 	h.press(t, "enter")

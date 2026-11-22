@@ -139,13 +139,6 @@ func Build(r store.Review, prID string, sel Selection) (in github.PostInput, p P
 		body = ""
 	}
 
-	switch {
-	case sel.Event == RequestChanges && ownBlank:
-		return in, p, errors.New("Request changes needs a summary — write one in the box")
-	case sel.Event == Comment && body == "" && len(threads) == 0:
-		return in, p, errors.New("nothing to post: write a summary or select a finding")
-	}
-
 	in = github.PostInput{PRID: prID, CommitOID: r.HeadOID, Event: string(sel.Event), Body: body, Threads: threads}
 	p = Preview{Event: sel.Event, Commit: shortOID(r.HeadOID), ThreadFindings: threadFindings}
 	add := func(label, md string) {
@@ -163,6 +156,16 @@ func Build(r store.Review, prID string, sel Selection) (in github.PostInput, p P
 			label = fmt.Sprintf("%s:%d-%d", t.Path, t.StartLine, t.Line)
 		}
 		add(label, t.Body)
+	}
+
+	// A selection that can't post yet still gets its preview, so the
+	// findings it would post show while the summary is being written; the
+	// payload comes back empty, so nothing can be sent until it can.
+	switch {
+	case sel.Event == RequestChanges && ownBlank:
+		return github.PostInput{}, p, errors.New("Request changes needs a summary — write one in the box")
+	case sel.Event == Comment && body == "" && len(threads) == 0:
+		return github.PostInput{}, p, errors.New("nothing to post: write a summary or select a finding")
 	}
 	return in, p, nil
 }
