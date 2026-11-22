@@ -102,23 +102,7 @@ func LoadSecurityGuide(ctx context.Context, r Repo, base, outDir string) (Securi
 	if err != nil {
 		return SecurityGuide{}, false, err
 	}
-	var skillDir string
-	for _, root := range securityRoots {
-		for _, e := range entries { // ls-tree output is sorted by path
-			rest, ok := strings.CutPrefix(e.path, root+"/")
-			if !ok || !e.regular() {
-				continue
-			}
-			name, file, ok := strings.Cut(rest, "/")
-			if ok && file == "SKILL.md" && strings.Contains(name, "security-review") {
-				skillDir = root + "/" + name
-				break
-			}
-		}
-		if skillDir != "" {
-			break
-		}
-	}
+	skillDir := securitySkillDir(entries)
 	if skillDir == "" {
 		return SecurityGuide{}, false, nil
 	}
@@ -157,6 +141,25 @@ func LoadSecurityGuide(ctx context.Context, r Repo, base, outDir string) (Securi
 		guide.References = append(guide.References, p)
 	}
 	return guide, true, nil
+}
+
+// securitySkillDir is the first skill directory in entries, trying the
+// securityRoots in order, whose name contains "security-review" and that
+// holds a SKILL.md. It is "" when there is none.
+func securitySkillDir(entries []treeEntry) string {
+	for _, root := range securityRoots {
+		for _, e := range entries { // ls-tree output is sorted by path
+			rest, ok := strings.CutPrefix(e.path, root+"/")
+			if !ok || !e.regular() {
+				continue
+			}
+			name, file, ok := strings.Cut(rest, "/")
+			if ok && file == "SKILL.md" && strings.Contains(name, "security-review") {
+				return root + "/" + name
+			}
+		}
+	}
+	return ""
 }
 
 // treeEntry is one line of `git ls-tree`.

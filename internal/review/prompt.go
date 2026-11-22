@@ -66,10 +66,7 @@ func BuildPrompt(in PromptInput) string {
 		fmt.Fprintf(&b, "Diff since your last review: %s\n", in.Files.Since)
 	}
 	if len(in.ContextRepos) > 0 {
-		b.WriteString("Context repos:\n")
-		for _, r := range in.ContextRepos {
-			fmt.Fprintf(&b, "- %s\n", r)
-		}
+		writeList(&b, "Context repos:\n", in.ContextRepos)
 	}
 	b.WriteString("\n")
 
@@ -92,27 +89,18 @@ func BuildPrompt(in PromptInput) string {
 		b.WriteString(in.Security.Skill)
 		b.WriteString("\n\n")
 		if len(in.Security.References) > 0 {
-			b.WriteString("Reference files:\n")
-			for _, r := range in.Security.References {
-				fmt.Fprintf(&b, "- %s\n", r)
-			}
+			writeList(&b, "Reference files:\n", in.Security.References)
 			b.WriteString("\n")
 		}
 	}
 
 	if len(in.Focus) > 0 {
-		b.WriteString("## Watch focus rules\n\n")
-		for _, f := range in.Focus {
-			fmt.Fprintf(&b, "- %s\n", f)
-		}
+		writeList(&b, "## Watch focus rules\n\n", in.Focus)
 		b.WriteString("\n")
 	}
 
 	if len(in.DesignRefs) > 0 {
-		b.WriteString("## Design references\n\n")
-		for _, d := range in.DesignRefs {
-			fmt.Fprintf(&b, "- %s\n", d)
-		}
+		writeList(&b, "## Design references\n\n", in.DesignRefs)
 		b.WriteString("\n")
 	}
 
@@ -124,15 +112,7 @@ func BuildPrompt(in PromptInput) string {
 	} else {
 		b.WriteString("Format: <ledger id> · path:line · blocking? · [posted as thread <thread ID> ·] body\n\n")
 		for _, f := range in.Earlier {
-			sev := "non-blocking"
-			if f.Blocking {
-				sev = "blocking"
-			}
-			posted := ""
-			if f.ThreadID != "" {
-				posted = "posted as thread " + oneLine(f.ThreadID) + " · "
-			}
-			fmt.Fprintf(&b, "%d · %s:%d · %s · %s%s\n", f.ID, oneLine(f.Path), f.Line, sev, posted, oneLine(f.Body))
+			b.WriteString(earlierLine(f))
 		}
 		b.WriteString("\n")
 	}
@@ -155,6 +135,28 @@ func BuildPrompt(in PromptInput) string {
 		b.WriteString("\n")
 	}
 	return b.String()
+}
+
+// writeList writes heading and then one "- item" line per item.
+func writeList(b *strings.Builder, heading string, items []string) {
+	b.WriteString(heading)
+	for _, it := range items {
+		fmt.Fprintf(b, "- %s\n", it)
+	}
+}
+
+// earlierLine is one earlier finding in the ledger format the prompt
+// describes, ending in a newline.
+func earlierLine(f store.Finding) string {
+	sev := "non-blocking"
+	if f.Blocking {
+		sev = "blocking"
+	}
+	posted := ""
+	if f.ThreadID != "" {
+		posted = "posted as thread " + oneLine(f.ThreadID) + " · "
+	}
+	return fmt.Sprintf("%d · %s:%d · %s · %s%s\n", f.ID, oneLine(f.Path), f.Line, sev, posted, oneLine(f.Body))
 }
 
 // ContinuationPrompt asks the reviewer to fill the gaps a coverage check found

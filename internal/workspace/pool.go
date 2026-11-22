@@ -61,42 +61,18 @@ func (p *Pool) Acquire(ctx context.Context, number int, head string) (string, fu
 		}
 	}
 
-	var chosen string
-	for path, s := range known {
-		if _, ok := p.held[path]; ok {
-			continue
-		}
-		// Prefer the slot that last held this PR, then the lowest path.
-		if chosen == "" || (s.PRNumber == number && known[chosen].PRNumber != number) ||
-			(s.PRNumber == number) == (known[chosen].PRNumber == number) && path < chosen {
-			chosen = path
-		}
+	chosen := p.chooseFree(known, number)
+	switch {
+	case chosen != "":
+		err = p.checkout(ctx, chosen, head)
+	case len(known) >= p.size:
+		return "", nil, ErrPoolBusy
+	default:
+		chosen = p.newSlotPath(known)
+		err = p.addWorktree(ctx, chosen, head)
 	}
-
-	if chosen != "" {
-		if err := p.checkout(ctx, chosen, head); err != nil {
-			return "", nil, err
-		}
-	} else {
-		if len(known) >= p.size {
-			return "", nil, ErrPoolBusy
-		}
-		for n := 1; ; n++ {
-			path := filepath.Join(p.dir, fmt.Sprintf("slot-%d", n))
-			if _, taken := known[path]; taken {
-				continue
-			}
-			// A directory with no store row is an orphan from an
-			// interrupted add; leave it alone and use the next number.
-			if _, err := os.Lstat(path); err == nil {
-				continue
-			}
-			chosen = path
-			break
-		}
-		if err := p.addWorktree(ctx, chosen, head); err != nil {
-			return "", nil, err
-		}
+	if err != nil {
+		return "", nil, err
 	}
 
 	slot := store.Slot{Repo: p.repo.Name, Path: chosen, PRNumber: number, HeadOID: head, LastUsed: p.now(), Busy: true}
@@ -126,6 +102,39 @@ func (p *Pool) Acquire(ctx context.Context, number int, head string) (string, fu
 		})
 	}
 	return chosen, release, nil
+}
+
+// chooseFree picks the free slot in known to reuse: the one that last held
+// PR number, then the lowest path. It is "" when every slot is held.
+func (p *Pool) chooseFree(known map[string]store.Slot, number int) string {
+	var chosen string
+	for path, s := range known {
+		if _, ok := p.held[path]; ok {
+			continue
+		}
+		if chosen == "" || (s.PRNumber == number && known[chosen].PRNumber != number) ||
+			(s.PRNumber == number) == (known[chosen].PRNumber == number) && path < chosen {
+			chosen = path
+		}
+	}
+	return chosen
+}
+
+// newSlotPath is the path of the lowest-numbered slot-<n> that no slot in
+// known has and no directory occupies.
+func (p *Pool) newSlotPath(known map[string]store.Slot) string {
+	for n := 1; ; n++ {
+		path := filepath.Join(p.dir, fmt.Sprintf("slot-%d", n))
+		if _, taken := known[path]; taken {
+			continue
+		}
+		// A directory with no store row is an orphan from an
+		// interrupted add; leave it alone and use the next number.
+		if _, err := os.Lstat(path); err == nil {
+			continue
+		}
+		return path
+	}
 }
 
 // checkout moves an existing slot to head, re-creating the worktree when

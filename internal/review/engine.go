@@ -268,9 +268,6 @@ func (e *Engine) review(ctx context.Context, req Request, rv *store.Review, onEv
 	if hasGuide {
 		pin.Security = &guide
 	}
-	// reviewer.md is the system prompt. It leads the message because the
-	// claude flags in use pass no system prompt of their own.
-	text := prompt.Reviewer() + "\n" + BuildPrompt(pin)
 
 	sess := Session{
 		Binary:       e.Claude,
@@ -287,17 +284,36 @@ func (e *Engine) review(ctx context.Context, req Request, rv *store.Review, onEv
 	}
 	rv.SessionID = sess.SessionID
 
-	var (
-		seen       RunResult // every Read and search of the session so far
-		out        Output
-		raw        json.RawMessage
-		gaps, lint []string
-		kept       []store.Finding
-		notes      []string
-		coverNote  string // which changed files the per-file rule checked
-		runOutcome string
-		stopped    string // why the loop stopped early, for the note
-	)
+	p, err := e.runPass(ctx, rv, sess, pin, onEvent)
+	if err != nil {
+		return err
+	}
+	return finishReview(rv, p, earlier, worktree)
+}
+
+// passResult is what a pass's runs leave for the review: the last
+// parseable output and what the checks found in it.
+type passResult struct {
+	seen       RunResult // every Read and search of the session so far
+	out        Output
+	raw        json.RawMessage
+	gaps, lint []string
+	kept       []store.Finding
+	notes      []string
+	coverNote  string // which changed files the per-file rule checked
+	outcome    string
+	stopped    string // why the loop stopped early, for the note
+}
+
+// runPass runs the reviewer on pin, then resumes the session while the
+// checks find reading or rewording left to do, up to maxContinuations
+// times and within the budget sess starts with. It records each run's cost.
+func (e *Engine) runPass(ctx context.Context, rv *store.Review, sess Session, pin PromptInput, onEvent func(Event)) (passResult, error) {
+	budget := sess.MaxBudgetUSD // the whole review's, shared by its continuations
+	// reviewer.md is the system prompt. It leads the message because the
+	// claude flags in use pass no system prompt of their own.
+	text := prompt.Reviewer() + "\n" + BuildPrompt(pin)
+	var p passResult
 	for continuations := 0; ; continuations++ {
 		start := time.Now()
 		res, runErr := Run(ctx, sess, text, onEvent)
@@ -307,72 +323,92 @@ func (e *Engine) review(ctx context.Context, req Request, rv *store.Review, onEv
 		runCost := max(res.CostUSD-rv.CostUSD, 0)
 		rv.CostUSD = max(rv.CostUSD, res.CostUSD)
 		rv.CostUnknown = rv.CostUnknown || res.CostUnknown
-		seen.Reads = append(seen.Reads, res.Reads...)
-		seen.Searched = append(seen.Searched, res.Searched...)
+		p.seen.Reads = append(p.seen.Reads, res.Reads...)
+		p.seen.Searched = append(p.seen.Searched, res.Searched...)
 		var parsed Output
 		if runErr == nil {
 			parsed, runErr = ParseOutput(res.Output)
 		}
-		runOutcome = outcomeFailed
+		p.outcome = outcomeFailed
 		if runErr == nil {
-			out, raw = parsed, res.Output
-			gaps, coverNote = ReviewGaps(pass, rc.Scope, files, worktree, seen, out)
-			kept, notes, lint = CheckFindings(out, files)
-			runOutcome = outcomeComplete
-			if len(gaps) > 0 {
-				runOutcome = outcomeIncomplete
-			}
+			p.check(parsed, res.Output, pin)
 		}
-		if err := e.addCost(ctx, rv, res, runCost, runOutcome, took); err != nil {
-			return errors.Join(runErr, err)
+		if err := e.addCost(ctx, rv, res, runCost, p.outcome, took); err != nil {
+			return p, errors.Join(runErr, err)
 		}
-		if runErr != nil && raw == nil {
-			return runErr
+		if runErr != nil && p.raw == nil {
+			return p, runErr
 		}
 		if runErr != nil {
 			// An earlier run of this pass gave a usable review; failing the
 			// whole review would pay for it again on retry.
-			stopped = fmt.Sprintf("continuation %d failed: %v; showing the earlier pass", continuations, runErr)
-			break
+			p.stopped = fmt.Sprintf("continuation %d failed: %v; showing the earlier pass", continuations, runErr)
+			return p, nil
 		}
-		if len(gaps)+len(lint) == 0 || continuations == maxContinuations {
-			break
+		if len(p.gaps)+len(p.lint) == 0 || continuations == maxContinuations {
+			return p, nil
 		}
-		left := choice.PerReviewUSD - rv.CostUSD
+		left := budget - rv.CostUSD
 		if left <= 0 {
-			stopped = "stopped: review budget used"
-			break
+			p.stopped = "stopped: review budget used"
+			return p, nil
 		}
-		asks := slices.Clone(gaps)
-		for _, l := range lint {
-			asks = append(asks, "reword: "+l)
-		}
-		text = ContinuationPrompt(asks)
+		text = ContinuationPrompt(p.asks())
 		sess.Resume, sess.MaxBudgetUSD = true, left
 	}
+}
 
-	rv.Outcome = runOutcome
-	if runOutcome == outcomeFailed {
+// check keeps a parsed run's output and runs the coverage and findings
+// checks on it, setting the outcome from what they found.
+func (p *passResult) check(out Output, raw json.RawMessage, pin PromptInput) {
+	p.out, p.raw = out, raw
+	p.gaps, p.coverNote = ReviewGaps(pin.Pass, pin.Scope, pin.Files, pin.Worktree, p.seen, p.out)
+	p.kept, p.notes, p.lint = CheckFindings(p.out, pin.Files)
+	p.outcome = outcomeComplete
+	if len(p.gaps) > 0 {
+		p.outcome = outcomeIncomplete
+	}
+}
+
+// asks are the continuation prompt's lines: the gaps, then the findings
+// to reword.
+func (p *passResult) asks() []string {
+	asks := slices.Clone(p.gaps)
+	for _, l := range p.lint {
+		asks = append(asks, "reword: "+l)
+	}
+	return asks
+}
+
+// finishReview fills rv from the pass: its outcome, verdict and notes, the
+// output with examined cut to verified reads, and the findings with the
+// ledger applied to earlier.
+func finishReview(rv *store.Review, p passResult, earlier []store.Finding, worktree string) error {
+	rv.Outcome = p.outcome
+	if p.outcome == outcomeFailed {
 		// Only a continuation gets here failed: the review keeps the last
 		// parseable run's output.
 		rv.Outcome = outcomeIncomplete
 	}
-	if coverNote != "" {
-		notes = append(notes, coverNote)
+	notes := p.notes
+	if p.coverNote != "" {
+		notes = append(notes, p.coverNote)
 	}
-	if stopped != "" {
-		notes = append(notes, stopped)
+	if p.stopped != "" {
+		notes = append(notes, p.stopped)
 	}
-	if n := ledgerNote(earlier, out); n != "" {
+	if n := ledgerNote(earlier, p.out); n != "" {
 		notes = append(notes, n)
 	}
+	out := p.out
 	rv.Verdict, rv.VerdictReason, rv.Understanding = out.Verdict, out.VerdictReason, out.Understanding
 	rv.Assumptions = out.Assumptions
-	if rv.Raw, err = withExamined(raw, VerifiedExamined(out.Examined, seen, worktree)); err != nil {
+	var err error
+	if rv.Raw, err = withExamined(p.raw, VerifiedExamined(out.Examined, p.seen, worktree)); err != nil {
 		return err
 	}
-	rv.Findings = slices.Concat(kept, applyLedger(earlier, out.Ledger))
-	rv.Note = joinNotes(out.Note, notes, gaps, lint)
+	rv.Findings = slices.Concat(p.kept, applyLedger(earlier, out.Ledger))
+	rv.Note = joinNotes(out.Note, notes, p.gaps, p.lint)
 	return nil
 }
 
@@ -602,30 +638,42 @@ func (e *Engine) PruneIdle(ctx context.Context) error {
 
 	var errs []error
 	for _, name := range names {
-		rp := e.cachedPool(name)
-		if rp == nil {
-			due, err := e.hasIdleSlot(ctx, name, idle)
-			if err != nil {
-				errs = append(errs, err)
-				continue
-			}
-			if !due {
-				continue
-			}
-			if gone, err := e.dropSlotsWithoutClone(ctx, name); err != nil {
-				errs = append(errs, fmt.Errorf("prune %s: %w", name, err))
-				continue
-			} else if gone {
-				continue
-			}
-			if rp, err = e.repoPool(ctx, name); err != nil {
-				errs = append(errs, fmt.Errorf("prune %s: %w", name, err))
-				continue
-			}
+		rp, err := e.poolToPrune(ctx, name, idle)
+		if err != nil {
+			errs = append(errs, err)
+			continue
 		}
-		errs = append(errs, rp.pool.PruneIdle(ctx, idle))
+		if rp != nil {
+			errs = append(errs, rp.pool.PruneIdle(ctx, idle))
+		}
 	}
 	return errors.Join(errs...)
+}
+
+// poolToPrune is name's pool for PruneIdle, or nil when there is nothing
+// to prune. A pool this process has made is always returned. Otherwise the
+// repo is resolved only when it has a slot idle for longer than idle and
+// its slot rows weren't dropped for want of a clone.
+func (e *Engine) poolToPrune(ctx context.Context, name string, idle time.Duration) (*repoPool, error) {
+	if rp := e.cachedPool(name); rp != nil {
+		return rp, nil
+	}
+	due, err := e.hasIdleSlot(ctx, name, idle)
+	if err != nil || !due {
+		return nil, err
+	}
+	gone, err := e.dropSlotsWithoutClone(ctx, name)
+	if err != nil {
+		return nil, fmt.Errorf("prune %s: %w", name, err)
+	}
+	if gone {
+		return nil, nil
+	}
+	rp, err := e.repoPool(ctx, name)
+	if err != nil {
+		return nil, fmt.Errorf("prune %s: %w", name, err)
+	}
+	return rp, nil
 }
 
 // hasIdleSlot reports whether repo has a stored free slot unused for longer

@@ -311,19 +311,11 @@ func parseDiff(diff []byte) ([]byte, map[string]*fileDiff, error) {
 			cur.sections = append(cur.sections, sec)
 			h, blob, inHunk = nil, "", false
 		case strings.HasPrefix(l, "@@ "):
-			if sec == nil {
-				return nil, nil, fmt.Errorf("hunk before any file header: %q", l)
-			}
-			start, count, err := hunkNew(l)
-			if err != nil {
+			var err error
+			if h, n, err = startHunk(l, cur, sec); err != nil {
 				return nil, nil, err
 			}
-			if count > 0 {
-				cur.ranges = append(cur.ranges, [2]int{start, start + count - 1})
-			}
-			h = &hunk{header: l}
-			sec.hunks = append(sec.hunks, h)
-			inHunk, n = true, start
+			inHunk = true
 		case inHunk && (l == "" || l[0] == ' ' || l[0] == '+'):
 			if l != "" && l[0] == '+' {
 				h.changes = append(h.changes, l)
@@ -356,6 +348,24 @@ func parseDiff(diff []byte) ([]byte, map[string]*fileDiff, error) {
 		}
 	}
 	return out.Bytes(), files, nil
+}
+
+// startHunk parses the "@@" line l, adds the hunk's new-file range to cur
+// and a new hunk to sec, and returns the hunk and its first new-file line.
+func startHunk(l string, cur *fileDiff, sec *section) (*hunk, int, error) {
+	if sec == nil {
+		return nil, 0, fmt.Errorf("hunk before any file header: %q", l)
+	}
+	start, count, err := hunkNew(l)
+	if err != nil {
+		return nil, 0, err
+	}
+	if count > 0 {
+		cur.ranges = append(cur.ranges, [2]int{start, start + count - 1})
+	}
+	h := &hunk{header: l}
+	sec.hunks = append(sec.hunks, h)
+	return h, start, nil
 }
 
 // headerPath returns the path in a `diff --git a/<p> b/<p>` header, which

@@ -84,28 +84,12 @@ func ReviewGaps(pass PassKind, scope string, files workspace.ReviewFiles, worktr
 	}
 	full := pass != PassIncremental
 
-	var code []string
-	for _, f := range files.Changed {
-		if isData(f) || isGenerated(f) {
-			continue
-		}
-		if _, err := os.Stat(filepath.Join(worktree, f)); err != nil {
-			continue // deleted by the PR
-		}
-		code = append(code, f)
-	}
+	code := codeFiles(files.Changed, worktree)
 	var note string
 	if full || !readDiff {
-		checked := slices.Sorted(slices.Values(code))
-		if len(checked) > maxPerFileChecks {
-			note = fmt.Sprintf("(checked %d of %d changed files)", maxPerFileChecks, len(checked))
-			checked = checked[:maxPerFileChecks]
-		}
-		for _, f := range checked {
-			if !read.has(f) {
-				gaps = append(gaps, "read the changed file "+f)
-			}
-		}
+		var unread []string
+		unread, note = unreadFiles(code, read)
+		gaps = append(gaps, unread...)
 	}
 	if full && len(files.Changed) > 0 && !readDocsFor(run.Reads, worktree, files.Changed) {
 		gaps = append(gaps, "read a README, doc.go, docs/ or CLAUDE.md for the changed code")
@@ -130,6 +114,41 @@ func ReviewGaps(pass PassKind, scope string, files workspace.ReviewFiles, worktr
 		}
 	}
 	return capGaps(gaps), note
+}
+
+// codeFiles are the changed files a reviewer must read: not data, not
+// generated, and still in the worktree, so not deleted by the PR.
+func codeFiles(changed []string, worktree string) []string {
+	var code []string
+	for _, f := range changed {
+		if isData(f) || isGenerated(f) {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(worktree, f)); err != nil {
+			continue // deleted by the PR
+		}
+		code = append(code, f)
+	}
+	return code
+}
+
+// unreadFiles are the gaps for the code files the reviewer didn't read. It
+// checks the first maxPerFileChecks, sorted, and returns a note saying so
+// when there were more.
+func unreadFiles(code []string, read readSet) ([]string, string) {
+	checked := slices.Sorted(slices.Values(code))
+	var note string
+	if len(checked) > maxPerFileChecks {
+		note = fmt.Sprintf("(checked %d of %d changed files)", maxPerFileChecks, len(checked))
+		checked = checked[:maxPerFileChecks]
+	}
+	var gaps []string
+	for _, f := range checked {
+		if !read.has(f) {
+			gaps = append(gaps, "read the changed file "+f)
+		}
+	}
+	return gaps, note
 }
 
 // evidenceGap is the gap for assumption n, or "" when its evidence is

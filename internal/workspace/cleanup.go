@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/chrisdaly-3/jawnsnow/internal/store"
 )
 
 // This file removes things jawnSnow created: refs under refs/jawnsnow/,
@@ -100,13 +102,27 @@ func Sweep(ctx context.Context, r Repo, slotsDir string, tracked map[int]bool, s
 		return err
 	}
 	slotsDir = filepath.Clean(slotsDir)
-	var errs []error
-	failed := map[string]bool{} // directories whose worktree git refused to remove
 
 	slots, err := st.Slots(ctx, r.Name)
 	if err != nil {
 		return err
 	}
+	known, errs := freeStoredSlots(ctx, r, slotsDir, slots, st)
+	failed, wtErrs := removeUnownedWorktrees(ctx, r, slotsDir, known)
+	errs = append(errs, wtErrs...)
+	errs = append(errs, removeStrayDirs(slotsDir, known, failed)...)
+
+	if err := deleteRefs(ctx, r, func(n int) bool { return !tracked[n] }); err != nil {
+		errs = append(errs, err)
+	}
+	return errors.Join(errs...)
+}
+
+// freeStoredSlots marks every stored slot under slotsDir free. A slot whose
+// directory is gone has its registration and row removed instead. It
+// returns the paths of the slots kept.
+func freeStoredSlots(ctx context.Context, r Repo, slotsDir string, slots []store.Slot, st SlotStore) (map[string]bool, []error) {
+	var errs []error
 	known := map[string]bool{}
 	for _, s := range slots {
 		if filepath.Dir(s.Path) != slotsDir {
@@ -130,8 +146,15 @@ func Sweep(ctx context.Context, r Repo, slotsDir string, tracked map[int]bool, s
 			}
 		}
 	}
+	return known, errs
+}
 
-	// Worktrees git lists under slotsDir that no stored slot owns.
+// removeUnownedWorktrees removes the worktrees git lists directly under
+// slotsDir that no kept slot owns. It returns the resolved paths of those
+// git refused to remove, which must not be deleted by hand.
+func removeUnownedWorktrees(ctx context.Context, r Repo, slotsDir string, known map[string]bool) (map[string]bool, []error) {
+	var errs []error
+	failed := map[string]bool{}
 	listed, err := worktreePaths(ctx, r)
 	if err != nil {
 		errs = append(errs, err)
@@ -144,17 +167,24 @@ func Sweep(ctx context.Context, r Repo, slotsDir string, tracked map[int]bool, s
 		for k := range known {
 			owned = owned || samePath(k, path)
 		}
-		if !owned {
-			if err := removeWorktree(ctx, r, path); err != nil {
-				// Deleting the directory anyway would leave a stale
-				// registration behind.
-				failed[resolve(path)] = true
-				errs = append(errs, err)
-			}
+		if owned {
+			continue
+		}
+		if err := removeWorktree(ctx, r, path); err != nil {
+			// Deleting the directory anyway would leave a stale
+			// registration behind.
+			failed[resolve(path)] = true
+			errs = append(errs, err)
 		}
 	}
+	return failed, errs
+}
 
-	// Plain directories (or symlinks, which are unlinked, not followed).
+// removeStrayDirs removes each entry of slotsDir that is neither a kept
+// slot nor a worktree git refused to remove: plain directories, or
+// symlinks, which are unlinked, not followed.
+func removeStrayDirs(slotsDir string, known, failed map[string]bool) []error {
+	var errs []error
 	entries, err := os.ReadDir(slotsDir)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		errs = append(errs, err)
@@ -168,11 +198,7 @@ func Sweep(ctx context.Context, r Repo, slotsDir string, tracked map[int]bool, s
 			errs = append(errs, err)
 		}
 	}
-
-	if err := deleteRefs(ctx, r, func(n int) bool { return !tracked[n] }); err != nil {
-		errs = append(errs, err)
-	}
-	return errors.Join(errs...)
+	return errs
 }
 
 // validateSlotsDir refuses a slots directory that could make cleanup
