@@ -161,7 +161,7 @@ Draft PRs are left out unless the feed sets `include_drafts = true`.
 
 ## The drawer
 
-`enter` on a card, a Done row or a Reviews row slides the drawer in from the right. It takes 45% of the terminal's width. `esc` slides it out. Opening the drawer focuses it; `tab` moves focus between it and the view beside it, and its left edge is in the accent colour when it has focus. Whichever side doesn't have focus, the view or the drawer, is drawn faint (the terminal's dim text, so how faint varies by terminal; not with `NO_COLOR` set).
+`enter` on a card, a Done row or a Reviews row slides the drawer in from the right. It takes 45% of the terminal's width. `esc` slides it out. Opening the drawer focuses it; `tab` moves focus between it and the view beside it, and its left edge is in the accent colour when it has focus. Whichever side doesn't have focus, the view or the drawer, is veiled: snow asks the terminal for its background and text colours at startup and blends every colour on that side, chips included, about halfway toward the background. A terminal that doesn't answer gets faint text instead, which some terminals draw weakly. With `NO_COLOR` set neither applies.
 
 On every tab the selected finding, check or entry has a `▸` mark and a dark grey fill (with `NO_COLOR` set, only the mark). `j` and `k` move the selection, and the drawer scrolls only as far as needed to keep three lines of room above and below it.
 
