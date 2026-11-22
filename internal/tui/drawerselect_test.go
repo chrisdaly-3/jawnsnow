@@ -35,6 +35,47 @@ func TestScrollToItem(t *testing.T) {
 	}
 }
 
+func TestStepSelection(t *testing.T) {
+	// A 20-line view over 60 lines of content (max scroll 40): a short
+	// item, a 30-line item, and a short last item followed by 10 lines.
+	spans := []itemSpan{{2, 3, 5}, {6, 7, 36}, {37, 38, 50}}
+	const bodyH, maxScroll = 20, 40
+	cases := []struct {
+		name                string
+		sel, scroll, dir    int
+		wantSel, wantScroll int
+	}{
+		{"j moves to the next item and brings it in", 0, 0, 1, 1, 3},
+		{"j inside a tall item scrolls through it", 1, 3, 1, 1, 4},
+		{"j at a tall item's end moves on", 1, 19, 1, 2, 33},
+		{"j on the last item scrolls the rest", 2, 33, 1, 2, 34},
+		{"k on a short item moves back", 2, 33, -1, 1, 3},
+		{"k inside a tall item scrolls back through it", 1, 10, -1, 1, 9},
+		{"k on the first item scrolls to the header", 0, 1, -1, 0, 0},
+	}
+	for _, c := range cases {
+		sel, scroll := stepSelection(c.sel, c.scroll, spans, bodyH, maxScroll, c.dir)
+		if sel != c.wantSel || scroll != c.wantScroll {
+			t.Errorf("%s: got sel %d scroll %d, want %d and %d", c.name, sel, scroll, c.wantSel, c.wantScroll)
+		}
+	}
+	if sel, scroll := stepSelection(0, 4, nil, bodyH, maxScroll, 1); sel != 0 || scroll != 5 {
+		t.Errorf("no items: j gave sel %d scroll %d, want a plain scroll to 5", sel, scroll)
+	}
+}
+
+func TestReviewTabJumpSelectsTheEnds(t *testing.T) {
+	d, c := openDrawer(t, 160, 16, drawerReview())
+	d, _, _ = d.update(key("J"), c)
+	if d.sel != len(drawerReview().Findings)-1 {
+		t.Errorf("J: sel %d, want the last finding", d.sel)
+	}
+	d, _, _ = d.update(key("K"), c)
+	if d.sel != 0 {
+		t.Errorf("K: sel %d, want the first finding", d.sel)
+	}
+}
+
 func TestDrawerFillsTheSelectedFindingAndKeepsRoomAroundIt(t *testing.T) {
 	const height = 16
 	d, c := openDrawer(t, 160, height, drawerReview())
@@ -43,8 +84,12 @@ func TestDrawerFillsTheSelectedFindingAndKeepsRoomAroundIt(t *testing.T) {
 		t.Fatalf("drawerReview has %d findings, want at least 3", len(spans))
 	}
 	fill := "48;5;237"
-	for range len(spans) - 1 {
-		d, _, _ = d.update(key("n"), c)
+	for i := 0; d.sel < len(spans)-1 && i < 100; i++ {
+		prev := d.sel
+		d, _, _ = d.update(key("j"), c)
+		if d.sel == prev {
+			continue // j scrolled through a tall finding
+		}
 		out := strings.Split(renderDrawer(d, c, height), "\n")
 		_, spans = d.layout(c)
 		s := spans[d.sel]
@@ -60,8 +105,8 @@ func TestDrawerFillsTheSelectedFindingAndKeepsRoomAroundIt(t *testing.T) {
 				t.Errorf("sel %d: row %d is filled too: %q", d.sel, i, ansi.Strip(l))
 			}
 		}
-		// The old n put the finding on the first line; now it keeps room
-		// above it unless the drawer is scrolled to its end.
+		// j keeps room above the finding rather than putting it on the
+		// first line, unless the drawer is scrolled to its end.
 		if d.scroll > 0 && d.scroll < d.maxScroll(c) && row < scrollMargin {
 			t.Errorf("sel %d: header on row %d, want at least %d lines of room", d.sel, row, scrollMargin)
 		}

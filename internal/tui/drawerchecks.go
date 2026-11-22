@@ -218,15 +218,8 @@ func (m drawerModel) checksKey(msg tea.KeyPressMsg, c drawerCtx) (drawerModel, t
 	shown := orderedChecks(checkRows(c), m.showPassed)
 	m.checkSel = min(m.checkSel, max(len(shown)-1, 0))
 	switch k := msg.String(); k {
-	case "j", "down":
-		m.checkScroll++
-	case "k", "up":
-		m.checkScroll--
-	case "n", "N":
-		if len(shown) > 0 {
-			m.checkSel = min(max(m.checkSel+map[string]int{"n": 1, "N": -1}[k], 0), len(shown)-1)
-			m.checkScroll = scrollToItem(m.checkScroll, spans[m.checkSel], m.bodyHeight(c.Height))
-		}
+	case "j", "down", "k", "up":
+		m.checkSel, m.checkScroll = stepSelection(m.checkSel, m.checkScroll, spans, m.bodyHeight(c.Height), m.maxScroll(c), keyDir(k))
 	case "s":
 		m.showPassed = !m.showPassed
 		m.checkSel = min(m.checkSel, max(len(orderedChecks(checkRows(c), m.showPassed))-1, 0))

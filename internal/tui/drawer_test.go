@@ -158,36 +158,41 @@ func TestDrawerFindingNavigationAndScroll(t *testing.T) {
 	if d.sel != 0 || d.scroll != 0 {
 		t.Fatalf("starts at sel %d scroll %d", d.sel, d.scroll)
 	}
-	d, _, _ = d.update(key("n"), c)
-	d, _, _ = d.update(key("n"), c)
-	if d.sel != 2 || d.scroll == 0 {
-		t.Errorf("n,n: sel %d scroll %d, want sel 2 and a scrolled drawer", d.sel, d.scroll)
+	// j walks the findings in order, never back, scrolling as it goes;
+	// a finding taller than the view takes more than one j.
+	seen := []int{0}
+	for i := 0; d.sel < 3 && i < 100; i++ {
+		prevSel, prevScroll := d.sel, d.scroll
+		d, _, _ = d.update(key("j"), c)
+		if d.sel < prevSel || d.scroll < prevScroll {
+			t.Fatalf("j went back: sel %d→%d, scroll %d→%d", prevSel, d.sel, prevScroll, d.scroll)
+		}
+		if d.sel != seen[len(seen)-1] {
+			seen = append(seen, d.sel)
+		}
 	}
-	for range 5 {
-		d, _, _ = d.update(key("n"), c)
+	if !slices.Equal(seen, []int{0, 1, 2, 3}) || d.scroll == 0 {
+		t.Fatalf("j: selected %v, scroll %d; want each finding in turn and a scrolled drawer", seen, d.scroll)
 	}
-	if d.sel != 3 {
-		t.Errorf("n past the last finding: sel %d, want 3", d.sel)
+	// Past the last finding j keeps the selection and scrolls the rest
+	// (Understanding, Assumptions, Check notes) into view.
+	for range 100 {
+		d, _, _ = d.update(key("j"), c)
 	}
-	d, _, _ = d.update(key("N"), c)
-	if d.sel != 2 {
-		t.Errorf("N: sel %d, want 2", d.sel)
+	if d.sel != 3 || d.scroll != d.maxScroll(c) {
+		t.Errorf("j past the last finding: sel %d scroll %d, want 3 and %d", d.sel, d.scroll, d.maxScroll(c))
 	}
-	d, _, _ = d.update(key("p"), c)
-	if d.sel != 2 {
-		t.Errorf("p is unbound in the drawer: sel %d, want 2", d.sel)
+	// k comes back the same way, to the top.
+	for range 100 {
+		d, _, _ = d.update(key("k"), c)
 	}
-	for range 5 {
-		d, _, _ = d.update(key("N"), c)
+	if d.sel != 0 || d.scroll != 0 {
+		t.Errorf("k back to the top: sel %d scroll %d, want 0 and 0", d.sel, d.scroll)
 	}
-	if d.sel != 0 {
-		t.Errorf("N past the first finding: sel %d, want 0", d.sel)
-	}
-	d, _, _ = d.update(key("j"), c)
-	before := d.scroll
-	d, _, _ = d.update(key("k"), c)
-	if d.scroll != before-1 && before != 0 {
-		t.Errorf("k: scroll %d, want %d", d.scroll, before-1)
+	for _, k := range []string{"n", "N", "p"} {
+		if d2, _, _ := d.update(key(k), c); d2.sel != 0 || d2.scroll != 0 {
+			t.Errorf("%s is unbound in the drawer: sel %d scroll %d", k, d2.sel, d2.scroll)
+		}
 	}
 }
 
@@ -612,9 +617,9 @@ func TestDrawerShowsNoHyperlinks(t *testing.T) {
 	r := drawerReview()
 	r.Findings[0].Body = "See [the docs](https://evil.example/phish) and <https://x.example>."
 	d, c := openDrawer(t, 160, 40, r)
-	d, _, _ = d.update(key("n"), c)
-	d, _, _ = d.update(key("n"), c)
-	d, _, _ = d.update(key("n"), c)
+	d, _, _ = d.update(key("j"), c)
+	d, _, _ = d.update(key("j"), c)
+	d, _, _ = d.update(key("j"), c)
 	raw := renderDrawer(d, c, 40)
 	if strings.Contains(raw, "\x1b]8;") {
 		t.Errorf("an OSC 8 hyperlink reaches the screen: %q", raw)

@@ -238,15 +238,11 @@ func (m drawerModel) activityKey(msg tea.KeyPressMsg, c drawerCtx) (drawerModel,
 	}
 	m.actSel = min(m.actSel, max(len(shown)-1, 0))
 	switch k := msg.String(); k {
-	case "j", "down":
-		m.actScroll++
-	case "k", "up":
-		m.actScroll--
-	case "n", "N":
-		if len(shown) > 0 && len(spans) == len(shown) {
-			m.actSel = min(max(m.actSel+map[string]int{"n": 1, "N": -1}[k], 0), len(shown)-1)
-			m.actScroll = scrollToItem(m.actScroll, spans[m.actSel], m.bodyHeight(c.Height))
+	case "j", "down", "k", "up":
+		if len(spans) != len(shown) {
+			spans = nil // nothing to select: j and k scroll
 		}
+		m.actSel, m.actScroll = stepSelection(m.actSel, m.actScroll, spans, m.bodyHeight(c.Height), m.maxScroll(c), keyDir(k))
 	case "b":
 		m.showBots = !m.showBots
 		if c.Activity.Loaded {

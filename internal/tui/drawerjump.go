@@ -47,15 +47,20 @@ func (m drawerModel) withTabScroll(v int) drawerModel {
 	return m
 }
 
-// jumpKey handles J (to the bottom) and K (to the top) on either tab. On the
-// Checks tab it selects the last or first check too, so O and y act on one
-// that is on screen.
+// jumpKey handles J (to the bottom) and K (to the top) on every tab. It
+// selects the last or first finding, check or entry too, so O and y act on
+// one that is on screen and j and k go on from there.
 func (m drawerModel) jumpKey(k string, c drawerCtx) (drawerModel, tea.Cmd, action) {
 	target := 0
 	if k == "J" {
 		target = m.maxScroll(c)
 	}
 	switch m.tab {
+	case tabReview:
+		m.sel = 0
+		if r := m.current(); r != nil && k == "J" && len(r.Findings) > 0 {
+			m.sel = len(r.Findings) - 1
+		}
 	case tabChecks:
 		m.checkSel = 0
 		if n := len(orderedChecks(checkRows(c), m.showPassed)); k == "J" && n > 0 {

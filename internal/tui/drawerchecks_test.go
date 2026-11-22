@@ -101,15 +101,16 @@ func TestDrawerTabSwitch(t *testing.T) {
 		t.Errorf("l past the last tab: tab %d, want it to stay on Activity", d.tab)
 	}
 	d, _, _ = d.update(key("h"), c)
+	reviewSel := d.sel
 	d, _, _ = d.update(key("j"), c)
-	if d.scroll != reviewScroll || d.checkScroll != 1 {
-		t.Errorf("j on Checks: review scroll %d, checks scroll %d; want %d and 1", d.scroll, d.checkScroll, reviewScroll)
+	if d.scroll != reviewScroll || d.sel != reviewSel || d.checkSel != 1 {
+		t.Errorf("j on Checks: review sel %d scroll %d, check sel %d; want %d, %d and 1", d.sel, d.scroll, d.checkSel, reviewSel, reviewScroll)
 	}
 	d, _, _ = d.update(key("h"), c)
 	if d.tab != tabReview || d.scroll != reviewScroll {
 		t.Errorf("back to Review: tab %d scroll %d, want Review at %d", d.tab, d.scroll, reviewScroll)
 	}
-	if !strings.Contains(ansi.Strip(renderDrawer(d, c, 12)), "n/N finding") {
+	if !strings.Contains(ansi.Strip(renderDrawer(d, c, 12)), "j/k finding") {
 		t.Errorf("the Review tab's hints are missing:\n%s", ansi.Strip(renderDrawer(d, c, 12)))
 	}
 
@@ -136,32 +137,32 @@ func TestChecksTabKeys(t *testing.T) {
 	if a, ok := act("y").(actionCopy); !ok || a.Text != "skillup" {
 		t.Errorf("y on skillup: %#v", a)
 	}
-	act("n")
+	act("j")
 	if a, ok := act("O").(actionOpen); !ok || a.URL != c.PR.PR.URL+"/checks" {
 		t.Errorf("O on a check with no link: %#v, want the PR's checks page", a)
 	}
 	for range 10 {
-		act("n")
+		act("j")
 	}
 	if d.checkSel != 3 {
-		t.Errorf("n past the last shown check: sel %d, want 3", d.checkSel)
+		t.Errorf("j past the last shown check: sel %d, want 3", d.checkSel)
 	}
 	act("s")
 	for range 10 {
-		act("n")
+		act("j")
 	}
 	if d.checkSel != 5 {
-		t.Errorf("n with passed checks shown: sel %d, want 5", d.checkSel)
+		t.Errorf("j with passed checks shown: sel %d, want 5", d.checkSel)
 	}
 	act("s")
 	if d.checkSel != 3 {
 		t.Errorf("s folding the selected passed check: sel %d, want 3", d.checkSel)
 	}
 	for range 10 {
-		act("N")
+		act("k")
 	}
 	if d.checkSel != 0 {
-		t.Errorf("N past the first check: sel %d, want 0", d.checkSel)
+		t.Errorf("k past the first check: sel %d, want 0", d.checkSel)
 	}
 	if a, ok := act("o").(actionOpen); !ok || a.URL != c.PR.PR.URL {
 		t.Errorf("o on the Checks tab: %#v, want the PR", a)

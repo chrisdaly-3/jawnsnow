@@ -191,12 +191,12 @@ func TestActivityTabKeys(t *testing.T) {
 	if a, ok := act("O").(actionOpen); !ok || a.URL != c.PR.PR.URL {
 		t.Errorf("O on a comment with no link: %#v, want the PR", a)
 	}
-	act("n")
+	act("j")
 	if a, ok := act("O").(actionOpen); !ok || a.URL != "https://github.com/acme/widgets/pull/1#pullrequestreview-9" {
 		t.Errorf("O on ann's review: %#v", a)
 	}
-	act("n")
-	act("n")
+	act("j")
+	act("j")
 	if a, ok := act("y").(actionCopy); !ok || a.Text != "Test the retry\nFix the retry" {
 		t.Errorf("y on the commit run: %#v", a)
 	}

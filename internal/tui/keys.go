@@ -52,9 +52,8 @@ var keyMap = []keySection{
 	{"Drawer", []keyHint{
 		{"esc", "close the drawer"},
 		{"h l", "Review, Checks or Activity tab"},
-		{"j k", "scroll"},
+		{"j k", "next or previous finding, check or entry"},
 		{"J K", "jump to the bottom or top"},
-		{"n N", "next or previous finding, check or entry"},
 		{"< >", "older or newer pass"},
 		{"o", "open the PR"},
 		{"O", "open the finding's line, the check or the entry"},

@@ -286,15 +286,8 @@ func (m drawerModel) reviewKey(msg tea.KeyPressMsg, c drawerCtx) (drawerModel, t
 		fs = orderedFindings(r.Findings)
 	}
 	switch k := msg.String(); k {
-	case "j", "down":
-		m.scroll++
-	case "k", "up":
-		m.scroll--
-	case "n", "N":
-		if len(fs) > 0 {
-			m.sel = min(max(m.sel+map[string]int{"n": 1, "N": -1}[k], 0), len(fs)-1)
-			m.scroll = scrollToItem(m.scroll, spans[m.sel], m.bodyHeight(c.Height))
-		}
+	case "j", "down", "k", "up":
+		m.sel, m.scroll = stepSelection(m.sel, m.scroll, spans, m.bodyHeight(c.Height), m.maxScroll(c), keyDir(k))
 	case "<", ">":
 		next := m.pass + map[string]int{"<": 1, ">": -1}[k]
 		if next >= 0 && next < len(m.reviews) {
@@ -711,12 +704,12 @@ func (m drawerModel) bottomLine(c drawerCtx, inner int) string {
 	case m.flash != "":
 		return th.Accent().Render(m.flash)
 	}
-	hints := "j/k scroll · n/N finding · </> pass · y copy · O open line · P post"
+	hints := "j/k finding · </> pass · y copy · O open line · P post"
 	switch m.tab {
 	case tabChecks:
-		hints = "h/l tab · j/k scroll · n/N check · O open · y copy"
+		hints = "h/l tab · j/k check · O open · y copy"
 	case tabActivity:
-		hints = "h/l tab · j/k scroll · n/N item · O open · y copy"
+		hints = "h/l tab · j/k entry · O open · y copy"
 	}
 	return th.Muted().Render(ansi.Truncate(hints, inner, "…"))
 }
