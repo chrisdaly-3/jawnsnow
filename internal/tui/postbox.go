@@ -113,11 +113,11 @@ func boxWidth(width int) int { return max(postInner(width)-4, 1) }
 // boxActive reports whether the summary box has the keys: the preview is
 // open on it and no post or editor is running.
 func (p *postFlow) boxActive() bool {
-	return p != nil && p.stage == postPreview && p.inBox && !p.inFlight && !p.editing
+	return p != nil && p.stage == postPreview && p.inBox() && !p.inFlight && !p.editing
 }
 
 // boxKey handles a key while the summary box has focus. tab and esc leave
-// it for the checklist. enter posts when the terminal reports shift+enter
+// it for the checklist, shift+tab for the event row. enter posts when the terminal reports shift+enter
 // apart from enter, and is a new line otherwise; shift+enter, alt+enter
 // and ctrl+j are always a new line.
 func (m Model) boxKey(p postFlow, msg tea.KeyPressMsg) (Model, tea.Cmd) {
@@ -125,11 +125,13 @@ func (m Model) boxKey(p postFlow, msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	p.box.SetWidth(boxWidth(m.width))
 	var cmd tea.Cmd
 	switch msg.String() {
-	case "tab", "esc":
-		p.inBox = false
-		p.box.Blur()
-		m.post = &p
-		m.post.scroll = m.clampPostScroll(true) // to the checklist's cursor
+	case "tab", "esc", "shift+tab":
+		dir := 1
+		if msg.String() == "shift+tab" {
+			dir = -1
+		}
+		m.post = new(p.moveFocus(dir))
+		m.post.scroll = m.clampPostScroll(true) // to what now has the keys
 		return m, nil
 	case "enter":
 		if p.enterPosts {
@@ -174,8 +176,10 @@ func (m Model) syncSummary(p postFlow) Model {
 // box, and what enter does in it.
 func (p postFlow) boxHelp() string {
 	switch {
-	case !p.inBox:
+	case p.focus == focusEvent:
 		return "tab to write here · e to open in $EDITOR"
+	case p.focus == focusFindings:
+		return "shift+tab to write here · e to open in $EDITOR"
 	case p.enterPosts:
 		return "shift+enter for a new line · enter to post · tab for the findings"
 	}

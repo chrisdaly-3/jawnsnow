@@ -99,15 +99,19 @@ type postFlow struct {
 	// asks again before sending.
 	mustAsk bool
 	sel     post.Selection
-	// box is the preview's summary box, which edits sel.Body. inBox is set
-	// while it has the keys; the preview opens with it set, and the
-	// checklist has the keys otherwise. enterPosts is whether enter in the
-	// box posts (shift+enter being the new line), which needs a terminal
-	// that reports shift+enter apart from enter. opened is set once the
-	// preview has been shown, so coming back from a repost question keeps
-	// the box and the checklist.
-	box                       textarea.Model
-	inBox, enterPosts, opened bool
+	// focus is which part of the screen has the keys: the event row, the
+	// summary box (where the preview opens) or the findings checklist.
+	// eventCursor is the event row's cursor, an index into postEvents;
+	// sel.Event, marked with a check, is what posts. box is the summary
+	// box, which edits sel.Body. enterPosts is whether enter in the box
+	// posts (shift+enter being the new line), which needs a terminal that
+	// reports shift+enter apart from enter. opened is set once the preview
+	// has been shown, so coming back from a repost question keeps the box
+	// and the checklist.
+	focus              postFocus
+	eventCursor        int
+	box                textarea.Model
+	enterPosts, opened bool
 	// showBuildErr is set when enter tried to post a selection Build
 	// refused (Request changes with no summary, a Comment with nothing in
 	// it); the preview shows Build's reason until a change fixes it.
@@ -151,6 +155,33 @@ func (p *postFlow) rebuild() {
 	}
 }
 
+// postFocus is a part of the post screen that can have the keys. tab
+// goes down the screen, event row to box to checklist and round; shift+tab
+// goes up.
+type postFocus int
+
+const (
+	focusEvent postFocus = iota
+	focusSummary
+	focusFindings
+	postFocusCount
+)
+
+// inBox reports whether the summary box has the keys.
+func (p postFlow) inBox() bool { return p.focus == focusSummary }
+
+// moveFocus moves the focus by dir (1 for tab, -1 for shift+tab), focusing
+// or blurring the box as it goes.
+func (p postFlow) moveFocus(dir int) postFlow {
+	p.focus = postFocus((int(p.focus) + dir + int(postFocusCount)) % int(postFocusCount))
+	if p.focus == focusSummary {
+		p.box.Focus()
+	} else {
+		p.box.Blur()
+	}
+	return p
+}
+
 // openPreview shows the preview. The first time it opens with the summary
 // box focused; coming back from a repost question keeps the box and the
 // checklist as they were.
@@ -159,7 +190,8 @@ func (m Model) openPreview(p postFlow) postFlow {
 	if !p.opened {
 		p.opened = true
 		p.rebuild()
-		p.box, p.inBox, p.enterPosts = m.summaryBox(p.sel), true, m.keysDisambiguated
+		p.box, p.focus, p.enterPosts = m.summaryBox(p.sel), focusSummary, m.keysDisambiguated
+		p.eventCursor = eventIndex(p.sel.Event)
 		p.box.Focus()
 	}
 	return p
@@ -349,8 +381,11 @@ func (m Model) postKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		if p.inFlight || p.editing {
 			return m, nil
 		}
-		if p.inBox {
+		switch p.focus {
+		case focusSummary:
 			return m.boxKey(p, msg)
+		case focusEvent:
+			return m.eventKey(p, k)
 		}
 		return m.previewKey(p, k)
 	case postResult:
@@ -383,18 +418,8 @@ func (m Model) previewKey(p postFlow, k string) (Model, tea.Cmd) {
 			p.previewAt = m.now()
 			p.rebuild()
 		}
-	case "h", "left", "l", "right":
-		// The event row: h and l pick Approve, Comment or Request changes.
-		i := eventIndex(p.sel.Event) + map[string]int{"h": -1, "left": -1, "l": 1, "right": 1}[k]
-		if i >= 0 && i < len(postEvents) {
-			p.sel.Event = postEvents[i].event
-			p.box.Placeholder = boxPlaceholder(p.sel.Event)
-			p.previewAt = m.now()
-			p.rebuild()
-		}
-	case "tab":
-		p.inBox, follow = true, true // the scroll goes back to the box
-		p.box.Focus()
+	case "tab", "shift+tab":
+		p, follow = p.moveFocus(map[string]int{"tab": 1, "shift+tab": -1}[k]), true
 	case "m":
 		p.raw = !p.raw
 	case "ctrl+d", "ctrl+u":

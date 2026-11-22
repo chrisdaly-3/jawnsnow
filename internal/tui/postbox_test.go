@@ -30,11 +30,11 @@ func (h *postH) enhanced(t *testing.T) {
 func TestPreviewOpensInTheSummaryBox(t *testing.T) {
 	h := newPostHarness(t, markdownReview("fix `x`"), opts{})
 	h.press(t, "P") // Comment
-	if !h.m.post.inBox {
+	if !h.m.post.inBox() {
 		t.Fatal("the preview didn't open in the summary box")
 	}
 	got := modalText(h.m)
-	for _, want := range []string{"Summary ● enter for a new line · tab for the findings", "Write a summary (optional). Comment posts with or without one.", "tab/esc findings and event"} {
+	for _, want := range []string{"Summary ● enter for a new line · tab for the findings", "Write a summary (optional). Comment posts with or without one.", "tab/esc findings, then enter to post"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("no %q in the preview:\n%s", want, got)
 		}
@@ -52,10 +52,10 @@ func TestPreviewOpensInTheSummaryBox(t *testing.T) {
 		t.Errorf("summary %q, raw %v: checklist keys reached the checklist", h.m.post.sel.Body, h.m.post.raw)
 	}
 	h.press(t, "esc")
-	if h.m.post.inBox || h.m.post.stage != postPreview {
-		t.Errorf("esc in the box: inBox %v, stage %v; want the checklist", h.m.post.inBox, h.m.post.stage)
+	if h.m.post.inBox() || h.m.post.stage != postPreview {
+		t.Errorf("esc in the box: inBox %v, stage %v; want the checklist", h.m.post.inBox(), h.m.post.stage)
 	}
-	if got := modalText(h.m); !strings.Contains(got, "Summary ● tab to write here · e to open in $EDITOR") {
+	if got := modalText(h.m); !strings.Contains(got, "Summary ● shift+tab to write here · e to open in $EDITOR") {
 		t.Errorf("the box's help doesn't say how to get back in:\n%s", got)
 	}
 }
@@ -63,7 +63,7 @@ func TestPreviewOpensInTheSummaryBox(t *testing.T) {
 func TestShiftEnterIsANewLineAndEnterPostsWhenTheTerminalTellsThemApart(t *testing.T) {
 	h := newPostHarness(t, markdownReview("fix `x`"), opts{})
 	h.enhanced(t)
-	h.press(t, "P", "tab", "h", "h", "tab") // Approve, then back into the box
+	h.press(t, "P", "shift+tab", "h", "h", "space", "tab") // Approve, then back into the box
 	if got := modalText(h.m); !strings.Contains(got, "shift+enter for a new line · enter to post") {
 		t.Errorf("the box's help doesn't say enter posts:\n%s", got)
 	}
@@ -158,16 +158,56 @@ func TestEventRowChangesTheEvent(t *testing.T) {
 		t.Fatalf("h in the box: event %q, summary %q", h.m.post.sel.Event, h.m.post.sel.Body)
 	}
 	h.m, _ = settle(t, h.m, backspace)
-	h.press(t, "tab", "h", "h", "h") // past the left end stays on Approve
+	// shift+tab reaches the event row with its cursor on the checked event.
+	h.press(t, "shift+tab")
+	if h.m.post.focus != focusEvent || h.m.post.eventCursor != 2 {
+		t.Fatalf("shift+tab: focus %v cursor %d, want the event row on Request changes", h.m.post.focus, h.m.post.eventCursor)
+	}
+	// Moving the cursor doesn't change what posts; space does.
+	h.press(t, "h", "h", "h") // past the left end stays on Approve
+	if h.m.post.eventCursor != 0 || h.m.post.sel.Event != "REQUEST_CHANGES" {
+		t.Fatalf("h h h: cursor %d event %q, want the cursor on Approve and Request changes still chosen", h.m.post.eventCursor, h.m.post.sel.Event)
+	}
+	h.press(t, "space")
 	if h.m.post.sel.Event != "APPROVE" {
-		t.Fatalf("h h h: event %q, want APPROVE", h.m.post.sel.Event)
+		t.Fatalf("space: event %q, want APPROVE", h.m.post.sel.Event)
 	}
 	if !strings.HasPrefix(h.m.post.box.Placeholder, "Write a summary (optional). Approve posts") {
 		t.Errorf("placeholder %q for Approve", h.m.post.box.Placeholder)
 	}
-	h.press(t, "l")
-	if h.m.post.sel.Event != "COMMENT" {
-		t.Errorf("l: event %q, want COMMENT", h.m.post.sel.Event)
+	if got := modalText(h.m); !strings.Contains(got, "✓ Approve Comment Request changes") {
+		t.Errorf("the check isn't on Approve:\n%s", got)
+	}
+	// Leaving the row with the cursor elsewhere keeps the checked event.
+	h.press(t, "l", "tab")
+	if h.m.post.sel.Event != "APPROVE" || h.m.post.focus != focusSummary {
+		t.Errorf("l then tab: event %q focus %v, want APPROVE and the box", h.m.post.sel.Event, h.m.post.focus)
+	}
+	// j and k belong to the checklist; on the event row they do nothing.
+	h.press(t, "shift+tab", "j", "k")
+	if h.m.post.cursor != 0 || h.m.post.focus != focusEvent {
+		t.Errorf("j k on the event row: checklist cursor %d focus %v", h.m.post.cursor, h.m.post.focus)
+	}
+}
+
+func TestEventRowCursorIsFilledOnlyWithFocus(t *testing.T) {
+	h := newPostHarness(t, postReview(), opts{})
+	h.press(t, "P")
+	row := func() string {
+		for l := range strings.SplitSeq(content(h.m), "\n") {
+			if strings.Contains(l, "Request changes") && strings.Contains(l, "Approve") {
+				return l
+			}
+		}
+		t.Fatal("no event row")
+		return ""
+	}
+	if strings.Contains(row(), "48;5;237") || strings.Contains(row(), "▸") {
+		t.Errorf("the event row shows a cursor while the box has focus: %q", row())
+	}
+	h.press(t, "shift+tab")
+	if !strings.Contains(row(), "48;5;237") || !strings.Contains(row(), "▸") {
+		t.Errorf("the event row's cursor isn't marked and filled with focus: %q", row())
 	}
 }
 
@@ -205,5 +245,19 @@ func TestBoxHeights(t *testing.T) {
 	h.press(t, "P")
 	if got := h.m.post.box.Height(); got != boxMinHeight {
 		t.Errorf("empty box height %d, want %d", got, boxMinHeight)
+	}
+}
+
+// enter on the event row posts, as on the checklist; it posts the checked
+// event, not the one under the cursor.
+func TestEnterOnTheEventRowPostsTheCheckedEvent(t *testing.T) {
+	h := newPostHarness(t, postReview(), opts{}) // verdict: Request changes
+	h.press(t, "P")
+	h.typeText(t, "Please fix the lookup.")
+	h.press(t, "shift+tab", "h") // cursor on Comment; Request changes still checked
+	h.wait()
+	h.press(t, "enter")
+	if len(h.poster.posts) != 1 || h.poster.posts[0].Event != "REQUEST_CHANGES" {
+		t.Fatalf("posts = %+v, want one REQUEST_CHANGES", h.poster.posts)
 	}
 }

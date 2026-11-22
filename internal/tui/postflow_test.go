@@ -127,13 +127,14 @@ func TestPostFlowHappyPath(t *testing.T) {
 	if h.m.post == nil || h.m.post.stage != postPreview || h.m.post.sel.Event != "REQUEST_CHANGES" {
 		t.Fatalf("P: post flow %+v, want the preview on REQUEST_CHANGES", h.m.post)
 	}
-	if got := modalText(h.m); !strings.Contains(got, "Post as ● tab, then h/l to change Approve Comment Request changes") {
-		t.Errorf("no event row:\n%s", got)
+	if got := modalText(h.m); !strings.Contains(got, "Post as ● shift+tab to change Approve Comment ✓ Request changes") {
+		t.Errorf("no event row with Request changes checked:\n%s", got)
 	}
-	// tab leaves the box for the checklist; h moves the event to Comment.
-	h.press(t, "tab", "h")
-	if h.m.post.sel.Event != "COMMENT" {
-		t.Fatalf("h: event %q, want COMMENT", h.m.post.sel.Event)
+	// shift+tab goes up to the event row; h moves its cursor, space checks
+	// Comment; shift+tab again wraps round to the checklist.
+	h.press(t, "shift+tab", "h", "space", "shift+tab")
+	if h.m.post.sel.Event != "COMMENT" || h.m.post.focus != focusFindings {
+		t.Fatalf("event %q, focus %v; want COMMENT on the checklist", h.m.post.sel.Event, h.m.post.focus)
 	}
 	// The cursor is on the first finding the drawer lists, lookup.go:40;
 	// the fixed ones are left out already.
@@ -190,7 +191,7 @@ func TestPostFlowHappyPath(t *testing.T) {
 
 func TestConfirmTwiceSendsOnce(t *testing.T) {
 	h := newPostHarness(t, postReview(), opts{})
-	h.press(t, "P", "tab", "h")
+	h.press(t, "P", "shift+tab", "h", "space", "shift+tab")
 	h.wait()
 	m, first := update(t, h.m, key("enter"))
 	m, second := update(t, m, key("enter"))
@@ -208,7 +209,7 @@ func TestConfirmTwiceSendsOnce(t *testing.T) {
 func TestPostErrorRecordsNothing(t *testing.T) {
 	h := newPostHarness(t, postReview(), opts{})
 	h.poster.err = &github.RefusedError{Err: errors.New("github: post review: Line could not be resolved")}
-	h.press(t, "P", "tab", "h", "space")
+	h.press(t, "P", "shift+tab", "h", "space", "shift+tab", "space")
 	h.wait()
 	h.press(t, "enter")
 
@@ -253,7 +254,7 @@ func TestRepostAsksFirst(t *testing.T) {
 		t.Fatalf("n: modal %+v, want closed", h.m.post)
 	}
 	h.press(t, "P", "y")
-	if h.m.post == nil || h.m.post.stage != postPreview || !h.m.post.inBox {
+	if h.m.post == nil || h.m.post.stage != postPreview || !h.m.post.inBox() {
 		t.Fatalf("y: %+v, want the preview with the summary box focused", h.m.post)
 	}
 	if len(h.poster.posts) != 0 {
@@ -265,7 +266,7 @@ func TestHeadMovedWarning(t *testing.T) {
 	rv := postReview()
 	rv.HeadOID = "0ld0ld0ld"
 	h := newPostHarness(t, rv, opts{})
-	h.press(t, "P", "tab", "h")
+	h.press(t, "P", "shift+tab", "h", "space", "shift+tab")
 	if got := modalText(h.m); !strings.Contains(got, "PR has new commits since this review — comments will show as outdated") {
 		t.Errorf("no head-moved warning:\n%s", got)
 	}
@@ -277,7 +278,7 @@ func TestHeadMovedWarning(t *testing.T) {
 
 	// At the PR's head there is no warning.
 	h = newPostHarness(t, postReview(), opts{})
-	h.press(t, "P", "tab", "h")
+	h.press(t, "P", "shift+tab", "h", "space", "shift+tab")
 	if got := modalText(h.m); strings.Contains(got, "PR has new commits") {
 		t.Errorf("a warning at the PR's head:\n%s", got)
 	}
@@ -300,7 +301,7 @@ func TestRequestChangesBlocksWithoutBody(t *testing.T) {
 		t.Errorf("enter didn't say why it didn't post:\n%s", got)
 	}
 	// Writing a summary clears it.
-	h.press(t, "tab")
+	h.press(t, "shift+tab") // up from the checklist to the box
 	h.typeText(t, "Please fix.")
 	if got := modalText(h.m); strings.Contains(got, msg) {
 		t.Errorf("the error outlived the summary that fixes it:\n%s", got)
@@ -369,7 +370,7 @@ func TestNoPosterShowsReason(t *testing.T) {
 
 func TestRecordFailureAfterPostIsVisible(t *testing.T) {
 	h := newPostHarness(t, postReview(), opts{})
-	h.press(t, "P", "tab", "h")
+	h.press(t, "P", "shift+tab", "h", "space", "shift+tab")
 	h.wait()
 	failRecords(t, h.harness)
 	h.press(t, "enter")
@@ -401,7 +402,7 @@ func TestPreviewRendersMarkdown(t *testing.T) {
 	if !strings.Contains(got, "must fix x") || strings.Contains(got, "**must**") {
 		t.Errorf("the preview is not rendered:\n%s", got)
 	}
-	if !strings.Contains(got, "#85180 · head-1") || !strings.Contains(got, "Approve Comment Request changes") || strings.Contains(got, "COMMENT") {
+	if !strings.Contains(got, "#85180 · head-1") || !strings.Contains(got, "Approve ✓ Comment Request changes") || strings.Contains(got, "COMMENT") {
 		t.Errorf("no commit in the header or no event row:\n%s", got)
 	}
 }
@@ -448,7 +449,7 @@ func TestPreviewWarnsHiddenContent(t *testing.T) {
 
 func TestPreviewScrollsAndMovesTheCursor(t *testing.T) {
 	h := newPostHarness(t, postReview(), opts{})
-	h.press(t, "P", "tab", "h", "j")
+	h.press(t, "P", "shift+tab", "h", "space", "shift+tab", "j")
 	if h.m.post.cursor != 1 {
 		t.Errorf("j: cursor %d, want 1", h.m.post.cursor)
 	}
@@ -665,7 +666,7 @@ func TestRecordPrecedesThreadLookup(t *testing.T) {
 	release := make(chan struct{})
 	inLookup := make(chan struct{})
 	h.poster.inLookup = func() { close(inLookup); <-release }
-	h.press(t, "P", "tab", "h", "space")
+	h.press(t, "P", "shift+tab", "h", "space", "shift+tab", "space")
 	h.wait()
 	m, cmd := update(t, h.m, key("enter"))
 	done := make(chan []tea.Msg)
@@ -882,7 +883,7 @@ func TestHeldPlainEnterNeverPosts(t *testing.T) {
 // preview being on screen as it will post.
 func TestToggleRestartsConfirmWait(t *testing.T) {
 	h := newPostHarness(t, postReview(), opts{})
-	h.press(t, "P", "tab", "h")
+	h.press(t, "P", "shift+tab", "h", "space", "shift+tab")
 	h.wait()
 	h.press(t, "space", "enter")
 	if len(h.poster.posts) != 0 {
@@ -928,7 +929,7 @@ func TestPreviewBuildsOncePerSelection(t *testing.T) {
 	}
 	t.Cleanup(func() { buildPost = old })
 	h := newPostHarness(t, postReview(), opts{})
-	h.press(t, "P", "tab", "h")
+	h.press(t, "P", "shift+tab", "h", "space", "shift+tab")
 	before := n
 	if before == 0 {
 		t.Fatal("the preview never built the payload")
@@ -976,7 +977,7 @@ func TestQuestionMarkOpensPostHelp(t *testing.T) {
 	if !h.m.help || !slices.Equal(helpTitles(h.m), []string{"Everywhere", "Post"}) {
 		t.Fatalf("checklist ?: help %v, sections %v", h.m.help, helpTitles(h.m))
 	}
-	if got := modalText(h.m); !strings.Contains(got, "Approve, Comment or Request changes") {
+	if got := modalText(h.m); !strings.Contains(got, "move along Approve, Comment, Request changes") {
 		t.Errorf("the Post section is not shown:\n%s", got)
 	}
 	event := h.m.post.sel.Event
@@ -1056,7 +1057,7 @@ func newDraftedHarness(t *testing.T) *postH {
 // it (TestPostMovesCardAtOnce).
 func TestPostClearsDraftedAtOnce(t *testing.T) {
 	h := newDraftedHarness(t)
-	h.press(t, "P", "tab", "h")
+	h.press(t, "P", "shift+tab", "h", "space", "shift+tab")
 	h.wait()
 	m, cmd := update(t, h.m, key("enter"))
 	msgs, _ := runCmd(t, cmd)
@@ -1087,7 +1088,7 @@ func TestPostClearsDraftedAtOnce(t *testing.T) {
 func TestUncertainPostClearsDrafted(t *testing.T) {
 	h := newDraftedHarness(t)
 	h.poster.err = fmt.Errorf("github: post review: %w", context.DeadlineExceeded)
-	h.press(t, "P", "tab", "h")
+	h.press(t, "P", "shift+tab", "h", "space", "shift+tab")
 	h.wait()
 	h.press(t, "enter")
 	if got := modalText(h.m); !strings.Contains(got, uncertainText) {
@@ -1106,7 +1107,7 @@ func TestUncertainPostClearsDrafted(t *testing.T) {
 func TestUnrecordedPostClearsDrafted(t *testing.T) {
 	h := newDraftedHarness(t)
 	failRecords(t, h.harness)
-	h.press(t, "P", "tab", "h")
+	h.press(t, "P", "shift+tab", "h", "space", "shift+tab")
 	h.wait()
 	h.press(t, "enter", "esc")
 	if h.drafted() {
@@ -1124,9 +1125,9 @@ func TestPostMovesCardAtOnce(t *testing.T) {
 		keys []string
 		want status.Status
 	}{
-		{post.Approve, []string{"tab", "h", "h"}, status.ApprovedByYou},
-		{post.Comment, []string{"tab", "h", "h", "l"}, status.ChangesRequested},
-		{post.RequestChanges, []string{"tab", "h", "h", "l", "l"}, status.ChangesRequested},
+		{post.Approve, []string{"shift+tab", "h", "h", "space", "shift+tab"}, status.ApprovedByYou},
+		{post.Comment, []string{"shift+tab", "h", "h", "l", "space", "shift+tab"}, status.ChangesRequested},
+		{post.RequestChanges, []string{"shift+tab", "h", "h", "l", "l", "space", "shift+tab"}, status.ChangesRequested},
 	} {
 		t.Run(string(tc.event), func(t *testing.T) {
 			t.Setenv("VISUAL", "")
@@ -1194,7 +1195,7 @@ func TestPostedReviewSurvivesPollStartedBefore(t *testing.T) {
 // view replaces the one the post assumed.
 func TestGitHubSnapshotReplacesPostedReview(t *testing.T) {
 	h := newPostHarness(t, markdownReview("fix `x`"), opts{})
-	h.press(t, "P", "tab", "h", "h")
+	h.press(t, "P", "shift+tab", "h", "h", "space", "shift+tab")
 	h.wait()
 	h.press(t, "enter")
 	if got := h.m.prs["1"].Status.Status; got != status.ApprovedByYou {

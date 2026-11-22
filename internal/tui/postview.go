@@ -45,8 +45,11 @@ func (p postFlow) hints() []keyHint {
 		return postPostingKeys
 	}
 	keys := postPreviewKeys(p.raw)
-	if p.inBox {
+	switch p.focus {
+	case focusSummary:
 		keys = postBoxKeys(p.enterPosts)
+	case focusEvent:
+		keys = postEventKeys
 	}
 	if p.holdOn {
 		return append([]keyHint{postHoldOnKey}, keys...)
@@ -130,33 +133,33 @@ func (m Model) postFrame(width, height int) (top, body []string, cursorRow, rows
 		}
 		top = append(top, wrap("Rendered view hides: "+strings.Join(items, "; ")+" — press m to see the raw text", th.StatusFg("CI_WAITING"))...)
 	}
-	// The event row: the three events as tabs, the chosen one filled.
-	eventHint := " ● h/l to change"
-	if p.inBox {
-		eventHint = " ● tab, then h/l to change"
-	}
-	tabs := make([]string, len(postEvents))
-	for i, e := range postEvents {
-		tabs[i] = th.Tab(e.label, e.event == p.sel.Event)
-	}
+	// Each heading says how to reach or use its part from where the focus
+	// is: tab goes down the screen and shift+tab up.
+	eventHint := map[postFocus]string{
+		focusEvent:    " ● h/l to move · space to choose",
+		focusSummary:  " ● shift+tab to change",
+		focusFindings: " ● tab to change",
+	}[p.focus]
 	top = append(top, "")
 	// The event row and the box scroll with the rest, so a short window
-	// still shows the checklist; the scroll follows the box while it has
-	// the keys (summaryRow) and the checklist's cursor otherwise.
-	body = append(body, ansi.Truncate(th.Accent().Render("Post as")+th.Muted().Render(eventHint), inner, "…"), strings.Join(tabs, " "), "")
+	// still shows the checklist; the scroll follows whichever part has the
+	// keys (eventRow, summaryRow, or the checklist's cursor).
+	eventRow := len(body)
+	body = append(body, ansi.Truncate(th.Accent().Render("Post as")+th.Muted().Render(eventHint), inner, "…"), m.eventRow(*p), "")
 	summaryRow := len(body)
 	body = append(body, ansi.Truncate(th.Accent().Render("Summary")+th.Muted().Render(" ● "+p.boxHelp()), inner, "…"))
 	box := p.box
 	box.SetWidth(max(inner-4, 1))
-	body = append(body, strings.Split(boxFrame(th, p.inBox).Render(box.View()), "\n")...)
+	body = append(body, strings.Split(boxFrame(th, p.inBox()).Render(box.View()), "\n")...)
 	body = append(body, "")
 
 	fs := orderedFindings(p.review.Findings)
 	if len(fs) > 0 {
-		hint := " ● j/k to move · space to include or leave out"
-		if p.inBox {
-			hint = " ● tab to choose which to post"
-		}
+		hint := map[postFocus]string{
+			focusEvent:    " ● shift+tab to choose which to post",
+			focusSummary:  " ● tab to choose which to post",
+			focusFindings: " ● j/k to move · space to include or leave out",
+		}[p.focus]
 		body = append(body, ansi.Truncate(th.Accent().Render("Findings")+th.Muted().Render(hint), inner, "…"))
 	}
 	for i, f := range fs {
@@ -182,7 +185,7 @@ func (m Model) postFrame(width, height int) (top, body []string, cursorRow, rows
 		line := ansi.Truncate(row.String(), inner, "…")
 		// The checklist's cursor row is filled like the drawer's selection
 		// while the checklist has the keys.
-		if i == p.cursor && !p.inBox {
+		if i == p.cursor && p.focus == focusFindings {
 			line = th.Selected(line, inner)
 		}
 		body = append(body, line)
@@ -213,7 +216,10 @@ func (m Model) postFrame(width, height int) (top, body []string, cursorRow, rows
 		}
 		body = append(body, "")
 	}
-	if p.inBox {
+	switch p.focus {
+	case focusEvent:
+		cursorRow = eventRow
+	case focusSummary:
 		cursorRow = summaryRow
 	}
 	return top, body, cursorRow, rows
