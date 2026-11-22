@@ -134,7 +134,7 @@ func Defaults() Config {
 		},
 		Feeds: []Feed{{
 			Name:  "review-requested",
-			Query: "is:pr is:open review-requested:@me",
+			Query: "is:pr is:open draft:false review-requested:@me",
 			Since: Duration{DefaultSince},
 		}},
 		Done: DoneConfig{KeepFor: Duration{30 * 24 * time.Hour}},

@@ -12,9 +12,9 @@ ignore_checks = []    # check-name globs that never count as pending or failed, 
 
 # Each [[feeds]] block is one GitHub search; a PR is on the wall if any feed finds it. Yours replace this one.
 [[feeds]]
-name  = "review-requested"                    # unique label shown in filters and on cards
-query = "is:pr is:open review-requested:@me"  # any PR search; draft:false is added unless it has a draft: qualifier
-since = "14d"                                 # only PRs updated within this window; a quieter PR goes stale
+name  = "review-requested"                                # unique label shown in filters and on cards
+query = "is:pr is:open draft:false review-requested:@me"  # any GitHub PR search; drop draft:false to include drafts
+since = "14d"                                             # only PRs updated within this window; a quieter PR goes stale
 
 [done]
 keep_for = "30d"  # how long merged, closed, hidden and stale PRs stay tracked

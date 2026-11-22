@@ -32,7 +32,7 @@ func TestDefaults(t *testing.T) {
 	assertEq(t, d.GitHub.IdlePollInterval(), 15*time.Minute)
 	assertEq(t, len(d.Feeds), 1)
 	assertEq(t, d.Feeds[0].Name, "review-requested")
-	assertEq(t, d.Feeds[0].Query, "is:pr is:open review-requested:@me")
+	assertEq(t, d.Feeds[0].Query, "is:pr is:open draft:false review-requested:@me")
 	assertEq(t, d.Feeds[0].Since.Duration, 14*24*time.Hour)
 	assertEq(t, d.Done.KeepFor.Duration, 30*24*time.Hour)
 	assertEq(t, d.Review.QuietPeriod.Duration, 5*time.Minute)
