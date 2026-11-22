@@ -4,7 +4,7 @@
 
 <div align="center">
 
-  # jawnSnow - a Watcher on your Wall of PR's 👑❄️
+  # jawnSnow - a Watcher on your Wall of PR's&nbsp;👑&#8288;❄️
 
 </div>
 
@@ -12,35 +12,18 @@
   <em><code>snow</code> is a terminal UI that watches the GitHub PRs your team asks you to review, shows each PR's status, runs read-only Claude reviews, and lets you post a review you've read as your own after a preview.</em>
 </p>
 
-<table>
-  <thead>
-    <tr>
-      <th colspan="2" align="left">Index</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td><a href="#how-it-works">How it Works</a></td>
-      <td><a href="#configuration">Configuration</a></td>
-    </tr>
-    <tr>
-      <td><a href="#requirements">Requirements</a></td>
-      <td><a href="#documentation">Documentation</a></td>
-    </tr>
-    <tr>
-      <td><a href="#install">Install</a></td>
-      <td><a href="#development">Development</a></td>
-    </tr>
-    <tr>
-      <td><a href="#quickstart">Quickstart</a></td>
-      <td><a href="#credits">Credits</a></td>
-    </tr>
-    <tr>
-      <td><a href="#screenshots">Screenshots</a></td>
-      <td><a href="#license">License</a></td>
-    </tr>
-  </tbody>
-</table>
+<p align="center">
+  <b><a href="#how-it-works">How&nbsp;it&nbsp;works</a></b>&nbsp;·
+  <b><a href="#requirements">Requirements</a></b>&nbsp;·
+  <b><a href="#install">Install</a></b>&nbsp;·
+  <b><a href="#quickstart">Quickstart</a></b>&nbsp;·
+  <b><a href="#screenshots">Screenshots</a></b><br>
+  <b><a href="#configuration">Configuration</a></b>&nbsp;·
+  <b><a href="#documentation">Documentation</a></b>&nbsp;·
+  <b><a href="#development">Development</a></b>&nbsp;·
+  <b><a href="#credits">Credits</a></b>&nbsp;·
+  <b><a href="#license">License</a></b>
+</p>
 
 ![snow demo](docs/assets/demo.gif)
 
