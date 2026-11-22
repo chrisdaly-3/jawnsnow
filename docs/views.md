@@ -108,7 +108,6 @@ Its label and colour are set with [`[theme.status] DRAFTED`](configuration.md#th
 | Badge | Means |
 | --- | --- |
 | `⣾ Claude reviewing…` | A review of this PR is running. |
-| `· teammate reviewed` | Auto mode skipped this head because the PR is on a team feed and a teammate reviewed it. Shown until a review of this head exists. |
 | `· review cancelled` | The latest review was cancelled, by quitting or by the PR leaving the Wall. |
 | `! review failed` | The latest review failed. |
 | `✦ Claude: 2 blocking` | The latest review has blocking findings that are still open (not fixed or answered). |
@@ -157,7 +156,7 @@ How "commits since you reviewed" is judged for `NEW_CHANGES`:
 - If the only commits since your review are merges of the base branch into the PR (two parents, one of them not among the PR's own commits), there are no new changes, and the PR keeps its status.
 - snow fetches a PR's last 100 commits. If the commit you reviewed isn't among them, after a force-push or on a very long PR, it counts as new changes.
 
-Draft PRs are left out unless the feed sets `include_drafts = true`.
+Draft PRs are left out when the feed's query has `draft:false`, as the default feed's does.
 
 ## The drawer
 
@@ -278,7 +277,7 @@ PRs you hid with `x`, PRs that went stale (no update for longer than their feeds
 | Since | how long it has waited, like `3d` |
 | Latest Claude verdict | the latest review's badge, as on the Wall |
 
-snow checks these PRs every `github.idle_poll_interval`. A PR goes back to the Wall when its head commit changes, or when someone other than you comments or reviews after it started waiting. If it merges or closes, it moves to "Merged & closed". A merged or closed PR that is reopened goes back to the Wall. If nothing happens for `done.keep_for`, snow stops tracking it. `x` on a row puts it back on the Wall now.
+snow checks these PRs every 5 × `github.poll_interval` (15 minutes by default). A PR goes back to the Wall when its head commit changes, or when someone other than you comments or reviews after it started waiting. If it merges or closes, it moves to "Merged & closed". A merged or closed PR that is reopened goes back to the Wall. If nothing happens for `done.keep_for`, snow stops tracking it. `x` on a row puts it back on the Wall now.
 
 A `no longer in a feed` PR is different. New commits and comments don't bring it back, because no feed would be refreshing it. It returns to the Wall only when a current feed finds it again, for example after you add a feed whose query matches it, or restore the feed you removed. `x` on it leaves it where it is and says `no current feed finds this PR — add one that does`. It is not reviewed automatically while it waits.
 

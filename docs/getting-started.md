@@ -55,7 +55,7 @@ A feed is a GitHub search. snow runs each feed's search every poll (every 3 minu
 ```toml
 [[feeds]]
 name = "review-requested"
-query = "is:pr is:open review-requested:@me"
+query = "is:pr is:open draft:false review-requested:@me"
 since = "14d"
 ```
 
@@ -66,12 +66,11 @@ To follow more, add feeds. Adding any `[[feeds]]` block replaces the default, so
 ```toml
 [[feeds]]
 name = "review-requested"
-query = "is:pr is:open review-requested:@me"
+query = "is:pr is:open draft:false review-requested:@me"
 
 [[feeds]]
 name = "my-team"
-query = "is:pr is:open team-review-requested:my-org/my-team"
-team = true
+query = "is:pr is:open draft:false team-review-requested:my-org/my-team"
 ```
 
 Save the file and snow uses the new feeds at the next poll. Press `R` to poll now. [configuration.md](configuration.md#feeds) covers every feed setting.

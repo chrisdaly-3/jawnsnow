@@ -23,7 +23,7 @@ No config at ~/.config/jawnsnow/config.toml — using defaults (could not create
 
 `snow config path` prints the file snow reads, or would create, using the same lookup as startup. It prints only the path, so it is safe in `$(...)`. A note about an ignored `XDG_CONFIG_HOME` goes to standard error.
 
-`snow config default` prints the same commented defaults to standard output. Use it to see what a newer snow ships, or to start a file by hand. To start one where snow will look, without overwriting a file that is already there:
+The defaults file gives each key its default value and a one-line comment; this page is the long form. `snow config default` prints the same file to standard output. Use it to see what a newer snow ships, or to start a file by hand. To start one where snow will look, without overwriting a file that is already there:
 
 ```sh
 mkdir -p "$(dirname "$(snow config path)")"
@@ -56,9 +56,8 @@ What a good reload changes:
 | `ignore_checks` (both lists) | at once: every PR's status is derived again from its stored data, with no GitHub call |
 | `[[feeds]]` | at the next poll |
 | `github.poll_interval` | when the next poll is scheduled, which is after the poll that is due now |
-| `github.idle_poll_interval`, `done.keep_for` | at the next poll |
+| `done.keep_for` | at the next poll |
 | `[review]`, `[review.budget]`, the tiers and `[[review.overrides]]` | at the next review; auto mode's checks use them at its next evaluation (every 30 seconds, and after each poll and review) |
-| `review.worktree_idle` | at the next idle-worktree prune, which runs every 10 minutes |
 | `repos.<name>.scope`, `context`, `focus`, `design_refs` | at the next review of that repo |
 | `repos.<name>.ignore_checks` | at once, like `github.ignore_checks` |
 
@@ -75,6 +74,16 @@ A key snow doesn't know, such as a misspelled one, is not an error. It is report
 
 - at startup, as `config: unknown key "<key>"`, which stays for the session;
 - after a reload, as `config warning: unknown key "<key>"`, which the next reload replaces.
+
+Keys that older versions of snow read are reported the same way, so an old config still loads. Delete them when you see the warning:
+
+| Removed key | What replaced it |
+| --- | --- |
+| `github.idle_poll_interval` | hidden and stale PRs are checked every 5 × [`github.poll_interval`](#githubpoll_interval) |
+| `feeds.team` | nothing: another reviewer's review no longer holds back an auto review |
+| `feeds.include_drafts` | the query: snow no longer adds `draft:false`, so put it in [`feeds.query`](#feedsquery) to leave drafts out |
+| `review.max_turns` | fixed at 100; [`run_timeout`](#reviewrun_timeout) and [`per_review_usd`](#reviewbudgetper_review_usd) bound a run |
+| `review.worktree_idle` | fixed at 2 hours |
 
 A mistake at startup is different from one in a reload. If the file at startup can't be parsed, or a value is out of range, snow prints the error and exits with status 1. Every validation message names the TOML key path, for example:
 
@@ -106,7 +115,6 @@ Press `m` to switch modes for the current session; the file isn't changed. snow 
 ```toml
 [github]
 poll_interval = "3m"
-idle_poll_interval = "15m"
 ignore_checks = ["codeowners-gate*"]
 ```
 
@@ -118,15 +126,9 @@ ignore_checks = ["codeowners-gate*"]
 
 How often snow polls: it runs every feed's search and checks every PR on the Wall. Press `R` to poll right away. snow waits longer than this on its own when GitHub's rate limit runs low (see [the status bar](views.md#the-status-bar-and-banners)): twice the interval when fewer than 1000 points remain, and until the limit resets when fewer than 200 remain or GitHub refuses a poll. When GitHub refuses polls without saying when to retry, snow waits 2, 4, 8 and more times the interval, up to 30 minutes.
 
+The PRs in the Done view's "Waiting for new activity" table (hidden or stale PRs) are checked less often, every 5 × this interval (15 minutes by default), and skipped by the polls in between. Merged and closed PRs are not polled at all.
+
 Lower it to see changes sooner; raise it to spend less of your GitHub rate limit.
-
-### `github.idle_poll_interval`
-
-| Type | Default | Valid values |
-| --- | --- | --- |
-| duration | `"15m"` | at least `github.poll_interval` |
-
-How often snow checks the PRs in the Done view's "Waiting for new activity" table (hidden or stale PRs) for new activity. These PRs are skipped by the polls in between. Merged and closed PRs are not polled at all.
 
 ### `github.ignore_checks`
 
@@ -149,24 +151,21 @@ The default is one feed:
 ```toml
 [[feeds]]
 name = "review-requested"
-query = "is:pr is:open review-requested:@me"
+query = "is:pr is:open draft:false review-requested:@me"
 since = "14d"
-team = false
-include_drafts = false
 ```
 
-Adding any `[[feeds]]` block to your file replaces this default, so copy it in if you still want it. An example with a team feed:
+Adding any `[[feeds]]` block to your file replaces this default, so copy it in if you still want it. An example with a second feed for a team's review requests:
 
 ```toml
 [[feeds]]
 name = "review-requested"
-query = "is:pr is:open review-requested:@me"
+query = "is:pr is:open draft:false review-requested:@me"
 
 [[feeds]]
 name = "platform"
-query = "is:pr is:open team-review-requested:my-org/platform"
+query = "is:pr is:open draft:false team-review-requested:my-org/platform"
 since = "7d"
-team = true
 ```
 
 Each search returns at most 100 PRs, the most recently updated first. A feed whose search fails is skipped for that poll and named in a banner; the other feeds still run. A search that hits GitHub's rate limit is different: it ends the whole poll.
@@ -179,17 +178,16 @@ snow remembers which feeds found each PR. When you remove a feed, or change its 
 | --- | --- | --- |
 | string | `"review-requested"` in the default feed | required, not empty, unique across feeds |
 
-The feed's label. The Wall's empty state lists the feed names, and `team` and `since` are looked up by it, so renaming a feed changes which settings its tracked PRs get.
+The feed's label. The Wall's empty state lists the feed names, and a tracked PR's `since` is looked up by it, so renaming a feed changes which window its tracked PRs get.
 
 ### `feeds.query`
 
 | Type | Default | Valid values |
 | --- | --- | --- |
-| string | `"is:pr is:open review-requested:@me"` in the default feed | required, not empty |
+| string | `"is:pr is:open draft:false review-requested:@me"` in the default feed | required, not empty |
 
-Any GitHub pull request search, for example `team-review-requested:org/team`, `author:alice` or `repo:owner/name label:foo`. snow adds three qualifiers before sending it:
+Any GitHub pull request search, for example `team-review-requested:org/team`, `author:alice` or `repo:owner/name label:foo`. Drafts are up to the query: `draft:false` leaves them out, `draft:true` finds only drafts, and neither finds both. snow adds two qualifiers before sending it:
 
-- `draft:false`, unless `include_drafts = true`;
 - `updated:>=<time>`, the start of the `since` window, rounded down to the UTC day for windows of a day or more, or to the hour for shorter ones;
 - `sort:updated-desc`.
 
@@ -200,22 +198,6 @@ Any GitHub pull request search, for example `team-review-requested:org/team`, `a
 | duration | `"14d"` | greater than 0; unset or zero means `"14d"` |
 
 The time gate. The search only finds PRs updated within this window. It also decides when a tracked PR goes stale: a PR on the Wall with no update for longer than its feeds' longest `since` moves to the Done view's "Waiting for new activity" table, marked `stale`. A PR that came back to the Wall (unhidden, or with new activity) counts from when it came back. A PR whose feed is no longer in the config uses 14 days.
-
-### `feeds.team`
-
-| Type | Default | Valid values |
-| --- | --- | --- |
-| boolean | `false` | `true` or `false` |
-
-Marks a team feed. When a PR came from a team feed and a teammate has already submitted a review at the PR's current head commit, auto mode skips that head. A teammate is anyone other than you and the PR's author, not counting bot accounts (logins ending in `[bot]`) or pending reviews. The PR stays on the Wall with the badge `· teammate reviewed`, and a new commit puts it back in line. `space` still reviews it.
-
-### `feeds.include_drafts`
-
-| Type | Default | Valid values |
-| --- | --- | --- |
-| boolean | `false` | `true` or `false` |
-
-Include draft PRs in this feed's search. Without it snow adds `draft:false` to the query.
 
 ## `[done]`
 
@@ -317,9 +299,7 @@ These settings control Claude reviews. Most of them only matter in auto mode; th
 quiet_period = "5m"
 max_in_flight = 2
 max_reviews_per_pr_per_day = 4
-max_turns = 100
 run_timeout = "25m"
-worktree_idle = "2h"
 ```
 
 ### `review.quiet_period`
@@ -346,29 +326,13 @@ The most reviews that run at once, auto and manual together. A `space` while thi
 
 The most automatic reviews of one PR per day, failed ones included. Days start at local midnight. Reviews you start with `space` or `c` don't count toward it and aren't limited by it.
 
-### `review.max_turns`
-
-| Type | Default | Valid values |
-| --- | --- | --- |
-| integer | `100` | not checked by snow |
-
-The most turns one `claude` run may take, passed as `claude --max-turns`.
-
 ### `review.run_timeout`
 
 | Type | Default | Valid values |
 | --- | --- | --- |
 | duration | `"25m"` | any non-negative duration; `0` means no timeout |
 
-A `claude` run still going after this is killed, with its child processes. A first run killed this way fails the review with `claude run stopped: context deadline exceeded`. The limit applies to each run, so a review that resumes its session to fill gaps can take longer in total.
-
-### `review.worktree_idle`
-
-| Type | Default | Valid values |
-| --- | --- | --- |
-| duration | `"2h"` | any non-negative duration |
-
-A free worktree unused for this long is removed at the next prune, which runs every 10 minutes. A lower value means less disk use and fewer worktrees for `git` to track in your clone. The cost is a slower first review after a quiet spell, since the worktree has to be checked out again.
+A `claude` run still going after this is killed, with its child processes. A first run killed this way fails the review with `claude run stopped: context deadline exceeded`. The limit applies to each run, so a review that resumes its session to fill gaps can take longer in total. Each run is also held to 100 turns (`claude --max-turns 100`).
 
 ## Budgets
 
@@ -577,14 +541,11 @@ Not configurable: the verdict banners in the drawer (`APPROVE` on `41`, `REQUEST
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `mode.default` | `"watcher"` | the mode snow starts in: `"watcher"` or `"auto"` |
-| `github.poll_interval` | `"3m"` | how often to poll; at least `1m` |
-| `github.idle_poll_interval` | `"15m"` | how often to check hidden and stale PRs; at least `poll_interval` |
+| `github.poll_interval` | `"3m"` | how often to poll, at least `1m`; hidden and stale PRs every 5 × |
 | `github.ignore_checks` | `[]` | check-name globs that never count as pending or failed |
 | `feeds.name` | `"review-requested"` | the feed's unique label |
-| `feeds.query` | `"is:pr is:open review-requested:@me"` | the GitHub search |
+| `feeds.query` | `"is:pr is:open draft:false review-requested:@me"` | the GitHub search |
 | `feeds.since` | `"14d"` | only PRs updated within this window; also when a PR goes stale |
-| `feeds.team` | `false` | skip auto reviews of a head a teammate reviewed |
-| `feeds.include_drafts` | `false` | include draft PRs |
 | `done.keep_for` | `"30d"` | how long done, hidden and stale PRs stay tracked |
 | `repos.<name>.path` | unset | your local clone to review from |
 | `repos.<name>.scope` | `"full"` | `"full"` or `"pr-only"`: how much the reviewer reads |
@@ -595,9 +556,7 @@ Not configurable: the verdict banners in the drawer (`APPROVE` on `41`, `REQUEST
 | `review.quiet_period` | `"5m"` | how long a head must be unchanged before auto mode reviews it |
 | `review.max_in_flight` | `2` | reviews at once; worktrees per repo |
 | `review.max_reviews_per_pr_per_day` | `4` | auto reviews of one PR per day |
-| `review.max_turns` | `100` | `claude --max-turns` |
 | `review.run_timeout` | `"25m"` | how long one `claude` run may take |
-| `review.worktree_idle` | `"2h"` | when an unused worktree is removed |
 | `review.budget.per_review_usd` | `15` | `claude --max-budget-usd` for one review |
 | `review.budget.daily_usd` | `250` | daily cap; pauses auto mode, makes `space` ask |
 | `review.first_pass.model` | `"claude-opus-5-5"` | model before you've reviewed the PR |

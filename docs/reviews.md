@@ -21,10 +21,9 @@ Auto mode looks at every PR on the Wall every 30 seconds, after each poll, and a
 2. Its status is `READY_FOR_REVIEW`, or `NEW_CHANGES` with CI green.
 3. Its head commit has been the same for at least `review.quiet_period` (5 minutes by default), counted from when snow first saw it.
 4. Claude hasn't already reviewed this head. A review that failed doesn't count, so it can be retried; an incomplete one does.
-5. If the PR came from a feed with `team = true`, no teammate has submitted a review at this head.
-6. Auto mode has started fewer than `review.max_reviews_per_pr_per_day` reviews of it today, failed ones included.
-7. Today's spend is below `review.budget.daily_usd`. When it isn't, the status bar shows `auto-review paused: daily budget`.
-8. If the last reviews at this head failed, the backoff has passed.
+5. Auto mode has started fewer than `review.max_reviews_per_pr_per_day` reviews of it today, failed ones included.
+6. Today's spend is below `review.budget.daily_usd`. When it isn't, the status bar shows `auto-review paused: daily budget`.
+7. If the last reviews at this head failed, the backoff has passed.
 
 The backoff counts failed reviews in a row at the same head: after 1 failure snow waits 1 minute, after 2 it waits 5 minutes, after 3 it waits 30 minutes, and after 4 it stops trying that head until you press `space`. A new head, a review that succeeds, or a restart resets the count. A cancelled review is not a failure.
 
@@ -35,7 +34,6 @@ The backoff counts failed reviews in a row at the same head: after 1 failure sno
 | status must be Ready for you or New changes with green CI | yes | no |
 | `review.quiet_period` | yes | no |
 | not already reviewed at this head | yes | no |
-| team-feed teammate rule | yes | no |
 | `review.max_reviews_per_pr_per_day` | yes | no, and not counted |
 | `review.budget.daily_usd` | pauses | asks first |
 | failure backoff | yes | no |
@@ -104,7 +102,7 @@ claude -p --output-format stream-json --verbose
   --tools Read,Grep,Glob
   --permission-mode dontAsk
   --setting-sources "" --strict-mcp-config
-  --max-turns <review.max_turns>
+  --max-turns 100
   --max-budget-usd <per-review budget, or what is left of it>
   --json-schema <the review schema>
   --model <model> --effort <effort>
@@ -196,7 +194,7 @@ Reviews never run in your own checkout.
 Cleanup:
 
 - When a PR leaves the Wall (merged, closed, hidden, stale or no longer tracked), snow cancels its running review, deletes its `refs/jawnsnow/<N>/` refs and its review-file directories, and frees its slot. Stored reviews and cost rows stay in the database.
-- Every 10 minutes snow removes the worktrees of free slots unused for longer than `review.worktree_idle`.
+- Every 10 minutes snow removes the worktrees of free slots unused for longer than 2 hours.
 - At startup, for each repo with a PR on the Wall that has a mapped path or an existing clone, snow marks every slot free (no review survives a restart), removes slots whose directory is gone, removes worktrees and directories under the repo's pool directory that no slot owns, and deletes `refs/jawnsnow/<N>/` refs for every PR not on the Wall, hidden and stale ones included. Reviews wait for this to finish.
 
 snow only removes what it made: worktrees under its pool directories and refs under `refs/jawnsnow/`. It never runs `git worktree prune` or `git gc`, because both act on the whole repository, and prune would also drop your own worktrees whose directories are missing.

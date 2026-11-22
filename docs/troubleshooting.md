@@ -59,8 +59,8 @@ Nothing on the wall. Feeds: review-requested · press R to poll
 
 - Before the first poll finishes, the top line says `polling…`. Wait, or press `R`.
 - The default feed only finds open, non-draft PRs where your review is requested, updated in the last 14 days. To see only PRs where you were asked directly, not through a team, use `user-review-requested:@me`.
-- Drafts are left out unless the feed sets `include_drafts = true`.
-- Try the feed's `query` in GitHub's search box. snow adds `draft:false`, `updated:>=<date>` and `sort:updated-desc` to it.
+- Drafts are left out when the feed's query has `draft:false`, as the default feed's does.
+- Try the feed's `query` in GitHub's search box. snow adds `updated:>=<date>` and `sort:updated-desc` to it.
 - Each feed returns at most 100 PRs, the most recently updated first.
 - A PR you hid, or one that went stale, is in the Done view's "Waiting for new activity" table. Press `x` there to bring it back.
 - A filter may be hiding cards: the Wall says `No PRs match the filter.` Press `esc`.
@@ -93,11 +93,11 @@ The top line's `GH 4.6k` is how many rate-limit points remain. Other tools using
 
 ## Auto mode isn't reviewing a PR
 
-Auto mode reviews a PR only when it is "Ready for you" or "New changes" with green CI, its head has been unchanged for `review.quiet_period`, Claude hasn't reviewed that head yet, no teammate reviewed it (on a team feed), the per-PR daily cap and the daily budget allow it, and no failure backoff is running. [reviews.md](reviews.md#what-starts-an-auto-review) has the details. Things to check:
+Auto mode reviews a PR only when it is "Ready for you" or "New changes" with green CI, its head has been unchanged for `review.quiet_period`, Claude hasn't reviewed that head yet, the per-PR daily cap and the daily budget allow it, and no failure backoff is running. [reviews.md](reviews.md#what-starts-an-auto-review) has the details. Things to check:
 
 - The status bar says `◉ auto`. `m` switches.
 - `auto-review paused: daily budget` in the status bar: today's spend reached `review.budget.daily_usd`. It resets at local midnight; `space` still works after a y/n question.
-- The card's badge: `· teammate reviewed` means a teammate covered this head on a team feed; `! review failed` means the backoff (1, 5, then 30 minutes) is running, or after four failures in a row auto mode has stopped on that head.
+- The card's badge: `! review failed` means the backoff (1, 5, then 30 minutes) is running, or after four failures in a row auto mode has stopped on that head.
 - `review.max_in_flight` reviews are already running. The Agent view lists them.
 - A comment alone never starts a review; a new commit does.
 

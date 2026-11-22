@@ -50,7 +50,7 @@ A repo with no `repos.<name>.path` gets a bare clone made with `git clone --bare
 
 ### `worktrees/`
 
-One directory per repo, holding that repo's worktree slots, `slot-1`, `slot-2` and so on, at most `review.max_in_flight` of them. Each is a detached worktree of your mapped clone or of snow's own clone. snow removes a slot's worktree when it has been free for `review.worktree_idle`, and at startup removes anything in these directories that no slot owns. See [the workspace](reviews.md#the-workspace).
+One directory per repo, holding that repo's worktree slots, `slot-1`, `slot-2` and so on, at most `review.max_in_flight` of them. Each is a detached worktree of your mapped clone or of snow's own clone. snow removes a slot's worktree when it has been free for 2 hours, and at startup removes anything in these directories that no slot owns. See [the workspace](reviews.md#the-workspace).
 
 ### `reviews/`
 
@@ -79,7 +79,7 @@ Quit snow first. With snow not running:
 | `reviews/` | yes | the next review writes its files again; stored reviews are unaffected |
 | `jawnsnow.lock` | yes | snow makes it again |
 | `clones/owner__name.git` | yes, together with `worktrees/owner__name/` | snow clones the repo again at its next review; worktrees made from the old clone are useless without it |
-| `worktrees/` | not by hand | a worktree of a mapped clone is also registered in your clone, and deleting its directory leaves that registration behind; let `review.worktree_idle` or the startup sweep remove them |
+| `worktrees/` | not by hand | a worktree of a mapped clone is also registered in your clone, and deleting its directory leaves that registration behind; let the 2-hour idle prune or the startup sweep remove them |
 | `jawnsnow.db` | only to reset everything | every tracked PR, review, finding, post and cost row is lost, and snow no longer knows its worktrees or refs |
 
 To reset snow completely:
