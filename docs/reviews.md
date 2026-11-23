@@ -153,7 +153,7 @@ The reviewer's `examined` list is cut down to files it actually opened, so the s
 
 ## Check notes
 
-Besides the coverage checks, snow adjusts each finding without changing what it says, and notes what it did. The drawer shows these under `Check notes`, and `Y` copies them:
+Besides the coverage checks, snow adjusts each finding without changing what it says, and notes what it did. The drawer shows these under `Check notes`:
 
 | Note | Means |
 | --- | --- |

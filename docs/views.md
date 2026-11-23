@@ -190,15 +190,15 @@ The drawer has three tabs: Review, Checks and Activity. `h` and `l` move between
 The Review tab, top to bottom:
 
 1. The pass's details: tier, model, effort, cost, age (`12m ago`) and, when the PR has more than one review, `pass 2/3`. The cost is `$1.84`, `$1.84+? (some cost unknown)` or `? (cost unknown)`; see [cost accounting](reviews.md#cost-accounting).
-2. The verdict as a filled banner: `APPROVE`, `REQUEST CHANGES` or `COMMENT`. After it, `incomplete` or `failed` when the review was.
+2. The verdict as a filled banner: `APPROVE`, `REQUEST CHANGES` or `COMMENT`. After it, `incomplete` or `failed` when the review was, then `● Press Y to copy` when the review has a reason.
 3. `Posted as Approve · 2h ago` (or `just now`) when you posted this review.
-4. The reviewer's reason for the verdict.
+4. The reviewer's reason for the verdict. `Y` copies it.
 5. For a failed review, the error.
 6. The earlier-findings summary, such as `2 fixed · 1 still open · 3 new`. See [the ledger](reviews.md#the-earlier-findings-ledger).
 7. The findings, or `No findings.` Each has a header line with its location (`path:line`, `path:start-end`, or `path · unanchored`), `blocking` when it is, its category, and its ledger tag (`[fixed]`, `[still open]` or `[answered]`) for a finding carried from an earlier pass. The body is rendered markdown. Blocking findings come first, then those starting `nit:`, `non-blocking:` and `question:`, then the rest. The selected one has a `▸` mark and its header line is filled.
 8. `▸ Understanding ● Press u to show`: the reviewer's account of what the touched code does and how the PR changes it. Collapsed until you press `u`; open, the heading says `● Press u to hide`.
 9. `▸ Assumptions ● Press a to show`: each assumption the change relies on, with the evidence the reviewer cited under it, or `None.` Collapsed until you press `a`.
-10. `Check notes ● Press Y to copy`: one line per note from the reviewer and from snow's checks. `Y` copies them all. See [check notes](reviews.md#check-notes).
+10. `Check notes`: one line per note from the reviewer and from snow's checks. See [check notes](reviews.md#check-notes).
 
 The bottom line shows the running review's latest tool call (`reading internal/foo/bar.go`, `searching internal`, `listing …`), a short message after a key (`copied the finding`), or the key hints: `j/k finding · </> pass · y copy · O open line · P post` on the Review tab, `h/l tab · j/k check · O open · y copy` on the Checks tab, `h/l tab · j/k entry · O open · y copy` on the Activity tab.
 

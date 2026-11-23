@@ -86,7 +86,7 @@ This keeps a follow-up from posting a point twice. Unanchored findings are poste
 
 ## The summary
 
-The summary is the review's body. It starts empty, since it is your own text: the reviewer's understanding and its reason for the verdict stay private unless you copy them in. It works the same for every event, so an Approve can carry a summary too.
+The summary is the review's body. It starts empty, since it is your own text: the reviewer's understanding and its reason for the verdict stay private unless you copy them in. `Y` in the drawer copies the reason. It works the same for every event, so an Approve can carry a summary too.
 
 The screen opens with the summary box focused, under a `Summary ●` line that says how to get out of it. The box is six lines tall while empty (fewer on a short window), with a placeholder saying whether the event needs a summary, and grows with its text. Type the summary there; the rendered `Summary` part further down shows what will be posted as you type. Pastes go into the box, held keys repeat, and keys the checklist uses (`space`, `j`, `k`, `m`, `?`) are typed.
 
