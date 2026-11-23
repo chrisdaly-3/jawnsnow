@@ -4,7 +4,7 @@
 │ No checks                                                             
 │ first_pass · claude-opus-5-5 · high · $1.23 · 2h ago                  
 │                                                                       
-│  REQUEST CHANGES                                                      
+│  REQUEST CHANGES  ● Press Y to copy                                   
 │ Two blocking problems in the registry lookup.                         
 │ 2 fixed · 1 still open · 1 new                                        
 │                                                                       
@@ -37,7 +37,7 @@
 │   • The registry returns at most one repo per digest                  
 │     pkg/registry/lookup.go:30                                         
 │                                                                       
-│ Check notes ● Press Y to copy                                         
+│ Check notes                                                           
 │ Checks: tests were not run (the reviewer is read-only).               
 │                                                                       
 │                                                                       

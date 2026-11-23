@@ -314,16 +314,16 @@ func (m drawerModel) reviewKey(msg tea.KeyPressMsg, c drawerCtx) (drawerModel, t
 			return m, nil, actionCopy{Text: cleanBlock(fs[m.sel].Body)}
 		}
 	case "Y":
-		var notes []string
+		var reason string
 		if r := m.current(); r != nil {
-			notes = checkNotes(r.Note)
+			reason = cleanLine(r.VerdictReason)
 		}
-		if len(notes) == 0 {
-			m.flash = "no check notes to copy"
+		if reason == "" {
+			m.flash = "no verdict reason to copy"
 			break
 		}
-		m.flash = "copied the check notes"
-		return m, nil, actionCopy{Text: strings.Join(notes, "\n")}
+		m.flash = "copied the verdict's reason"
+		return m, nil, actionCopy{Text: reason}
 	default:
 		return m.sharedKey(k, c)
 	}
@@ -523,7 +523,7 @@ func (m drawerModel) layout(c drawerCtx) (lines []string, spans []itemSpan) {
 		return assumptionLines(th, r.Assumptions, inner)
 	})...)
 	if notes := checkNotes(r.Note); len(notes) > 0 {
-		add(ansi.Truncate(th.Accent().Render("Check notes")+th.Muted().Render(" ● Press Y to copy"), inner, "…"))
+		add(th.Accent().Render("Check notes"))
 		for _, n := range notes {
 			for _, l := range wrapLines(n, inner) {
 				add(th.Muted().Render(l))
@@ -569,13 +569,21 @@ func (m drawerModel) reviewSummary(c drawerCtx, r *store.Review, inner int) []st
 	case store.OutcomeFailed:
 		banner += "  " + th.StatusFg("CI_FAILED").Render("failed")
 	}
+	reason := cleanLine(r.VerdictReason)
+	if reason != "" {
+		hint := "● Press Y to copy"
+		if banner != "" {
+			hint = " " + hint
+		}
+		banner += th.Muted().Render(hint)
+	}
 	if strings.TrimSpace(banner) != "" {
-		add(banner)
+		add(ansi.Truncate(banner, inner, "…"))
 	}
 	if p, ok := m.posted[r.ID]; ok {
 		add(th.Accent().Render(ansi.Truncate("Posted as "+eventLabel(p.Event)+" · "+postedAgo(c.Now.Sub(p.At)), inner, "…")))
 	}
-	if reason := cleanLine(r.VerdictReason); reason != "" {
+	if reason != "" {
 		add(wrapLines(reason, inner)...)
 	}
 	if r.Outcome == store.OutcomeFailed && r.Error != "" {
@@ -636,7 +644,7 @@ func assumptionLines(th theme.Theme, as []store.Assumption, inner int) []string 
 }
 
 // checkNotes are a review's check notes, one per line as the engine writes
-// them, with only the spacing inside each tidied. Y copies these lines.
+// them, with only the spacing inside each tidied.
 func checkNotes(note string) []string {
 	var out []string
 	for n := range strings.SplitSeq(cleanBlock(note), "\n") {

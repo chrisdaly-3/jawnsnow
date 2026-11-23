@@ -221,32 +221,39 @@ func TestDrawerActions(t *testing.T) {
 	}
 }
 
-func TestDrawerCopiesCheckNotes(t *testing.T) {
+func TestDrawerCopiesVerdictReason(t *testing.T) {
 	d, c := openDrawer(t, 160, 40, drawerReview())
-	if out := ansi.Strip(renderDrawer(d, c, 60)); !strings.Contains(out, "Check notes ● Press Y to copy") {
-		t.Errorf("no Check notes heading with its Y hint:\n%s", out)
+	out := ansi.Strip(renderDrawer(d, c, 60))
+	if !strings.Contains(out, "REQUEST CHANGES  ● Press Y to copy") {
+		t.Errorf("no verdict banner with its Y hint:\n%s", out)
+	}
+	if strings.Contains(out, "Check notes ●") {
+		t.Errorf("the Check notes heading still has a hint:\n%s", out)
 	}
 	d2, _, a := d.update(key("Y"), c)
 	cp, ok := a.(actionCopy)
-	if !ok || cp.Text != "Checks: tests were not run (the reviewer is read-only)." {
-		t.Errorf("Y = %#v, want the check notes", a)
+	if !ok || cp.Text != "Two blocking problems in the registry lookup." {
+		t.Errorf("Y = %#v, want the verdict's reason", a)
 	}
-	if d2.flash != "copied the check notes" {
-		t.Errorf("flash %q, want %q", d2.flash, "copied the check notes")
+	if d2.flash != "copied the verdict's reason" {
+		t.Errorf("flash %q, want %q", d2.flash, "copied the verdict's reason")
 	}
 
-	// Only the Review tab has check notes.
+	// Only the Review tab has a verdict.
 	d.tab = tabChecks
 	if _, _, a := d.update(key("Y"), c); a != (actionNone{}) {
 		t.Errorf("Y on the Checks tab = %#v, want nothing", a)
 	}
 
 	rv := drawerReview()
-	rv.Note = ""
+	rv.VerdictReason = ""
 	d, c = openDrawer(t, 160, 40, rv)
+	if out := ansi.Strip(renderDrawer(d, c, 60)); strings.Contains(out, "Press Y") {
+		t.Errorf("Y hint shown with no reason:\n%s", out)
+	}
 	d, _, a = d.update(key("Y"), c)
-	if a != (actionNone{}) || d.flash != "no check notes to copy" {
-		t.Errorf("Y with no notes = %#v, flash %q", a, d.flash)
+	if a != (actionNone{}) || d.flash != "no verdict reason to copy" {
+		t.Errorf("Y with no reason = %#v, flash %q", a, d.flash)
 	}
 }
 
