@@ -255,6 +255,14 @@ func TestDrawerCopiesVerdictReason(t *testing.T) {
 	if a != (actionNone{}) || d.flash != "no verdict reason to copy" {
 		t.Errorf("Y with no reason = %#v, flash %q", a, d.flash)
 	}
+
+	// With no verdict banner, the hint starts its own line.
+	rv = drawerReview()
+	rv.Verdict = ""
+	d, c = openDrawer(t, 160, 40, rv)
+	if out := ansi.Strip(renderDrawer(d, c, 60)); !strings.Contains(out, "│ ● Press Y to copy") {
+		t.Errorf("no Y hint on its own line with no verdict:\n%s", out)
+	}
 }
 
 func TestDrawerUnderstandingAndAssumptionsCollapse(t *testing.T) {
