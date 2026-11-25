@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"sync"
@@ -67,8 +68,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprint(stdout, usage)
 		return 0
 	case "version":
-		fmt.Fprintln(stdout, "snow dev")
-		return 0
+		return printVersion(stdout, stderr)
 	case "config":
 		if len(args) == 2 && args[1] == "default" {
 			if _, err := stdout.Write(config.DefaultTOML()); err != nil {
@@ -523,4 +523,24 @@ func tildePath(path, home string) string {
 		return "~" + strings.TrimPrefix(path, home)
 	}
 	return path
+}
+
+// readBuildInfo reads the module version stamped into the binary; tests
+// replace it to cover each build case.
+var readBuildInfo = debug.ReadBuildInfo
+
+// printVersion prints the main module's version from the binary's build
+// info and returns the exit code: 1 when the binary carries no version.
+func printVersion(stdout, stderr io.Writer) int {
+	info, ok := readBuildInfo()
+	if !ok {
+		fmt.Fprintln(stderr, "snow: this binary has no build info")
+		return 1
+	}
+	if info.Main.Version == "" {
+		fmt.Fprintln(stderr, "snow: this binary's build info has no version")
+		return 1
+	}
+	fmt.Fprintf(stdout, "snow %s\n", info.Main.Version)
+	return 0
 }

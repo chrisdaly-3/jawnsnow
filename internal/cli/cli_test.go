@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"testing"
 	"time"
@@ -229,6 +230,46 @@ func TestUsageExplainsBareSnowAndHelp(t *testing.T) {
 		if !strings.Contains(s, want) {
 			t.Errorf("usage missing %q:\n%s", want, s)
 		}
+	}
+}
+
+// fakeBuildInfo makes readBuildInfo return info and ok for the test.
+func fakeBuildInfo(t *testing.T, info *debug.BuildInfo, ok bool) {
+	t.Helper()
+	old := readBuildInfo
+	readBuildInfo = func() (*debug.BuildInfo, bool) { return info, ok }
+	t.Cleanup(func() { readBuildInfo = old })
+}
+
+func TestVersion(t *testing.T) {
+	cases := []struct {
+		name     string
+		info     *debug.BuildInfo
+		ok       bool
+		wantCode int
+		wantOut  string
+		wantErr  string
+	}{
+		{"tagged release", &debug.BuildInfo{Main: debug.Module{Version: "v1.2.3"}}, true, 0, "snow v1.2.3\n", ""},
+		{"pseudo-version from a checkout", &debug.BuildInfo{Main: debug.Module{Version: "v0.0.0-20261125120000-d41bc6e0a1b2+dirty"}}, true, 0, "snow v0.0.0-20261125120000-d41bc6e0a1b2+dirty\n", ""},
+		{"devel build", &debug.BuildInfo{Main: debug.Module{Version: "(devel)"}}, true, 0, "snow (devel)\n", ""},
+		{"empty version", &debug.BuildInfo{}, true, 1, "", "snow: this binary's build info has no version\n"},
+		{"no build info", nil, false, 1, "", "snow: this binary has no build info\n"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			fakeBuildInfo(t, c.info, c.ok)
+			var out, errb bytes.Buffer
+			if code := Run([]string{"version"}, &out, &errb); code != c.wantCode {
+				t.Errorf("exit code = %d, want %d", code, c.wantCode)
+			}
+			if out.String() != c.wantOut {
+				t.Errorf("stdout = %q, want %q", out.String(), c.wantOut)
+			}
+			if errb.String() != c.wantErr {
+				t.Errorf("stderr = %q, want %q", errb.String(), c.wantErr)
+			}
+		})
 	}
 }
 
