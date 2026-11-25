@@ -13,6 +13,7 @@ snow prints the error and exits with status 1.
 | `snow: theme.status.<STATUS>.color "<value>": indexes 0–15 are remapped by terminal themes; use 16–255` | A colour snow can't use. Use `16` to `255` or `#rrggbb`. |
 | `snow: database schema vN is newer than this snow (vM); upgrade snow` | The database was written by a newer snow. Install the newer one. |
 | `snow: create data directory: <error>` | The data directory can't be created. Check `$XDG_DATA_HOME` or `$HOME/.local/share`. |
+| `snow: this binary has no build info` or `snow: this binary's build info has no version` | `snow version` found no version in the binary. Install with `go install`, or build with `go build` inside a git checkout. |
 | `snow: unknown command "<x>"` | snow takes `config default`, `config path`, `version` and `help`, or nothing. Exit status 2. |
 
 ## No gh login
